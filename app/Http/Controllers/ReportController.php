@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Branch;
 use App\Models\MonthlyReport;
+use App\Models\RevenueSource;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -73,8 +74,14 @@ class ReportController extends Controller
             'target_amount' => $target?->target_total ?? 0,
         ]);
 
+        // Inisialisasi cache harian (30/31 baris kosong) agar
+        // tab Rekap langsung menampilkan grid tanggal lengkap.
+        $report->recalculate();
+
+        $jumlahHari = $report->dailyRevenues()->count();
+
         return redirect()->route('reports.show', $report)
-            ->with('success', 'Laporan berhasil dibuat.');
+            ->with('success', "Laporan berhasil dibuat. {$jumlahHari} baris harian telah disiapkan.");
     }
 
     public function show(Request $request, MonthlyReport $report): Response
@@ -84,7 +91,7 @@ class ReportController extends Controller
         $report->load([
             'branch.area',
             'dailyRevenues',
-            'teamRevenues',
+            'revenueDetails',
             'safariDakwahLogs',
             'submittedBy',
             'approvedBy',
@@ -92,9 +99,20 @@ class ReportController extends Controller
 
         $weeklyBreakdown = $this->buildWeeklyBreakdown($report->dailyRevenues);
 
+        // Master data sumber (tim/karyawan) per cabang, grouped by channel
+        $sources = RevenueSource::where('branch_id', $report->branch_id)
+            ->active()
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get()
+            ->groupBy('channel');
+
         return Inertia::render('Reports/Show', [
             'report'          => $report,
             'weeklyBreakdown' => $weeklyBreakdown,
+            'channels'        => MonthlyReport::CHANNELS,
+            'subChannels'     => MonthlyReport::SUB_CHANNELS,
+            'sources'         => $sources,
             'canSubmit' => ($request->user()->canSubmitReport() || $request->user()->canManageAllBranches()) && $report->isDraft(),
             'canApprove'      => $request->user()->canApproveReport() && $report->isSubmitted(),
         ]);

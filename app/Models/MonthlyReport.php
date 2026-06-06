@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -16,6 +17,9 @@ class MonthlyReport extends Model
     const STATUS_SUBMITTED = 'submitted';
     const STATUS_APPROVED  = 'approved';
     const STATUS_REVISION  = 'revision';
+
+    const CHANNELS     = ['presentasi', 'gerai', 'wgts', 'dfi', 'dfe', 'kotak_qris', 'kantor'];
+    const SUB_CHANNELS = ['reguler', 'safdak', 'df'];
 
     protected $fillable = [
         'branch_id', 'period_month', 'status',
@@ -33,19 +37,23 @@ class MonthlyReport extends Model
         'achievement_pct' => 'decimal:4',
     ];
 
+    // ── Relasi ──────────────────────────────────────────────
+
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
     }
 
+    public function revenueDetails(): HasMany
+    {
+        return $this->hasMany(RevenueDetail::class)
+            ->orderBy('date')
+            ->orderBy('sort_order');
+    }
+
     public function dailyRevenues(): HasMany
     {
         return $this->hasMany(DailyRevenue::class)->orderBy('date');
-    }
-
-    public function teamRevenues(): HasMany
-    {
-        return $this->hasMany(TeamRevenue::class)->orderBy('sort_order');
     }
 
     public function safariDakwahLogs(): HasMany
@@ -63,9 +71,51 @@ class MonthlyReport extends Model
         return $this->belongsTo(User::class, 'approved_by');
     }
 
+    // ── Recalculate (inti arsitektur baru) ───────────────────
+
     public function recalculate(): void
     {
-        $daily = $this->dailyRevenues;
+        // Langkah 1: bangun ulang cache harian dari revenue_details
+        $details = $this->revenueDetails()->get();
+        $byDate  = $details->groupBy(fn ($d) => $d->date->toDateString());
+
+        $dayNames = [
+            0 => 'Ahad', 1 => 'Senin', 2 => 'Selasa', 3 => 'Rabu',
+            4 => 'Kamis', 5 => 'Jumat', 6 => 'Sabtu',
+        ];
+
+        $start      = Carbon::parse($this->period_month)->startOfMonth();
+        $end        = Carbon::parse($this->period_month)->endOfMonth();
+        $cumulative = 0;
+
+        // withoutEvents → mencegah hook DailyRevenue memicu
+        // recalculate() balik (pengaman anti-infinite-loop).
+        DailyRevenue::withoutEvents(function () use ($byDate, $dayNames, $start, $end, &$cumulative) {
+            for ($date = $start->copy(); $date->lte($end); $date->addDay()) {
+                $key     = $date->toDateString();
+                $dayRows = $byDate->get($key, collect());
+
+                $channelSums = [];
+                foreach (self::CHANNELS as $channel) {
+                    $channelSums[$channel] = (int) $dayRows->where('channel', $channel)->sum('amount');
+                }
+
+                $totalDaily  = array_sum($channelSums);
+                $cumulative += $totalDaily;
+
+                DailyRevenue::updateOrCreate(
+                    ['monthly_report_id' => $this->id, 'date' => $key],
+                    array_merge($channelSums, [
+                        'day_name'    => $dayNames[$date->dayOfWeek],
+                        'total_daily' => $totalDaily,
+                        'cumulative'  => $cumulative,
+                    ])
+                );
+            }
+        });
+
+        // Langkah 2: hitung total bulanan dari cache yang baru dibangun
+        $daily = $this->dailyRevenues()->get();
 
         $totals = [
             'total_presentasi' => $daily->sum('presentasi'),
@@ -87,6 +137,8 @@ class MonthlyReport extends Model
             'gap_amount'      => $totalRevenue - $target,
         ]);
     }
+
+    // ── Workflow ─────────────────────────────────────────────
 
     public function submit(User $user): void
     {
@@ -112,6 +164,8 @@ class MonthlyReport extends Model
             'approved_at' => now(),
         ]);
     }
+
+    // ── Scopes & Helpers ────────────────────────────────────
 
     public function scopeForMonth($query, string $month)
     {

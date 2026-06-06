@@ -2,13 +2,15 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\DailyRevenueController;
 use App\Http\Controllers\ReportController;
-use App\Http\Controllers\TeamRevenueController;
+use App\Http\Controllers\RevenueDetailController;
 use App\Http\Controllers\SafariDakwahController;
 use App\Http\Controllers\ExportController;
 use App\Http\Controllers\BranchTargetController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\RevenueSourceController;
+use App\Http\Controllers\BranchManagementController;
+use App\Http\Controllers\UserManagementController;
 
 // Auth
 Route::get('/login', [AuthController::class, 'showLogin'])->name('login')->middleware('guest');
@@ -42,16 +44,17 @@ Route::middleware(['auth'])->group(function () {
     Route::patch('/reports/{report}/approve', [ReportController::class, 'approve'])->name('reports.approve');
     Route::patch('/reports/{report}/evaluation', [ReportController::class, 'updateEvaluation'])->name('reports.evaluation');
 
-    // Daily Revenue
-    Route::post('/reports/{report}/daily', [DailyRevenueController::class, 'store'])->name('daily.store');
-    Route::put('/reports/{report}/daily/{daily}', [DailyRevenueController::class, 'update'])->name('daily.update');
-    Route::delete('/reports/{report}/daily/{daily}', [DailyRevenueController::class, 'destroy'])->name('daily.destroy');
-    Route::post('/reports/{report}/daily/bulk', [DailyRevenueController::class, 'bulkUpsert'])->name('daily.bulk');
+    // Revenue Detail (menggantikan Daily Revenue & Team Revenue)
+    Route::post('/reports/{report}/details/bulk', [RevenueDetailController::class, 'bulkUpsert'])->name('details.bulk');
+    Route::post('/reports/{report}/details', [RevenueDetailController::class, 'store'])->name('details.store');
+    Route::put('/reports/{report}/details/{detail}', [RevenueDetailController::class, 'update'])->name('details.update');
+    Route::delete('/reports/{report}/details/{detail}', [RevenueDetailController::class, 'destroy'])->name('details.destroy');
 
-    // Team Revenue
-    Route::post('/reports/{report}/teams', [TeamRevenueController::class, 'store'])->name('teams.store');
-    Route::put('/reports/{report}/teams/{team}', [TeamRevenueController::class, 'update'])->name('teams.update');
-    Route::delete('/reports/{report}/teams/{team}', [TeamRevenueController::class, 'destroy'])->name('teams.destroy');
+    // Revenue Sources (master data tim/karyawan per cabang)
+    Route::post('/branches/{branch}/sources', [RevenueSourceController::class, 'store'])->name('sources.store');
+    Route::put('/sources/{source}', [RevenueSourceController::class, 'update'])->name('sources.update');
+    Route::patch('/sources/{source}/toggle', [RevenueSourceController::class, 'toggleActive'])->name('sources.toggle');
+    Route::delete('/sources/{source}', [RevenueSourceController::class, 'destroy'])->name('sources.destroy');
 
     // Safari Dakwah
     Route::post('/reports/{report}/safari', [SafariDakwahController::class, 'store'])->name('safari.store');
@@ -63,11 +66,25 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/reports/{report}/export/pdf', [ExportController::class, 'pdf'])->name('export.pdf');
 
     // Target Cabang
-        Route::get('/targets', [BranchTargetController::class, 'index'])
-    ->name('targets.index')
-    ->middleware('role:super_admin,area_manager');
+    Route::get('/targets', [BranchTargetController::class, 'index'])
+        ->name('targets.index')
+        ->middleware('role:super_admin,area_manager');
     Route::post('/targets', [BranchTargetController::class, 'store'])
-    ->name('targets.store')
-    ->middleware('role:super_admin,area_manager');
+        ->name('targets.store')
+        ->middleware('role:super_admin,area_manager');
+        
+    // Manajemen Cabang
+    Route::get('/branches', [BranchManagementController::class, 'index'])->name('branches.index')->middleware('role:super_admin,area_manager');
+    Route::post('/branches', [BranchManagementController::class, 'store'])->name('branches.store')->middleware('role:super_admin,area_manager');
+    Route::put('/branches/{branch}', [BranchManagementController::class, 'update'])->name('branches.update')->middleware('role:super_admin,area_manager');
+    Route::patch('/branches/{branch}/toggle', [BranchManagementController::class, 'toggleActive'])->name('branches.toggle')->middleware('role:super_admin,area_manager');
+    Route::delete('/branches/{branch}', [BranchManagementController::class, 'destroy'])->name('branches.destroy')->middleware('role:super_admin,area_manager');
 
+    // Manajemen User
+    Route::get('/users', [UserManagementController::class, 'index'])->name('users.index')->middleware('role:super_admin,area_manager');
+    Route::post('/users', [UserManagementController::class, 'store'])->name('users.store')->middleware('role:super_admin,area_manager');
+    Route::put('/users/{user}', [UserManagementController::class, 'update'])->name('users.update')->middleware('role:super_admin,area_manager');
+    Route::patch('/users/{user}/password', [UserManagementController::class, 'resetPassword'])->name('users.password')->middleware('role:super_admin,area_manager');
+    Route::delete('/users/{user}', [UserManagementController::class, 'destroy'])->name('users.destroy')->middleware('role:super_admin,area_manager');
+    
 });
