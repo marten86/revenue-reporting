@@ -14,12 +14,15 @@ use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
+    // ══════════════════════════════════════════════════════
+    // Dashboard Area Manager
+    // ══════════════════════════════════════════════════════
+
     public function area(Request $request): Response
     {
         $user        = $request->user();
         $periodMonth = $request->get('month', now()->format('Y-m-01'));
 
-        // ── 1. Branch comparison (existing) ──
         $branches = Branch::with([
             'monthlyReports' => fn($q) => $q->where('period_month', $periodMonth),
             'targets'        => fn($q) => $q->where('period_month', $periodMonth),
@@ -56,22 +59,12 @@ class DashboardController extends Controller
             'reports_total'     => $branches->count(),
         ];
 
-        // ── 2. Monthly trend (6 bulan terakhir) ──
-        $monthlyTrend = $this->buildMonthlyTrend($periodMonth, 6);
-
-        // ── 3. Channel breakdown (bulan ini, semua cabang) ──
+        $monthlyTrend     = $this->buildMonthlyTrend($periodMonth, 6);
         $channelBreakdown = $this->buildChannelBreakdown($periodMonth);
-
-        // ── 4. Daily progress (bulan ini, semua cabang) ──
-        $dailyProgress = $this->buildDailyProgress($periodMonth, $summary['total_target']);
-
-        // ── 5. Top performers (bulan ini) ──
-        $topPerformers = $this->buildTopPerformers($periodMonth);
-
-        // ── 6. Channel per branch (bulan ini) ──
+        $dailyProgress    = $this->buildDailyProgress($periodMonth, $summary['total_target']);
+        $topPerformers    = $this->buildTopPerformers($periodMonth);
         $channelPerBranch = $this->buildChannelPerBranch($periodMonth);
 
-        // ── 7. Available months for selector ──
         $availableMonths = MonthlyReport::select('period_month')
             ->distinct()
             ->orderByDesc('period_month')
@@ -92,9 +85,124 @@ class DashboardController extends Controller
         ]);
     }
 
-    /**
-     * Tren revenue 6 bulan terakhir (semua cabang)
-     */
+    // ══════════════════════════════════════════════════════
+    // Dashboard Branch Head
+    // ══════════════════════════════════════════════════════
+
+    public function branch(Request $request): Response
+    {
+        $user        = $request->user();
+        $branch      = $user->branch;
+        $periodMonth = $request->get('month', now()->format('Y-m-01'));
+
+        if (!$branch) {
+            return Inertia::render('Dashboard/Branch', [
+                'branch' => null, 'report' => null, 'target' => null,
+                'recentMonths' => [], 'currentMonth' => $periodMonth,
+                'monthlyTrend' => [], 'channelBreakdown' => [],
+                'dailyProgress' => [], 'topPerformers' => [],
+                'availableMonths' => [],
+            ]);
+        }
+
+        $report = $branch->reportForMonth($periodMonth);
+        $target = $branch->targetForMonth($periodMonth);
+
+        $totalRevenue = $report?->total_revenue ?? 0;
+        $targetAmount = $target?->target_total ?? 0;
+
+        // Histori laporan (6 bulan terakhir)
+        $recentMonths = MonthlyReport::where('branch_id', $branch->id)
+            ->orderByDesc('period_month')
+            ->limit(6)
+            ->get();
+
+        // ── Chart data (scoped ke 1 cabang) ──
+
+        // 1. Monthly trend
+        $monthlyTrend = $this->buildBranchMonthlyTrend($branch->id, $periodMonth, 6);
+
+        // 2. Channel breakdown
+        $channelBreakdown = [];
+        if ($report) {
+            $channelBreakdown = RevenueDetail::where('monthly_report_id', $report->id)
+                ->select('channel', DB::raw('SUM(amount) as total'))
+                ->groupBy('channel')
+                ->orderByDesc('total')
+                ->get()
+                ->map(fn($r) => ['channel' => $r->channel, 'total' => (int) $r->total])
+                ->toArray();
+        }
+
+        // 3. Daily progress
+        $dailyProgress = [];
+        if ($report) {
+            $dailyTotals = DailyRevenue::where('monthly_report_id', $report->id)
+                ->orderBy('date')
+                ->get();
+
+            $daysInMonth = Carbon::parse($periodMonth)->daysInMonth;
+            $dailyTargetLine = $targetAmount > 0 ? round($targetAmount / $daysInMonth) : 0;
+            $cumulative = 0;
+
+            foreach ($dailyTotals as $day) {
+                $cumulative += (int) $day->total_daily;
+                $dayNum = Carbon::parse($day->date)->day;
+                $dailyProgress[] = [
+                    'date'              => $day->date,
+                    'day'               => $dayNum,
+                    'daily'             => (int) $day->total_daily,
+                    'cumulative'        => $cumulative,
+                    'cumulative_target' => $dailyTargetLine * $dayNum,
+                ];
+            }
+        }
+
+        // 4. Top performers cabang
+        $topPerformers = [];
+        if ($report) {
+            $topPerformers = RevenueDetail::where('monthly_report_id', $report->id)
+                ->whereNotNull('source_label')
+                ->select('source_label', 'channel', DB::raw('SUM(amount) as total'))
+                ->groupBy('source_label', 'channel')
+                ->orderByDesc('total')
+                ->limit(10)
+                ->get()
+                ->map(fn($r) => [
+                    'source_label' => $r->source_label,
+                    'channel'      => $r->channel,
+                    'total'        => (int) $r->total,
+                ])
+                ->toArray();
+        }
+
+        // 5. Available months
+        $availableMonths = MonthlyReport::where('branch_id', $branch->id)
+            ->select('period_month')
+            ->distinct()
+            ->orderByDesc('period_month')
+            ->limit(12)
+            ->pluck('period_month')
+            ->map(fn($m) => Carbon::parse($m)->format('Y-m-01'));
+
+        return Inertia::render('Dashboard/Branch', [
+            'branch'           => $branch->load('area'),
+            'report'           => $report,
+            'target'           => $target,
+            'recentMonths'     => $recentMonths,
+            'currentMonth'     => $periodMonth,
+            'monthlyTrend'     => $monthlyTrend,
+            'channelBreakdown' => $channelBreakdown,
+            'dailyProgress'    => $dailyProgress,
+            'topPerformers'    => $topPerformers,
+            'availableMonths'  => $availableMonths,
+        ]);
+    }
+
+    // ══════════════════════════════════════════════════════
+    // Helper methods — AREA (semua cabang)
+    // ══════════════════════════════════════════════════════
+
     private function buildMonthlyTrend(string $currentMonth, int $months = 6): array
     {
         $trend = [];
@@ -102,12 +210,8 @@ class DashboardController extends Controller
 
         for ($i = $months - 1; $i >= 0; $i--) {
             $month = $date->copy()->subMonths($i)->format('Y-m-01');
-
             $revenue = MonthlyReport::where('period_month', $month)->sum('total_revenue');
-
-            $target = DB::table('branch_targets')
-                ->where('period_month', $month)
-                ->sum('target_total');
+            $target = DB::table('branch_targets')->where('period_month', $month)->sum('target_total');
 
             $trend[] = [
                 'month'   => $month,
@@ -120,41 +224,24 @@ class DashboardController extends Controller
         return $trend;
     }
 
-    /**
-     * Breakdown revenue per kanal (bulan tertentu, semua cabang)
-     */
     private function buildChannelBreakdown(string $periodMonth): array
     {
         $reportIds = MonthlyReport::where('period_month', $periodMonth)->pluck('id');
+        if ($reportIds->isEmpty()) return [];
 
-        if ($reportIds->isEmpty()) {
-            return [];
-        }
-
-        $breakdown = RevenueDetail::whereIn('monthly_report_id', $reportIds)
+        return RevenueDetail::whereIn('monthly_report_id', $reportIds)
             ->select('channel', DB::raw('SUM(amount) as total'))
             ->groupBy('channel')
             ->orderByDesc('total')
             ->get()
-            ->map(fn($row) => [
-                'channel' => $row->channel,
-                'total'   => (int) $row->total,
-            ])
+            ->map(fn($r) => ['channel' => $r->channel, 'total' => (int) $r->total])
             ->toArray();
-
-        return $breakdown;
     }
 
-    /**
-     * Progress harian kumulatif (bulan tertentu, semua cabang)
-     */
     private function buildDailyProgress(string $periodMonth, int $monthlyTarget): array
     {
         $reportIds = MonthlyReport::where('period_month', $periodMonth)->pluck('id');
-
-        if ($reportIds->isEmpty()) {
-            return [];
-        }
+        if ($reportIds->isEmpty()) return [];
 
         $dailyTotals = DailyRevenue::whereIn('monthly_report_id', $reportIds)
             ->select('date', DB::raw('SUM(total_daily) as daily_total'))
@@ -166,70 +253,51 @@ class DashboardController extends Controller
         $dailyTargetLine = $monthlyTarget > 0 ? round($monthlyTarget / $daysInMonth) : 0;
 
         $cumulative = 0;
-        $cumulativeTarget = 0;
         $progress = [];
 
         foreach ($dailyTotals as $day) {
             $cumulative += (int) $day->daily_total;
             $dayNum = Carbon::parse($day->date)->day;
-            $cumulativeTarget = $dailyTargetLine * $dayNum;
 
             $progress[] = [
                 'date'              => $day->date,
                 'day'               => $dayNum,
                 'daily'             => (int) $day->daily_total,
                 'cumulative'        => $cumulative,
-                'cumulative_target' => $cumulativeTarget,
+                'cumulative_target' => $dailyTargetLine * $dayNum,
             ];
         }
 
         return $progress;
     }
 
-    /**
-     * Top performers — tim/sumber dengan revenue tertinggi
-     */
     private function buildTopPerformers(string $periodMonth, int $limit = 10): array
     {
         $reportIds = MonthlyReport::where('period_month', $periodMonth)->pluck('id');
+        if ($reportIds->isEmpty()) return [];
 
-        if ($reportIds->isEmpty()) {
-            return [];
-        }
-
-        $performers = RevenueDetail::whereIn('monthly_report_id', $reportIds)
+        return RevenueDetail::whereIn('monthly_report_id', $reportIds)
             ->whereNotNull('source_label')
-            ->select(
-                'source_label',
-                'channel',
-                DB::raw('SUM(amount) as total')
-            )
+            ->select('source_label', 'channel', DB::raw('SUM(amount) as total'))
             ->groupBy('source_label', 'channel')
             ->orderByDesc('total')
             ->limit($limit)
             ->get()
-            ->map(fn($row) => [
-                'source_label' => $row->source_label,
-                'channel'      => $row->channel,
-                'total'        => (int) $row->total,
+            ->map(fn($r) => [
+                'source_label' => $r->source_label,
+                'channel'      => $r->channel,
+                'total'        => (int) $r->total,
             ])
             ->toArray();
-
-        return $performers;
     }
 
-    /**
-     * Revenue per channel per branch (untuk stacked bar chart)
-     */
     private function buildChannelPerBranch(string $periodMonth): array
     {
         $reports = MonthlyReport::where('period_month', $periodMonth)
             ->with('branch:id,name,code')
             ->get();
 
-        if ($reports->isEmpty()) {
-            return [];
-        }
+        if ($reports->isEmpty()) return [];
 
         $result = [];
         foreach ($reports as $report) {
@@ -240,7 +308,7 @@ class DashboardController extends Controller
                 ->toArray();
 
             $row = [
-                'branch'     => $report->branch?->name ?? 'Unknown',
+                'branch'      => $report->branch?->name ?? 'Unknown',
                 'branch_code' => $report->branch?->code ?? '',
             ];
 
@@ -253,31 +321,38 @@ class DashboardController extends Controller
         }
 
         usort($result, fn($a, $b) => $b['total'] - $a['total']);
-
         return $result;
     }
 
-    // ── Dashboard Branch Head (existing) ──
-    public function branch(Request $request): Response
+    // ══════════════════════════════════════════════════════
+    // Helper methods — BRANCH (1 cabang)
+    // ══════════════════════════════════════════════════════
+
+    private function buildBranchMonthlyTrend(string $branchId, string $currentMonth, int $months = 6): array
     {
-        $user        = $request->user();
-        $branch      = $user->branch;
-        $periodMonth = now()->format('Y-m-01');
+        $trend = [];
+        $date = Carbon::parse($currentMonth);
 
-        $report = $branch?->reportForMonth($periodMonth);
-        $target = $branch?->targetForMonth($periodMonth);
+        for ($i = $months - 1; $i >= 0; $i--) {
+            $month = $date->copy()->subMonths($i)->format('Y-m-01');
 
-        $recentMonths = MonthlyReport::where('branch_id', $branch?->id)
-            ->orderByDesc('period_month')
-            ->limit(6)
-            ->get();
+            $report = MonthlyReport::where('branch_id', $branchId)
+                ->where('period_month', $month)
+                ->first();
 
-        return Inertia::render('Dashboard/Branch', [
-            'branch'       => $branch?->load('area'),
-            'report'       => $report,
-            'target'       => $target,
-            'recentMonths' => $recentMonths,
-            'currentMonth' => $periodMonth,
-        ]);
+            $target = DB::table('branch_targets')
+                ->where('branch_id', $branchId)
+                ->where('period_month', $month)
+                ->value('target_total');
+
+            $trend[] = [
+                'month'   => $month,
+                'label'   => Carbon::parse($month)->translatedFormat('M Y'),
+                'revenue' => (int) ($report?->total_revenue ?? 0),
+                'target'  => (int) ($target ?? 0),
+            ];
+        }
+
+        return $trend;
     }
 }
