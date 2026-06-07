@@ -13,9 +13,12 @@ const formatRp = (n) => new Intl.NumberFormat('id-ID', {
 
 const formatRpShort = (n) => {
     if (!n) return 'Rp 0'
-    if (n >= 1_000_000_000) return `Rp ${(n / 1_000_000_000).toFixed(1)} M`
-    if (n >= 1_000_000) return `Rp ${(n / 1_000_000).toFixed(1)} jt`
-    return `Rp ${(n / 1_000).toFixed(0)} rb`
+    const abs = Math.abs(n)
+    const sign = n < 0 ? '-' : ''
+    if (abs >= 1_000_000_000) return `${sign}Rp ${(abs / 1_000_000_000).toFixed(1)} M`
+    if (abs >= 1_000_000) return `${sign}Rp ${(abs / 1_000_000).toFixed(1)} jt`
+    if (abs >= 1_000) return `${sign}Rp ${(abs / 1_000).toFixed(0)} rb`
+    return `${sign}Rp ${abs}`
 }
 
 const formatRpAxis = (n) => {
