@@ -306,16 +306,47 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
     }
     const saveEditPresentasi = () => {
         setSavingEdit(true)
+
+        // Cek apakah source_label berubah
+        const origParts = editingKey.split('_')
+        const origSourceLabel = origParts.slice(1).join('_')
+        const sourceChanged = editData.source_label !== origSourceLabel
+
         const entries = SUB_CHANNELS.map(sc => ({
             date: editData.date, channel: activeChannel,
             source_label: editData.source_label, sub_channel: sc.key,
             amount: editData[sc.key] || 0,
         }))
-        router.post(`/reports/${report.id}/details/bulk`, { entries }, {
-            preserveScroll: true,
-            onSuccess: () => setEditingKey(null),
-            onFinish: () => setSavingEdit(false),
-        })
+
+        if (sourceChanged) {
+            // Hapus entri lama dulu, lalu buat baru dengan source_label baru
+            const group = groupedPresentasi.find(g => `${g.date}_${g.source_label}` === editingKey)
+            if (group && group.ids.length > 0) {
+                let deleted = 0
+                group.ids.forEach(id => {
+                    router.delete(`/reports/${report.id}/details/${id}`, {
+                        preserveScroll: true,
+                        preserveState: true,
+                        onSuccess: () => {
+                            deleted++
+                            if (deleted === group.ids.length) {
+                                router.post(`/reports/${report.id}/details/bulk`, { entries }, {
+                                    preserveScroll: true,
+                                    onSuccess: () => setEditingKey(null),
+                                    onFinish: () => setSavingEdit(false),
+                                })
+                            }
+                        },
+                    })
+                })
+            }
+        } else {
+            router.post(`/reports/${report.id}/details/bulk`, { entries }, {
+                preserveScroll: true,
+                onSuccess: () => setEditingKey(null),
+                onFinish: () => setSavingEdit(false),
+            })
+        }
     }
 
     // Edit Flat / DFI / DFE (1 entry)
@@ -442,7 +473,14 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
                                         <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 500 }}>
                                             {new Date(row.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
                                         </td>
-                                        <td style={{ ...tdStyle, textAlign: 'left' }}>{row.source_label}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'left' }}>
+                                            {isEditing ? (
+                                                <input value={editData.source_label || ''}
+                                                    onClick={e => e.stopPropagation()}
+                                                    onChange={e => setEditData(p => ({ ...p, source_label: e.target.value }))}
+                                                    style={{ width: '100%', padding: '4px 6px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 12, boxSizing: 'border-box' }} />
+                                            ) : row.source_label}
+                                        </td>
                                         {isEditing ? (
                                             SUB_CHANNELS.map(sc => (
                                                 <td key={sc.key} style={{ ...tdStyle, padding: '4px 6px' }} onClick={e => e.stopPropagation()}>
@@ -509,7 +547,14 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
                                             {new Date(entry.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
                                         </td>
                                         {config.hasSource && (
-                                            <td style={{ ...tdStyle, textAlign: 'left' }}>{entry.source_label ?? '—'}</td>
+                                            <td style={{ ...tdStyle, textAlign: 'left' }}>
+                                                {isEditing ? (
+                                                    <input value={editData.source_label || ''}
+                                                        onClick={e => e.stopPropagation()}
+                                                        onChange={e => setEditData(p => ({ ...p, source_label: e.target.value }))}
+                                                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 12, boxSizing: 'border-box' }} />
+                                                ) : (entry.source_label ?? '—')}
+                                            </td>
                                         )}
                                         {config.hasLocation && (
                                             <td style={{ ...tdStyle, textAlign: 'left' }}>
@@ -802,6 +847,141 @@ function TabSafari({ report, canEdit, isMobile }) {
 }
 
 // ══════════════════════════════════════════════════════════
+// Tab Rekap Per Tim
+// ══════════════════════════════════════════════════════════
+
+function TabRekapPerTim({ report, isMobile }) {
+    const [selectedChannel, setSelectedChannel] = useState('presentasi')
+
+    const allDetails = report.revenue_details ?? []
+
+    const rekapData = useMemo(() => {
+        const channelDetails = allDetails.filter(d => d.channel === selectedChannel)
+
+        const bySource = {}
+        channelDetails.forEach(detail => {
+            const sourceLabel = detail.source_label ?? 'Tanpa Sumber'
+            if (!bySource[sourceLabel]) {
+                bySource[sourceLabel] = { source_label: sourceLabel, subtotal: 0, details: {} }
+            }
+            if (detail.sub_channel) {
+                if (!bySource[sourceLabel].details[detail.sub_channel]) {
+                    bySource[sourceLabel].details[detail.sub_channel] = 0
+                }
+                bySource[sourceLabel].details[detail.sub_channel] += detail.amount
+            }
+            bySource[sourceLabel].subtotal += detail.amount
+        })
+
+        const sources = Object.values(bySource).map(s => ({
+            ...s,
+            details: Object.entries(s.details).map(([sc, amt]) => ({ sub_channel: sc, amount: amt })),
+        }))
+        sources.sort((a, b) => b.subtotal - a.subtotal)
+
+        return { sources, total: sources.reduce((sum, s) => sum + s.subtotal, 0) }
+    }, [allDetails, selectedChannel])
+
+    const selectedChannelLabel = CHANNELS.find(c => c.key === selectedChannel)?.label ?? ''
+    const config = CHANNEL_CONFIG[selectedChannel]
+
+    return (
+        <div>
+            {/* Channel pills */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+                {CHANNELS.map(c => {
+                    const isActive = selectedChannel === c.key
+                    const total = allDetails.filter(d => d.channel === c.key).reduce((s, d) => s + (d.amount ?? 0), 0)
+                    return (
+                        <button key={c.key} onClick={() => setSelectedChannel(c.key)}
+                            style={{
+                                ...pillBase,
+                                background: isActive ? '#166534' : '#f3f4f6',
+                                color: isActive ? '#fff' : '#374151',
+                            }}>
+                            {c.label}
+                            {total > 0 && (
+                                <span style={{
+                                    marginLeft: 6, fontSize: 10, opacity: .8,
+                                    background: isActive ? 'rgba(255,255,255,.2)' : 'rgba(0,0,0,.06)',
+                                    padding: '1px 6px', borderRadius: 99,
+                                }}>{formatRpShort(total)}</span>
+                            )}
+                        </button>
+                    )
+                })}
+            </div>
+
+            {/* Summary */}
+            <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, padding: '10px 14px', marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 13, fontWeight: 500 }}>Total {selectedChannelLabel}</span>
+                <span style={{ fontSize: 16, fontWeight: 600, fontFamily: 'monospace' }}>{formatRp(rekapData.total)}</span>
+            </div>
+
+            {/* Table */}
+            <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, overflowX: 'auto' }}>
+                <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb' }}>
+                    <span style={{ fontWeight: 600, fontSize: 13 }}>Rekap {selectedChannelLabel} per Sumber</span>
+                    <span style={{ fontSize: 12, color: '#9ca3af', marginLeft: 12 }}>({rekapData.sources.length} sumber)</span>
+                </div>
+
+                {rekapData.sources.length === 0 ? (
+                    <div style={{ padding: 20, textAlign: 'center', color: '#9ca3af', fontSize: 12 }}>
+                        Belum ada data {selectedChannelLabel.toLowerCase()}.
+                    </div>
+                ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                        <thead>
+                            <tr>
+                                <th style={{ ...thStyle, textAlign: 'left', minWidth: 150 }}>Nama</th>
+                                {config.hasSubChannel && (
+                                    <>
+                                        <th style={{ ...thStyle, minWidth: 100 }}>Reguler</th>
+                                        <th style={{ ...thStyle, minWidth: 100 }}>Safdak</th>
+                                        <th style={{ ...thStyle, minWidth: 100 }}>DF</th>
+                                    </>
+                                )}
+                                <th style={{ ...thStyle, minWidth: 120 }}>Subtotal</th>
+                                <th style={{ ...thStyle, minWidth: 70 }}>%</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {rekapData.sources.map((source, i) => {
+                                const pct = rekapData.total > 0 ? (source.subtotal / rekapData.total * 100).toFixed(1) : '0'
+                                return (
+                                    <tr key={i} className="rev-row" style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                        <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 600 }}>{source.source_label}</td>
+                                        {config.hasSubChannel && (
+                                            <>
+                                                <td style={tdStyle}>{source.details.find(d => d.sub_channel === 'reguler')?.amount ? formatRpShort(source.details.find(d => d.sub_channel === 'reguler').amount) : '—'}</td>
+                                                <td style={tdStyle}>{source.details.find(d => d.sub_channel === 'safdak')?.amount ? formatRpShort(source.details.find(d => d.sub_channel === 'safdak').amount) : '—'}</td>
+                                                <td style={tdStyle}>{source.details.find(d => d.sub_channel === 'df')?.amount ? formatRpShort(source.details.find(d => d.sub_channel === 'df').amount) : '—'}</td>
+                                            </>
+                                        )}
+                                        <td style={{ ...tdStyle, fontWeight: 700 }}>{formatRp(source.subtotal)}</td>
+                                        <td style={{ ...tdStyle, fontSize: 11, color: '#6b7280' }}>{pct}%</td>
+                                    </tr>
+                                )
+                            })}
+                        </tbody>
+                        <tfoot>
+                            <tr style={{ background: '#f0fdf4' }}>
+                                <td style={{ padding: '8px 10px', fontSize: 12, fontWeight: 700, color: '#166534' }}>TOTAL</td>
+                                {config.hasSubChannel && <td colSpan={3} style={{ background: '#f0fdf4' }}></td>}
+                                <td style={{ ...tdStyle, fontWeight: 700, background: '#f0fdf4', color: '#166534' }}>{formatRp(rekapData.total)}</td>
+                                <td style={{ ...tdStyle, fontWeight: 700, background: '#f0fdf4', color: '#166534' }}>100%</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                )}
+            </div>
+        </div>
+    )
+}
+
+
+
+// ══════════════════════════════════════════════════════════
 // Halaman utama
 // ══════════════════════════════════════════════════════════
 
@@ -874,10 +1054,11 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
             {/* Tab navigation */}
             <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #e5e7eb', marginBottom: 20, overflowX: 'auto' }}>
                 {[
-                    { key: 'rincian', label: 'Rincian Revenue' },
-                    { key: 'rekap',   label: 'Rekap per Kanal' },
-                    { key: 'safari',  label: 'Safari Dakwah' },
-                ].map(t => (
+                { key: 'rincian', label: 'Rincian Revenue' },
+                { key: 'rekap',   label: 'Rekap per Kanal' },
+                { key: 'tim',     label: 'Rekap Per Tim' },
+                { key: 'safari',  label: 'Safari Dakwah' },
+            ].map(t => (
                     <button key={t.key} onClick={() => setTab(t.key)}
                         style={{
                             padding: isMobile ? '8px 12px' : '8px 16px', fontSize: 13, fontWeight: 500,
@@ -893,6 +1074,7 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
 
             {tab === 'rincian' && <TabRincian report={report} canEdit={canEdit} sources={sources} isMobile={isMobile} />}
             {tab === 'rekap' && <TabRekap report={report} weeklyBreakdown={weeklyBreakdown} isMobile={isMobile} />}
+            {tab === 'tim' && <TabRekapPerTim report={report} isMobile={isMobile} />}
             {tab === 'safari' && <TabSafari report={report} canEdit={canEdit} isMobile={isMobile} />}
         </AppLayout>
     )

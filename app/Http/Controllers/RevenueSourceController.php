@@ -7,10 +7,38 @@ use App\Models\RevenueSource;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use App\Models\MonthlyReport;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class RevenueSourceController extends Controller
 {
-    // Tambah sumber baru (dipanggil dari form laporan)
+    // Tampilkan halaman kelola master data per cabang
+    public function index(Request $request): Response
+    {
+        $user = $request->user();
+        
+        // Ambil cabang yang accessible untuk user
+        $branches = $user->accessibleBranches()->get(['id', 'name', 'code']);
+        
+        // Default: cabang pertama (jika ada), atau user's branch jika tidak admin
+        $selectedBranchId = $request->get('branch_id', $user->branch_id ?? $branches->first()?->id);
+        
+        $sources = RevenueSource::where('branch_id', $selectedBranchId)
+            ->orderBy('channel')
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get()
+            ->groupBy('channel');
+
+        return Inertia::render('RevenueSource/Index', [
+            'branches'     => $branches,
+            'selectedBranchId' => $selectedBranchId,
+            'sources'      => $sources,
+            'channels'     => MonthlyReport::CHANNELS,
+        ]);
+    }
+
+    // Tambah sumber baru (dari form laporan atau halaman master data)
     public function store(Request $request, Branch $branch)
     {
         abort_unless($request->user()->canAccessBranch($branch), 403);

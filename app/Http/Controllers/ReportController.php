@@ -99,7 +99,6 @@ class ReportController extends Controller
 
         $weeklyBreakdown = $this->buildWeeklyBreakdown($report->dailyRevenues);
 
-        // Master data sumber (tim/karyawan) per cabang, grouped by channel
         $sources = RevenueSource::where('branch_id', $report->branch_id)
             ->active()
             ->orderBy('sort_order')
@@ -113,7 +112,8 @@ class ReportController extends Controller
             'channels'        => MonthlyReport::CHANNELS,
             'subChannels'     => MonthlyReport::SUB_CHANNELS,
             'sources'         => $sources,
-            'canSubmit' => ($request->user()->canSubmitReport() || $request->user()->canManageAllBranches()) && $report->isDraft(),
+            'rekapPerTim'     => $this->buildRekapPerTim($report),
+            'canSubmit'       => ($request->user()->canSubmitReport() || $request->user()->canManageAllBranches()) && $report->isDraft(),
             'canApprove'      => $request->user()->canApproveReport() && $report->isSubmitted(),
         ]);
     }
@@ -171,5 +171,76 @@ class ReportController extends Controller
         }
 
         return $weeks;
+    }
+
+    private function buildRekapPerTim($report, string $selectedChannel = null): array
+    {
+        $allDetails = $report->revenueDetails ?? [];
+
+        if ($selectedChannel) {
+            $allDetails = array_filter($allDetails, fn($d) => $d['channel'] === $selectedChannel);
+        }
+
+        $byChannel = [];
+        foreach ($allDetails as $detail) {
+            $channel = $detail['channel'];
+            if (!isset($byChannel[$channel])) {
+                $byChannel[$channel] = [];
+            }
+            $byChannel[$channel][] = $detail;
+        }
+
+        $result = [];
+        foreach ($byChannel as $channel => $details) {
+            $bySource = [];
+
+            foreach ($details as $d) {
+                $sourceLabel = $d['source_label'] ?? 'Tanpa Sumber';
+
+                if (!isset($bySource[$sourceLabel])) {
+                    $bySource[$sourceLabel] = [
+                        'source_label' => $sourceLabel,
+                        'subtotal'     => 0,
+                        'details'      => [],
+                    ];
+                }
+
+                if ($d['sub_channel']) {
+                    $existing = false;
+                    foreach ($bySource[$sourceLabel]['details'] as &$detail) {
+                        if ($detail['sub_channel'] === $d['sub_channel']) {
+                            $detail['amount'] += $d['amount'];
+                            $existing = true;
+                            break;
+                        }
+                    }
+                    unset($detail);
+
+                    if (!$existing) {
+                        $bySource[$sourceLabel]['details'][] = [
+                            'sub_channel' => $d['sub_channel'],
+                            'amount'      => $d['amount'],
+                        ];
+                    }
+                } else {
+                    $bySource[$sourceLabel]['details'][] = [
+                        'sub_channel' => null,
+                        'amount'      => $d['amount'],
+                    ];
+                }
+
+                $bySource[$sourceLabel]['subtotal'] += $d['amount'];
+            }
+
+            usort($bySource, fn($a, $b) => $b['subtotal'] <=> $a['subtotal']);
+
+            $result[$channel] = [
+                'channel' => $channel,
+                'sources' => array_values($bySource),
+                'total'   => array_sum(array_column($bySource, 'subtotal')),
+            ];
+        }
+
+        return $result;
     }
 }

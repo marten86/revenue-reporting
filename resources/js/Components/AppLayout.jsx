@@ -48,9 +48,10 @@ export default function AppLayout({ title, children }) {
         {
             section: 'Konfigurasi',
             links: [
-                { href: '/targets',  label: 'Target Cabang', icon: '🎯', roles: ['super_admin', 'area_manager'] },
-                { href: '/branches', label: 'Kelola Cabang', icon: '🏛️', roles: ['super_admin', 'area_manager'] },
-                { href: '/users',    label: 'Kelola User',   icon: '👥', roles: ['super_admin', 'area_manager'] },
+                { href: '/targets',          label: 'Target Cabang',    icon: '🎯', roles: ['super_admin', 'area_manager'] },
+                { href: '/branches',         label: 'Kelola Cabang',    icon: '🏢', roles: ['super_admin', 'area_manager'] },
+                { href: '/revenue-sources',  label: 'Kelola Sumber',    icon: '👥', roles: ['super_admin', 'area_manager'] },
+                { href: '/users',            label: 'Kelola User',      icon: '👤', roles: ['super_admin', 'area_manager'] },
             ],
         },
     ]

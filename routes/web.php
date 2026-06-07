@@ -87,4 +87,9 @@ Route::middleware(['auth'])->group(function () {
     Route::patch('/users/{user}/password', [UserManagementController::class, 'resetPassword'])->name('users.password')->middleware('role:super_admin,area_manager');
     Route::delete('/users/{user}', [UserManagementController::class, 'destroy'])->name('users.destroy')->middleware('role:super_admin,area_manager');
     
+    // Manajemen Revenue Sources (Tim/Karyawan/Relawan)
+    Route::get('/revenue-sources', [RevenueSourceController::class, 'index'])
+    ->name('sources.index')
+    ->middleware('role:super_admin,area_manager');
+
 });
