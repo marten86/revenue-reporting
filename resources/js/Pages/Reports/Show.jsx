@@ -176,6 +176,316 @@ function TabRekap({ report, weeklyBreakdown, isMobile }) {
         </div>
     )
 }
+// ══════════════════════════════════════════════════════════
+// Grid View — Input revenue seperti spreadsheet
+// ══════════════════════════════════════════════════════════
+// PASTE di Reports/Show.jsx SEBELUM function TabRincian
+
+function GridView({ report, activeChannel, config, sources, isMobile }) {
+    const channelLabel = CHANNELS.find(c => c.key === activeChannel)?.label ?? ''
+    const channelSources = sources[activeChannel] ?? []
+    const allDetails = report.revenue_details ?? []
+    const channelDetails = allDetails.filter(d => d.channel === activeChannel)
+
+    // Selected source
+    const [selectedSource, setSelectedSource] = useState('')
+    const [gridData, setGridData] = useState({})
+    const [saving, setSaving] = useState(false)
+    const [savedMsg, setSavedMsg] = useState('')
+
+    // Days in current month
+    const periodMonth = report.period_month
+    const year = new Date(periodMonth).getFullYear()
+    const month = new Date(periodMonth).getMonth()
+    const daysInMonth = new Date(year, month + 1, 0).getDate()
+    const days = Array.from({ length: daysInMonth }, (_, i) => i + 1)
+
+    // Day names
+    const getDayName = (day) => {
+        const date = new Date(year, month, day)
+        return date.toLocaleDateString('id-ID', { weekday: 'short' })
+    }
+
+    // Build date string
+    const toDateStr = (day) => {
+        const m = String(month + 1).padStart(2, '0')
+        const d = String(day).padStart(2, '0')
+        return `${year}-${m}-${d}`
+    }
+
+    // Load existing data when source changes
+    useEffect(() => {
+        if (!selectedSource) {
+            setGridData({})
+            return
+        }
+
+        const sourceDetails = channelDetails.filter(d => d.source_label === selectedSource)
+        const data = {}
+
+        days.forEach(day => {
+            const dateStr = toDateStr(day)
+            if (config.hasSubChannel) {
+                data[day] = { reguler: 0, safdak: 0, df: 0 }
+                sourceDetails.filter(d => d.date === dateStr || d.date?.startsWith?.(dateStr)).forEach(d => {
+                    if (d.sub_channel && data[day][d.sub_channel] !== undefined) {
+                        data[day][d.sub_channel] = d.amount || 0
+                    }
+                })
+            } else {
+                const entry = sourceDetails.find(d => d.date === dateStr || d.date?.startsWith?.(dateStr))
+                data[day] = { amount: entry?.amount || 0 }
+            }
+        })
+
+        setGridData(data)
+        setSavedMsg('')
+    }, [selectedSource, channelDetails.length])
+
+    // Update cell
+    const updateCell = (day, field, value) => {
+        setGridData(prev => ({
+            ...prev,
+            [day]: { ...prev[day], [field]: parseInt(value) || 0 }
+        }))
+        setSavedMsg('')
+    }
+
+    // Calculate totals
+    const totals = useMemo(() => {
+        if (config.hasSubChannel) {
+            const t = { reguler: 0, safdak: 0, df: 0 }
+            Object.values(gridData).forEach(row => {
+                t.reguler += row.reguler || 0
+                t.safdak += row.safdak || 0
+                t.df += row.df || 0
+            })
+            t.total = t.reguler + t.safdak + t.df
+            return t
+        } else {
+            const total = Object.values(gridData).reduce((s, row) => s + (row.amount || 0), 0)
+            return { total }
+        }
+    }, [gridData])
+
+    // Save all
+    const handleSave = () => {
+        if (!selectedSource) return
+        setSaving(true)
+
+        const entries = []
+
+        days.forEach(day => {
+            const dateStr = toDateStr(day)
+            const row = gridData[day]
+            if (!row) return
+
+            if (config.hasSubChannel) {
+                SUB_CHANNELS.forEach(sc => {
+                    entries.push({
+                        date: dateStr,
+                        channel: activeChannel,
+                        source_label: selectedSource,
+                        sub_channel: sc.key,
+                        amount: row[sc.key] || 0,
+                    })
+                })
+            } else {
+                if (row.amount > 0) {
+                    entries.push({
+                        date: dateStr,
+                        channel: activeChannel,
+                        source_label: config.hasSource ? selectedSource : null,
+                        amount: row.amount,
+                    })
+                }
+            }
+        })
+
+        if (entries.length === 0) {
+            setSaving(false)
+            return
+        }
+
+        router.post(`/reports/${report.id}/details/bulk`, { entries }, {
+            preserveScroll: true,
+            onSuccess: () => setSavedMsg(`${entries.length} entri berhasil disimpan!`),
+            onFinish: () => setSaving(false),
+        })
+    }
+
+    // Row total for sub-channel
+    const rowTotal = (day) => {
+        const row = gridData[day]
+        if (!row) return 0
+        if (config.hasSubChannel) return (row.reguler || 0) + (row.safdak || 0) + (row.df || 0)
+        return row.amount || 0
+    }
+
+    // Check if weekend
+    const isWeekend = (day) => {
+        const d = new Date(year, month, day).getDay()
+        return d === 0 || d === 6
+    }
+
+    const inputCellStyle = {
+        width: '100%', padding: '4px 6px', border: '1px solid #d1d5db',
+        borderRadius: 4, fontSize: 12, textAlign: 'right', fontFamily: 'monospace',
+        boxSizing: 'border-box', background: '#fff',
+    }
+
+    return (
+        <div>
+            {/* Source selector */}
+            {config.hasSource && (
+                <div style={{ marginBottom: 14 }}>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 6, color: '#374151' }}>
+                        Pilih {config.sourceLabel} untuk input grid:
+                    </label>
+                    <select value={selectedSource} onChange={e => setSelectedSource(e.target.value)}
+                        style={{ padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, minWidth: 200 }}>
+                        <option value="">— Pilih {config.sourceLabel.toLowerCase()} —</option>
+                        {channelSources.map(s => (
+                            <option key={s.id} value={s.name}>{s.name}{s.personnel ? ` (${s.personnel})` : ''}</option>
+                        ))}
+                    </select>
+                </div>
+            )}
+
+            {/* Grid table */}
+            {(selectedSource || !config.hasSource) && (
+                <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, overflowX: 'auto' }}>
+                    <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                            <span style={{ fontWeight: 600, fontSize: 13 }}>
+                                Grid Input — {channelLabel}
+                                {selectedSource && <span style={{ color: '#6b7280' }}> · {selectedSource}</span>}
+                            </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            {savedMsg && (
+                                <span style={{ fontSize: 12, color: '#166534', background: '#f0fdf4', padding: '4px 10px', borderRadius: 6 }}>
+                                    ✓ {savedMsg}
+                                </span>
+                            )}
+                            <button onClick={handleSave} disabled={saving}
+                                style={{
+                                    background: '#166534', color: '#fff', padding: '6px 14px', borderRadius: 6,
+                                    fontSize: 12, fontWeight: 500, border: 'none', cursor: 'pointer',
+                                    opacity: saving ? .5 : 1,
+                                }}>
+                                {saving ? 'Menyimpan...' : 'Simpan Semua'}
+                            </button>
+                        </div>
+                    </div>
+
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                        <thead>
+                            <tr>
+                                <th style={{ ...thStyle, textAlign: 'center', width: 36 }}>Tgl</th>
+                                <th style={{ ...thStyle, textAlign: 'left', width: 50 }}>Hari</th>
+                                {config.hasSubChannel ? (
+                                    <>
+                                        <th style={{ ...thStyle, minWidth: 90 }}>Reguler</th>
+                                        <th style={{ ...thStyle, minWidth: 90 }}>Safdak</th>
+                                        <th style={{ ...thStyle, minWidth: 90 }}>DF</th>
+                                    </>
+                                ) : (
+                                    <th style={{ ...thStyle, minWidth: 120 }}>Jumlah</th>
+                                )}
+                                <th style={{ ...thStyle, minWidth: 100 }}>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {days.map(day => {
+                                const weekend = isWeekend(day)
+                                const total = rowTotal(day)
+                                const rowBg = weekend ? '#f9fafb' : undefined
+
+                                return (
+                                    <tr key={day} style={{ borderBottom: '1px solid #f3f4f6', background: rowBg }}>
+                                        <td style={{ padding: '4px 6px', textAlign: 'center', fontWeight: 600, fontSize: 12, color: weekend ? '#9ca3af' : '#374151' }}>
+                                            {day}
+                                        </td>
+                                        <td style={{ padding: '4px 6px', fontSize: 11, color: weekend ? '#9ca3af' : '#6b7280' }}>
+                                            {getDayName(day)}
+                                        </td>
+                                        {config.hasSubChannel ? (
+                                            <>
+                                                <td style={{ padding: '3px 4px' }}>
+                                                    <input type="number" min="0" step="1000"
+                                                        value={gridData[day]?.reguler || ''}
+                                                        onChange={e => updateCell(day, 'reguler', e.target.value)}
+                                                        placeholder="0" style={inputCellStyle} />
+                                                </td>
+                                                <td style={{ padding: '3px 4px' }}>
+                                                    <input type="number" min="0" step="1000"
+                                                        value={gridData[day]?.safdak || ''}
+                                                        onChange={e => updateCell(day, 'safdak', e.target.value)}
+                                                        placeholder="0" style={inputCellStyle} />
+                                                </td>
+                                                <td style={{ padding: '3px 4px' }}>
+                                                    <input type="number" min="0" step="1000"
+                                                        value={gridData[day]?.df || ''}
+                                                        onChange={e => updateCell(day, 'df', e.target.value)}
+                                                        placeholder="0" style={inputCellStyle} />
+                                                </td>
+                                            </>
+                                        ) : (
+                                            <td style={{ padding: '3px 4px' }}>
+                                                <input type="number" min="0" step="1000"
+                                                    value={gridData[day]?.amount || ''}
+                                                    onChange={e => updateCell(day, 'amount', e.target.value)}
+                                                    placeholder="0" style={inputCellStyle} />
+                                            </td>
+                                        )}
+                                        <td style={{
+                                            padding: '4px 8px', textAlign: 'right', fontFamily: 'monospace',
+                                            fontWeight: total > 0 ? 600 : 400,
+                                            color: total > 0 ? '#111827' : '#d1d5db',
+                                            fontSize: 12,
+                                        }}>
+                                            {total > 0 ? formatRpShort(total) : '—'}
+                                        </td>
+                                    </tr>
+                                )
+                            })}
+                        </tbody>
+                        <tfoot>
+                            <tr style={{ background: '#f0fdf4', borderTop: '2px solid #bbf7d0' }}>
+                                <td colSpan={2} style={{ padding: '8px 6px', fontWeight: 700, fontSize: 12, color: '#166534' }}>TOTAL</td>
+                                {config.hasSubChannel ? (
+                                    <>
+                                        <td style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, fontSize: 12, color: '#166534' }}>
+                                            {totals.reguler > 0 ? formatRpShort(totals.reguler) : '—'}
+                                        </td>
+                                        <td style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, fontSize: 12, color: '#166534' }}>
+                                            {totals.safdak > 0 ? formatRpShort(totals.safdak) : '—'}
+                                        </td>
+                                        <td style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, fontSize: 12, color: '#166534' }}>
+                                            {totals.df > 0 ? formatRpShort(totals.df) : '—'}
+                                        </td>
+                                    </>
+                                ) : (
+                                    <td style={{ padding: '8px 6px' }}></td>
+                                )}
+                                <td style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, fontSize: 13, color: '#166534' }}>
+                                    {formatRp(totals.total)}
+                                </td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            )}
+
+            {!selectedSource && config.hasSource && (
+                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
+                    Pilih {config.sourceLabel.toLowerCase()} di atas untuk mulai input grid.
+                </div>
+            )}
+        </div>
+    )
+}
 
 // ══════════════════════════════════════════════════════════
 // Tab Rincian — INPUT per kanal (sumber kebenaran)
@@ -183,6 +493,7 @@ function TabRekap({ report, weeklyBreakdown, isMobile }) {
 
 function TabRincian({ report, canEdit, sources = {}, isMobile }) {
     const [activeChannel, setActiveChannel] = useState('presentasi')
+    const [viewMode, setViewMode] = useState('list')
     const config = CHANNEL_CONFIG[activeChannel]
     const channelLabel = CHANNELS.find(c => c.key === activeChannel)?.label ?? ''
 
@@ -427,12 +738,37 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
                 })}
             </div>
 
-            {/* Summary */}
-            <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, padding: '10px 14px', marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            {/* Summary + View Toggle */}
+            <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, padding: '10px 14px', marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                 <span style={{ fontSize: 13, fontWeight: 500 }}>Total {channelLabel}</span>
-                <span style={{ fontSize: 16, fontWeight: 600, fontFamily: 'monospace' }}>{formatRp(channelTotal)}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 16, fontWeight: 600, fontFamily: 'monospace' }}>{formatRp(channelTotal)}</span>
+                    {canEdit && (
+                        <div style={{ display: 'flex', borderRadius: 6, overflow: 'hidden', border: '1px solid #d1d5db', marginLeft: 8 }}>
+                            <button onClick={() => setViewMode('list')}
+                                style={{ padding: '4px 10px', fontSize: 11, fontWeight: 500, border: 'none', cursor: 'pointer', background: viewMode === 'list' ? '#166534' : '#f9fafb', color: viewMode === 'list' ? '#fff' : '#6b7280' }}>
+                                List
+                            </button>
+                            <button onClick={() => setViewMode('grid')}
+                                style={{ padding: '4px 10px', fontSize: 11, fontWeight: 500, border: 'none', cursor: 'pointer', background: viewMode === 'grid' ? '#166534' : '#f9fafb', color: viewMode === 'grid' ? '#fff' : '#6b7280', borderLeft: '1px solid #d1d5db' }}>
+                                Grid
+                            </button>
+                        </div>
+                    )}
+                </div>
             </div>
+            {viewMode === 'grid' && canEdit && (
+                <GridView
+                    report={report}
+                    activeChannel={activeChannel}
+                    config={config}
+                    sources={sources}
+                    isMobile={isMobile}
+                />
+            )}
 
+            {viewMode === 'list' && (
+            <>
             {/* Entries table */}
             <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, overflowX: 'auto', marginBottom: 14 }}>
                 <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -709,6 +1045,8 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
                         {saving ? 'Menyimpan...' : 'Simpan'}
                     </button>
                 </div>
+            )}
+            </>
             )}
         </div>
     )
