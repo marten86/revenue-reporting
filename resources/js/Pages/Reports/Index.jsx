@@ -65,7 +65,7 @@ export default function ReportsIndex({ reports, currentMonth }) {
                             </td></tr>
                         )}
                         {reports.map(r => {
-                            const pct = r.achievement_pct ? r.achievement_pct * 100 : 0
+                            const pct = r.target_amount > 0 ? (r.total_revenue / r.target_amount * 100) : 0
                             return (
                                 <tr key={r.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
                                     <td style={{ padding: '10px 14px' }}>
@@ -78,7 +78,7 @@ export default function ReportsIndex({ reports, currentMonth }) {
                                     <td style={{ padding: '10px 14px', fontFamily: 'monospace', fontSize: 12 }}>{formatRpShort(r.target_amount)}</td>
                                     <td style={{ padding: '10px 14px', fontFamily: 'monospace', fontSize: 12, fontWeight: 500 }}>{formatRpShort(r.total_revenue)}</td>
                                     <td style={{ padding: '10px 14px', fontWeight: 600, fontSize: 12, color: pct >= 85 ? '#166534' : pct >= 60 ? '#d97706' : '#dc2626' }}>
-                                        {r.total_revenue ? `${pct.toFixed(1)}%` : '—'}
+                                        {r.target_amount > 0 ? `${pct.toFixed(1)}%` : '—'}
                                     </td>
                                     <td style={{ padding: '10px 14px' }}><StatusBadge status={r.status} /></td>
                                     <td style={{ padding: '10px 14px', fontSize: 12, color: '#9ca3af' }}>
