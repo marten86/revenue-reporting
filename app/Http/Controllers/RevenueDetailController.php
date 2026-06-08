@@ -70,6 +70,22 @@ class RevenueDetailController extends Controller
         return back()->with('success', 'Data revenue berhasil dihapus.');
     }
 
+    public function bulkDestroy(Request $request, MonthlyReport $report)
+    {
+    $validated = $request->validate([
+        'ids'   => 'required|array|min:1',
+        'ids.*' => 'integer|exists:revenue_details,id',
+    ]);
+
+    $deleted = RevenueDetail::whereIn('id', $validated['ids'])
+        ->where('monthly_report_id', $report->id)
+        ->delete();
+
+    $report->recalculate();
+
+    return back()->with('success', "{$deleted} entri berhasil dihapus.");
+    }
+    
     // ── Bulk upsert (isi sepekan sekaligus) ─────────────────
     //
     // Dipakai saat user mengisi beberapa hari sekaligus.
