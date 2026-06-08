@@ -74,7 +74,7 @@ class RevenueDetailController extends Controller
     {
     $validated = $request->validate([
         'ids'   => 'required|array|min:1',
-        'ids.*' => 'integer|exists:revenue_details,id',
+        'ids.*' => 'string|exists:revenue_details,id',  // ← string, bukan integer
     ]);
 
     $deleted = RevenueDetail::whereIn('id', $validated['ids'])

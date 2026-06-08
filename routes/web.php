@@ -48,9 +48,10 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/reports/{report}/details/bulk', [RevenueDetailController::class, 'bulkUpsert'])->name('details.bulk');
     Route::post('/reports/{report}/details', [RevenueDetailController::class, 'store'])->name('details.store');
     Route::put('/reports/{report}/details/{detail}', [RevenueDetailController::class, 'update'])->name('details.update');
-    Route::delete('/reports/{report}/details/{detail}', [RevenueDetailController::class, 'destroy'])->name('details.destroy');
     Route::delete('/reports/{report}/details/bulk', [RevenueDetailController::class, 'bulkDestroy'])
     ->name('details.bulkDestroy');
+    Route::delete('/reports/{report}/details/{detail}', [RevenueDetailController::class, 'destroy'])
+    ->name('details.destroy');
 
     // Revenue Sources (master data tim/karyawan per cabang)
     Route::post('/branches/{branch}/sources', [RevenueSourceController::class, 'store'])->name('sources.store');
