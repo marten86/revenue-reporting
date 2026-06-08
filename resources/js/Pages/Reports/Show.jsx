@@ -44,7 +44,7 @@ const CHANNELS = [
 
 const CHANNEL_CONFIG = {
     presentasi: { hasSource: true, sourceLabel: 'Nama Tim',      hasSubChannel: true  },
-    gerai:      { hasSource: true, sourceLabel: 'Petugas',        hasSubChannel: false, hasLocation: true },
+    gerai:      { hasSource: true, sourceLabel: 'Lokasi Gerai',  hasSubChannel: false, hasLocation: true },
     wgts:       { hasSource: true, sourceLabel: 'Nama Tim',      hasSubChannel: true  },
     dfi:        { hasSource: true, sourceLabel: 'Nama Karyawan', hasSubChannel: false },
     dfe:        { hasSource: true, sourceLabel: 'Nama Relawan',  hasSubChannel: false },
@@ -87,7 +87,7 @@ const btnPrimary = {
 }
 
 // ══════════════════════════════════════════════════════════
-// Tab Rekap — READ-ONLY (data dari cache daily_revenues)
+// Tab Rekap — READ-ONLY
 // ══════════════════════════════════════════════════════════
 
 function TabRekap({ report, weeklyBreakdown, isMobile }) {
@@ -184,6 +184,7 @@ function GridView({ report, activeChannel, config, sources, isMobile }) {
     const channelSources = sources[activeChannel] ?? []
     const allDetails = report.revenue_details ?? []
     const channelDetails = allDetails.filter(d => d.channel === activeChannel)
+    const isGerai = activeChannel === 'gerai'
 
     const [selectedSource, setSelectedSource] = useState('')
     const [gridData, setGridData] = useState({})
@@ -197,16 +198,17 @@ function GridView({ report, activeChannel, config, sources, isMobile }) {
     const daysInMonth = new Date(year, month + 1, 0).getDate()
     const days = Array.from({ length: daysInMonth }, (_, i) => i + 1)
 
-    const getDayName = (day) => {
-        const date = new Date(year, month, day)
-        return date.toLocaleDateString('id-ID', { weekday: 'short' })
-    }
+    const getDayName = (day) => new Date(year, month, day).toLocaleDateString('id-ID', { weekday: 'short' })
 
     const toDateStr = (day) => {
         const m = String(month + 1).padStart(2, '0')
         const d = String(day).padStart(2, '0')
         return `${year}-${m}-${d}`
     }
+
+    // Auto-fill petugas dari master data
+    const selectedSourceData = channelSources.find(s => s.name === selectedSource)
+    const petugasLabel = selectedSourceData?.personnel ?? ''
 
     useEffect(() => {
         if (!selectedSource) { setGridData({}); return }
@@ -217,9 +219,7 @@ function GridView({ report, activeChannel, config, sources, isMobile }) {
             if (config.hasSubChannel) {
                 data[day] = { reguler: 0, safdak: 0, df: 0 }
                 sourceDetails.filter(d => d.date === dateStr || d.date?.startsWith?.(dateStr)).forEach(d => {
-                    if (d.sub_channel && data[day][d.sub_channel] !== undefined) {
-                        data[day][d.sub_channel] = d.amount || 0
-                    }
+                    if (d.sub_channel && data[day][d.sub_channel] !== undefined) data[day][d.sub_channel] = d.amount || 0
                 })
             } else {
                 const entry = sourceDetails.find(d => d.date === dateStr || d.date?.startsWith?.(dateStr))
@@ -255,21 +255,15 @@ function GridView({ report, activeChannel, config, sources, isMobile }) {
     const totals = useMemo(() => {
         if (config.hasSubChannel) {
             const t = { reguler: 0, safdak: 0, df: 0 }
-            Object.values(gridData).forEach(row => {
-                t.reguler += row.reguler || 0
-                t.safdak += row.safdak || 0
-                t.df += row.df || 0
-            })
+            Object.values(gridData).forEach(row => { t.reguler += row.reguler || 0; t.safdak += row.safdak || 0; t.df += row.df || 0 })
             t.total = t.reguler + t.safdak + t.df
             return t
-        } else {
-            const total = Object.values(gridData).reduce((s, row) => s + (row.amount || 0), 0)
-            return { total }
         }
+        return { total: Object.values(gridData).reduce((s, row) => s + (row.amount || 0), 0) }
     }, [gridData])
 
     const handleSave = () => {
-        if (!selectedSource) return
+        if (!selectedSource && config.hasSource) return
         setSaving(true)
         const entries = []
         days.forEach(day => {
@@ -282,7 +276,13 @@ function GridView({ report, activeChannel, config, sources, isMobile }) {
                 })
             } else {
                 if (row.amount > 0) {
-                    entries.push({ date: dateStr, channel: activeChannel, source_label: config.hasSource ? selectedSource : null, amount: row.amount })
+                    entries.push({
+                        date: dateStr, channel: activeChannel,
+                        source_label: config.hasSource ? selectedSource : null,
+                        amount: row.amount,
+                        // Untuk gerai: simpan nama petugas di notes
+                        notes: isGerai && petugasLabel ? petugasLabel : null,
+                    })
                 }
             }
         })
@@ -294,25 +294,16 @@ function GridView({ report, activeChannel, config, sources, isMobile }) {
         })
     }
 
-    // Hapus semua entri untuk sumber yang dipilih
     const handleDeleteSource = () => {
         if (!selectedSource) return
-        const idsToDelete = channelDetails
-            .filter(d => d.source_label === selectedSource)
-            .map(d => d.id)
-        if (idsToDelete.length === 0) {
-            alert('Tidak ada data untuk dihapus.')
-            return
-        }
+        const idsToDelete = channelDetails.filter(d => d.source_label === selectedSource).map(d => d.id)
+        if (idsToDelete.length === 0) { alert('Tidak ada data untuk dihapus.'); return }
         if (!confirm(`Hapus semua ${idsToDelete.length} entri untuk "${selectedSource}" di kanal ${channelLabel}? Tindakan ini tidak bisa dibatalkan.`)) return
         setDeletingGrid(true)
         router.delete(`/reports/${report.id}/details/bulk`, {
             data: { ids: idsToDelete },
             preserveScroll: true,
-            onSuccess: () => {
-                setGridData({})
-                setSavedMsg('')
-            },
+            onSuccess: () => { setGridData({}); setSavedMsg('') },
             onFinish: () => setDeletingGrid(false),
         })
     }
@@ -324,10 +315,7 @@ function GridView({ report, activeChannel, config, sources, isMobile }) {
         return row.amount || 0
     }
 
-    const isWeekend = (day) => {
-        const d = new Date(year, month, day).getDay()
-        return d === 0 || d === 6
-    }
+    const isWeekend = (day) => { const d = new Date(year, month, day).getDay(); return d === 0 || d === 6 }
 
     const inputCellStyle = {
         width: '100%', padding: '4px 6px', border: '1px solid #d1d5db',
@@ -349,10 +337,23 @@ function GridView({ report, activeChannel, config, sources, isMobile }) {
                             style={{ padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, minWidth: 200 }}>
                             <option value="">— Pilih {config.sourceLabel.toLowerCase()} —</option>
                             {channelSources.map(s => (
-                                <option key={s.id} value={s.name}>{s.name}{s.personnel ? ` (${s.personnel})` : ''}</option>
+                                <option key={s.id} value={s.name}>
+                                    {s.name}{s.personnel ? ` · ${s.personnel}` : ''}
+                                </option>
                             ))}
                         </select>
                     </div>
+                    {/* Info petugas untuk gerai */}
+                    {isGerai && selectedSource && petugasLabel && (
+                        <div style={{ padding: '8px 12px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 12, color: '#166534' }}>
+                            Petugas: <strong>{petugasLabel}</strong>
+                        </div>
+                    )}
+                    {isGerai && selectedSource && !petugasLabel && (
+                        <div style={{ padding: '8px 12px', background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 8, fontSize: 12, color: '#92400e' }}>
+                            Petugas belum diisi — update di Kelola Sumber
+                        </div>
+                    )}
                     {sourceHasData && (
                         <button onClick={handleDeleteSource} disabled={deletingGrid}
                             style={{ padding: '8px 14px', fontSize: 12, fontWeight: 500, border: '1px solid #dc2626', borderRadius: 8, background: '#fff', color: '#dc2626', cursor: 'pointer', opacity: deletingGrid ? .5 : 1 }}>
@@ -368,12 +369,11 @@ function GridView({ report, activeChannel, config, sources, isMobile }) {
                         <span style={{ fontWeight: 600, fontSize: 13 }}>
                             Grid Input — {channelLabel}
                             {selectedSource && <span style={{ color: '#6b7280' }}> · {selectedSource}</span>}
+                            {isGerai && petugasLabel && <span style={{ color: '#9ca3af', fontSize: 12 }}> · {petugasLabel}</span>}
                         </span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             {savedMsg && (
-                                <span style={{ fontSize: 12, color: '#166534', background: '#f0fdf4', padding: '4px 10px', borderRadius: 6 }}>
-                                    ✓ {savedMsg}
-                                </span>
+                                <span style={{ fontSize: 12, color: '#166534', background: '#f0fdf4', padding: '4px 10px', borderRadius: 6 }}>✓ {savedMsg}</span>
                             )}
                             <button onClick={handleSave} disabled={saving}
                                 style={{ background: '#166534', color: '#fff', padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 500, border: 'none', cursor: 'pointer', opacity: saving ? .5 : 1 }}>
@@ -387,6 +387,9 @@ function GridView({ report, activeChannel, config, sources, isMobile }) {
                             <tr>
                                 <th style={{ ...thStyle, textAlign: 'center', width: 36 }}>Tgl</th>
                                 <th style={{ ...thStyle, textAlign: 'left', width: 50 }}>Hari</th>
+                                {isGerai && (
+                                    <th style={{ ...thStyle, textAlign: 'left', minWidth: 110 }}>Petugas</th>
+                                )}
                                 {config.hasSubChannel ? (
                                     <>
                                         <th style={{ ...thStyle, minWidth: 90 }}>Reguler</th>
@@ -407,6 +410,11 @@ function GridView({ report, activeChannel, config, sources, isMobile }) {
                                     <tr key={day} style={{ borderBottom: '1px solid #f3f4f6', background: weekend ? '#f9fafb' : undefined }}>
                                         <td style={{ padding: '4px 6px', textAlign: 'center', fontWeight: 600, fontSize: 12, color: weekend ? '#9ca3af' : '#374151' }}>{day}</td>
                                         <td style={{ padding: '4px 6px', fontSize: 11, color: weekend ? '#9ca3af' : '#6b7280' }}>{getDayName(day)}</td>
+                                        {isGerai && (
+                                            <td style={{ padding: '4px 8px', fontSize: 12, color: petugasLabel ? (weekend ? '#9ca3af' : '#374151') : '#d1d5db' }}>
+                                                {petugasLabel || '—'}
+                                            </td>
+                                        )}
                                         {config.hasSubChannel ? (
                                             <>
                                                 <td style={{ padding: '3px 4px' }}>
@@ -449,7 +457,7 @@ function GridView({ report, activeChannel, config, sources, isMobile }) {
                         </tbody>
                         <tfoot>
                             <tr style={{ background: '#f0fdf4', borderTop: '2px solid #bbf7d0' }}>
-                                <td colSpan={2} style={{ padding: '8px 6px', fontWeight: 700, fontSize: 12, color: '#166534' }}>TOTAL</td>
+                                <td colSpan={isGerai ? 3 : 2} style={{ padding: '8px 6px', fontWeight: 700, fontSize: 12, color: '#166534' }}>TOTAL</td>
                                 {config.hasSubChannel ? (
                                     <>
                                         <td style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, fontSize: 12, color: '#166534' }}>{totals.reguler > 0 ? formatRp(totals.reguler) : '—'}</td>
@@ -476,7 +484,7 @@ function GridView({ report, activeChannel, config, sources, isMobile }) {
 }
 
 // ══════════════════════════════════════════════════════════
-// Tab Rincian — INPUT per kanal (sumber kebenaran)
+// Tab Rincian — INPUT per kanal
 // ══════════════════════════════════════════════════════════
 
 function TabRincian({ report, canEdit, sources = {}, isMobile }) {
@@ -496,9 +504,7 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
 
     const channelTotals = useMemo(() => {
         const totals = {}
-        CHANNELS.forEach(c => {
-            totals[c.key] = allDetails.filter(d => d.channel === c.key).reduce((s, d) => s + (d.amount ?? 0), 0)
-        })
+        CHANNELS.forEach(c => { totals[c.key] = allDetails.filter(d => d.channel === c.key).reduce((s, d) => s + (d.amount ?? 0), 0) })
         return totals
     }, [allDetails])
 
@@ -524,7 +530,6 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
         setFormAmount(0); setFormLocation('')
     }
 
-    // Reset pilihan saat ganti kanal
     const handleChannelChange = (key) => {
         setActiveChannel(key)
         setSelectedIds(new Set())
@@ -541,10 +546,7 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
             personnel: newSourcePersonnel || null,
         }, {
             preserveScroll: true,
-            onSuccess: () => {
-                setFormSource(newSourceName.trim())
-                setNewSourceName(''); setNewSourcePersonnel(''); setShowNewSource(false)
-            },
+            onSuccess: () => { setFormSource(newSourceName.trim()); setNewSourceName(''); setNewSourcePersonnel(''); setShowNewSource(false) },
             onFinish: () => setSavingSource(false),
         })
     }
@@ -556,14 +558,17 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
                 .map(sc => ({ date: formDate, channel: activeChannel, source_label: formSource, sub_channel: sc.key, amount: formAmounts[sc.key] || 0 }))
                 .filter(e => e.amount > 0)
             if (entries.length === 0) { setSaving(false); return }
-            router.post(`/reports/${report.id}/details/bulk`, { entries }, {
-                preserveScroll: true, onSuccess: resetForm, onFinish: () => setSaving(false),
-            })
+            router.post(`/reports/${report.id}/details/bulk`, { entries }, { preserveScroll: true, onSuccess: resetForm, onFinish: () => setSaving(false) })
         } else {
+            // Untuk gerai: auto-fill notes dari personnel master data
+            const selectedSourceData = channelSources.find(s => s.name === formSource)
             router.post(`/reports/${report.id}/details`, {
                 date: formDate, channel: activeChannel,
                 source_label: config.hasSource ? formSource : null,
-                amount: formAmount, notes: config.hasLocation ? formLocation : null,
+                amount: formAmount,
+                notes: activeChannel === 'gerai' && selectedSourceData?.personnel
+                    ? selectedSourceData.personnel
+                    : (config.hasLocation ? formLocation : null),
             }, { preserveScroll: true, onSuccess: resetForm, onFinish: () => setSaving(false) })
         }
     }
@@ -573,7 +578,6 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
         router.delete(`/reports/${report.id}/details/${id}`, { preserveScroll: true })
     }
 
-    // ── Bulk delete handler ──
     const handleBulkDelete = () => {
         if (selectedIds.size === 0) return
         if (!confirm(`Hapus ${selectedIds.size} entri yang dipilih? Tindakan ini tidak bisa dibatalkan.`)) return
@@ -587,11 +591,7 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
     }
 
     const toggleId = (id) => {
-        setSelectedIds(prev => {
-            const next = new Set(prev)
-            next.has(id) ? next.delete(id) : next.add(id)
-            return next
-        })
+        setSelectedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
     }
 
     // ── Edit state ──
@@ -608,10 +608,7 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
         setSavingEdit(true)
         const origSourceLabel = editingKey.split('_').slice(1).join('_')
         const sourceChanged = editData.source_label !== origSourceLabel
-        const entries = SUB_CHANNELS.map(sc => ({
-            date: editData.date, channel: activeChannel,
-            source_label: editData.source_label, sub_channel: sc.key, amount: editData[sc.key] || 0,
-        }))
+        const entries = SUB_CHANNELS.map(sc => ({ date: editData.date, channel: activeChannel, source_label: editData.source_label, sub_channel: sc.key, amount: editData[sc.key] || 0 }))
         if (sourceChanged) {
             const group = groupedPresentasi.find(g => `${g.date}_${g.source_label}` === editingKey)
             if (group && group.ids.length > 0) {
@@ -619,25 +616,12 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
                 group.ids.forEach(id => {
                     router.delete(`/reports/${report.id}/details/${id}`, {
                         preserveScroll: true, preserveState: true,
-                        onSuccess: () => {
-                            deleted++
-                            if (deleted === group.ids.length) {
-                                router.post(`/reports/${report.id}/details/bulk`, { entries }, {
-                                    preserveScroll: true,
-                                    onSuccess: () => setEditingKey(null),
-                                    onFinish: () => setSavingEdit(false),
-                                })
-                            }
-                        },
+                        onSuccess: () => { deleted++; if (deleted === group.ids.length) { router.post(`/reports/${report.id}/details/bulk`, { entries }, { preserveScroll: true, onSuccess: () => setEditingKey(null), onFinish: () => setSavingEdit(false) }) } },
                     })
                 })
             }
         } else {
-            router.post(`/reports/${report.id}/details/bulk`, { entries }, {
-                preserveScroll: true,
-                onSuccess: () => setEditingKey(null),
-                onFinish: () => setSavingEdit(false),
-            })
+            router.post(`/reports/${report.id}/details/bulk`, { entries }, { preserveScroll: true, onSuccess: () => setEditingKey(null), onFinish: () => setSavingEdit(false) })
         }
     }
 
@@ -647,11 +631,7 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
     }
     const saveEditFlat = () => {
         setSavingEdit(true)
-        router.put(`/reports/${report.id}/details/${editingId}`, editData, {
-            preserveScroll: true,
-            onSuccess: () => setEditingId(null),
-            onFinish: () => setSavingEdit(false),
-        })
+        router.put(`/reports/${report.id}/details/${editingId}`, editData, { preserveScroll: true, onSuccess: () => setEditingId(null), onFinish: () => setSavingEdit(false) })
     }
     const cancelEdit = () => { setEditingKey(null); setEditingId(null); setEditData({}) }
 
@@ -660,9 +640,7 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
         const groups = {}
         channelDetails.forEach(d => {
             const key = `${d.date}_${d.source_label || ''}`
-            if (!groups[key]) {
-                groups[key] = { date: d.date, source_label: d.source_label, reguler: 0, safdak: 0, df: 0, ids: [] }
-            }
+            if (!groups[key]) groups[key] = { date: d.date, source_label: d.source_label, reguler: 0, safdak: 0, df: 0, ids: [] }
             if (d.sub_channel) groups[key][d.sub_channel] = d.amount
             groups[key].ids.push(d.id)
         })
@@ -676,11 +654,8 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
 
     const channelTotal = channelDetails.reduce((s, d) => s + (d.amount ?? 0), 0)
 
-    // Select all logic — untuk presentasi pakai ids dari setiap group, untuk flat pakai entry.id
     const allSelectableIds = useMemo(() => {
-        if (config.hasSubChannel) {
-            return (groupedPresentasi ?? []).flatMap(row => row.ids)
-        }
+        if (config.hasSubChannel) return (groupedPresentasi ?? []).flatMap(row => row.ids)
         return (flatEntries ?? []).map(e => e.id)
     }, [groupedPresentasi, flatEntries, config.hasSubChannel])
 
@@ -688,14 +663,10 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
     const someSelected = selectedIds.size > 0
 
     const toggleSelectAll = () => {
-        if (allSelected) {
-            setSelectedIds(new Set())
-        } else {
-            setSelectedIds(new Set(allSelectableIds))
-        }
+        if (allSelected) setSelectedIds(new Set())
+        else setSelectedIds(new Set(allSelectableIds))
     }
 
-    // Untuk presentasi: row "dipilih" jika semua ids-nya ada di selectedIds
     const isRowSelected = (ids) => ids.every(id => selectedIds.has(id))
     const toggleRowPresentasi = (ids) => {
         setSelectedIds(prev => {
@@ -712,6 +683,10 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
             : config.hasSource ? formSource && formAmount > 0 : formAmount > 0
     )
 
+    // Untuk gerai: auto-fill petugas di form list view
+    const selectedSourceDataForm = channelSources.find(s => s.name === formSource)
+    const isGerai = activeChannel === 'gerai'
+
     return (
         <div>
             {/* Channel pills */}
@@ -720,8 +695,7 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
                     const isActive = activeChannel === c.key
                     const total = channelTotals[c.key]
                     return (
-                        <button key={c.key}
-                            className={`rev-pill ${isActive ? 'rev-pill-active' : ''}`}
+                        <button key={c.key} className={`rev-pill ${isActive ? 'rev-pill-active' : ''}`}
                             onClick={() => handleChannelChange(c.key)}
                             style={{ ...pillBase, background: isActive ? '#166534' : '#f3f4f6', color: isActive ? '#fff' : '#374151' }}>
                             {c.label}
@@ -743,13 +717,9 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
                     {canEdit && (
                         <div style={{ display: 'flex', borderRadius: 6, overflow: 'hidden', border: '1px solid #d1d5db', marginLeft: 8 }}>
                             <button onClick={() => { setViewMode('list'); setSelectedIds(new Set()) }}
-                                style={{ padding: '4px 10px', fontSize: 11, fontWeight: 500, border: 'none', cursor: 'pointer', background: viewMode === 'list' ? '#166534' : '#f9fafb', color: viewMode === 'list' ? '#fff' : '#6b7280' }}>
-                                List
-                            </button>
+                                style={{ padding: '4px 10px', fontSize: 11, fontWeight: 500, border: 'none', cursor: 'pointer', background: viewMode === 'list' ? '#166534' : '#f9fafb', color: viewMode === 'list' ? '#fff' : '#6b7280' }}>List</button>
                             <button onClick={() => { setViewMode('grid'); setSelectedIds(new Set()) }}
-                                style={{ padding: '4px 10px', fontSize: 11, fontWeight: 500, border: 'none', cursor: 'pointer', background: viewMode === 'grid' ? '#166534' : '#f9fafb', color: viewMode === 'grid' ? '#fff' : '#6b7280', borderLeft: '1px solid #d1d5db' }}>
-                                Grid
-                            </button>
+                                style={{ padding: '4px 10px', fontSize: 11, fontWeight: 500, border: 'none', cursor: 'pointer', background: viewMode === 'grid' ? '#166534' : '#f9fafb', color: viewMode === 'grid' ? '#fff' : '#6b7280', borderLeft: '1px solid #d1d5db' }}>Grid</button>
                         </div>
                     )}
                 </div>
@@ -761,17 +731,13 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
 
             {viewMode === 'list' && (
             <>
-            {/* Bulk action bar — muncul saat ada yang dipilih */}
+            {/* Bulk action bar */}
             {canEdit && someSelected && (
                 <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 8, padding: '10px 14px', marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: '#92400e' }}>
-                        {selectedIds.size} entri dipilih
-                    </span>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: '#92400e' }}>{selectedIds.size} entri dipilih</span>
                     <div style={{ display: 'flex', gap: 8 }}>
                         <button onClick={() => setSelectedIds(new Set())}
-                            style={{ fontSize: 12, padding: '5px 12px', border: '1px solid #d1d5db', borderRadius: 6, background: '#fff', cursor: 'pointer', color: '#374151' }}>
-                            Batal
-                        </button>
+                            style={{ fontSize: 12, padding: '5px 12px', border: '1px solid #d1d5db', borderRadius: 6, background: '#fff', cursor: 'pointer', color: '#374151' }}>Batal</button>
                         <button onClick={handleBulkDelete} disabled={bulkDeleting}
                             style={{ fontSize: 12, padding: '5px 12px', border: 'none', borderRadius: 6, background: '#dc2626', color: '#fff', cursor: 'pointer', fontWeight: 500, opacity: bulkDeleting ? .5 : 1 }}>
                             {bulkDeleting ? 'Menghapus...' : `Hapus ${selectedIds.size} Entri`}
@@ -797,15 +763,7 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                         <thead>
                             <tr>
-                                {canEdit && (
-                                    <th style={{ ...thStyle, width: 36, textAlign: 'center' }}>
-                                        <input type="checkbox"
-                                            checked={allSelected}
-                                            onChange={toggleSelectAll}
-                                            title="Pilih semua"
-                                            style={{ cursor: 'pointer' }} />
-                                    </th>
-                                )}
+                                {canEdit && <th style={{ ...thStyle, width: 36, textAlign: 'center' }}><input type="checkbox" checked={allSelected} onChange={toggleSelectAll} style={{ cursor: 'pointer' }} /></th>}
                                 <th style={{ ...thStyle, textAlign: 'left', minWidth: 70 }}>Tanggal</th>
                                 <th style={{ ...thStyle, textAlign: 'left', minWidth: 100 }}>Tim</th>
                                 {SUB_CHANNELS.map(sc => <th key={sc.key} style={{ ...thStyle, minWidth: 110 }}>{sc.label}</th>)}
@@ -821,24 +779,17 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
                                 const rowKey = `${row.date}_${row.source_label}`
                                 const isEditing = editingKey === rowKey
                                 const rowSelected = isRowSelected(row.ids)
-                                const total = isEditing
-                                    ? (editData.reguler || 0) + (editData.safdak || 0) + (editData.df || 0)
-                                    : row.reguler + row.safdak + row.df
+                                const total = isEditing ? (editData.reguler || 0) + (editData.safdak || 0) + (editData.df || 0) : row.reguler + row.safdak + row.df
                                 return (
                                     <tr key={i} className="rev-row"
                                         style={{ borderBottom: '1px solid #f3f4f6', background: isEditing ? '#f0fdf4' : rowSelected ? '#fffbeb' : undefined, cursor: canEdit && !editingKey ? 'pointer' : undefined }}
                                         onClick={() => { if (canEdit && !editingKey && !editingId) startEditPresentasi(row) }}>
                                         {canEdit && (
                                             <td style={{ padding: '4px 8px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
-                                                <input type="checkbox"
-                                                    checked={rowSelected}
-                                                    onChange={() => toggleRowPresentasi(row.ids)}
-                                                    style={{ cursor: 'pointer' }} />
+                                                <input type="checkbox" checked={rowSelected} onChange={() => toggleRowPresentasi(row.ids)} style={{ cursor: 'pointer' }} />
                                             </td>
                                         )}
-                                        <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 500 }}>
-                                            {new Date(row.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
-                                        </td>
+                                        <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 500 }}>{new Date(row.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}</td>
                                         <td style={{ ...tdStyle, textAlign: 'left' }}>
                                             {isEditing ? (
                                                 <input value={editData.source_label || ''} onClick={e => e.stopPropagation()}
@@ -849,8 +800,7 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
                                         {isEditing ? (
                                             SUB_CHANNELS.map(sc => (
                                                 <td key={sc.key} style={{ ...tdStyle, padding: '4px 6px' }} onClick={e => e.stopPropagation()}>
-                                                    <input type="number" min="0" step="1000"
-                                                        value={editData[sc.key] || ''}
+                                                    <input type="number" min="0" step="1000" value={editData[sc.key] || ''}
                                                         onChange={e => setEditData(p => ({ ...p, [sc.key]: parseInt(e.target.value) || 0 }))}
                                                         style={{ width: '100%', padding: '4px 6px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 12, textAlign: 'right', fontFamily: 'monospace', boxSizing: 'border-box' }} />
                                                 </td>
@@ -867,16 +817,11 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
                                             <td style={{ padding: '4px 8px', whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
                                                 {isEditing ? (
                                                     <div style={{ display: 'flex', gap: 4 }}>
-                                                        <button onClick={saveEditPresentasi} disabled={savingEdit}
-                                                            style={{ background: '#166534', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 12 }}>
-                                                            {savingEdit ? '...' : '✓'}
-                                                        </button>
-                                                        <button onClick={cancelEdit}
-                                                            style={{ background: '#f3f4f6', border: 'none', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 12 }}>✕</button>
+                                                        <button onClick={saveEditPresentasi} disabled={savingEdit} style={{ background: '#166534', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 12 }}>{savingEdit ? '...' : '✓'}</button>
+                                                        <button onClick={cancelEdit} style={{ background: '#f3f4f6', border: 'none', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 12 }}>✕</button>
                                                     </div>
                                                 ) : (
-                                                    <button onClick={() => row.ids.forEach(id => handleDelete(id))}
-                                                        style={{ fontSize: 11, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer' }}>Hapus</button>
+                                                    <button onClick={() => row.ids.forEach(id => handleDelete(id))} style={{ fontSize: 11, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer' }}>Hapus</button>
                                                 )}
                                             </td>
                                         )}
@@ -887,23 +832,15 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
                     </table>
                 )}
 
-                {/* === TABEL FLAT / DFI / DFE === */}
+                {/* === TABEL FLAT / DFI / DFE / GERAI === */}
                 {!config.hasSubChannel && (
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                         <thead>
                             <tr>
-                                {canEdit && (
-                                    <th style={{ ...thStyle, width: 36, textAlign: 'center' }}>
-                                        <input type="checkbox"
-                                            checked={allSelected}
-                                            onChange={toggleSelectAll}
-                                            title="Pilih semua"
-                                            style={{ cursor: 'pointer' }} />
-                                    </th>
-                                )}
+                                {canEdit && <th style={{ ...thStyle, width: 36, textAlign: 'center' }}><input type="checkbox" checked={allSelected} onChange={toggleSelectAll} style={{ cursor: 'pointer' }} /></th>}
                                 <th style={{ ...thStyle, textAlign: 'left' }}>Tanggal</th>
                                 {config.hasSource && <th style={{ ...thStyle, textAlign: 'left' }}>{config.sourceLabel}</th>}
-                                {config.hasLocation && <th style={{ ...thStyle, textAlign: 'left' }}>Lokasi</th>}
+                                {isGerai && <th style={{ ...thStyle, textAlign: 'left' }}>Petugas</th>}
                                 <th style={thStyle}>Jumlah</th>
                                 {canEdit && <th style={{ ...thStyle, width: 50 }}></th>}
                             </tr>
@@ -921,15 +858,10 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
                                         onClick={() => { if (canEdit && !editingId && !editingKey) startEditFlat(entry) }}>
                                         {canEdit && (
                                             <td style={{ padding: '4px 8px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
-                                                <input type="checkbox"
-                                                    checked={rowSelected}
-                                                    onChange={() => toggleId(entry.id)}
-                                                    style={{ cursor: 'pointer' }} />
+                                                <input type="checkbox" checked={rowSelected} onChange={() => toggleId(entry.id)} style={{ cursor: 'pointer' }} />
                                             </td>
                                         )}
-                                        <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 500 }}>
-                                            {new Date(entry.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
-                                        </td>
+                                        <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 500 }}>{new Date(entry.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}</td>
                                         {config.hasSource && (
                                             <td style={{ ...tdStyle, textAlign: 'left' }}>
                                                 {isEditing ? (
@@ -939,19 +871,19 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
                                                 ) : (entry.source_label ?? '—')}
                                             </td>
                                         )}
-                                        {config.hasLocation && (
-                                            <td style={{ ...tdStyle, textAlign: 'left' }}>
+                                        {/* Kolom petugas khusus gerai — dari notes */}
+                                        {isGerai && (
+                                            <td style={{ ...tdStyle, textAlign: 'left', fontFamily: 'inherit' }}>
                                                 {isEditing ? (
                                                     <input value={editData.notes || ''} onClick={e => e.stopPropagation()}
                                                         onChange={e => setEditData(p => ({ ...p, notes: e.target.value }))}
-                                                        style={{ width: '100%', padding: '3px 6px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 12, boxSizing: 'border-box' }} />
+                                                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 12, boxSizing: 'border-box' }} />
                                                 ) : (entry.notes ?? '—')}
                                             </td>
                                         )}
                                         <td style={{ ...tdStyle, fontWeight: 600, padding: isEditing ? '4px 6px' : undefined }} onClick={e => e.stopPropagation()}>
                                             {isEditing ? (
-                                                <input type="number" min="0" step="1000"
-                                                    value={editData.amount || ''}
+                                                <input type="number" min="0" step="1000" value={editData.amount || ''}
                                                     onChange={e => setEditData(p => ({ ...p, amount: parseInt(e.target.value) || 0 }))}
                                                     style={{ width: '100%', padding: '4px 6px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 12, textAlign: 'right', fontFamily: 'monospace', boxSizing: 'border-box' }} />
                                             ) : formatRp(entry.amount)}
@@ -960,16 +892,11 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
                                             <td style={{ padding: '4px 8px', whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
                                                 {isEditing ? (
                                                     <div style={{ display: 'flex', gap: 4 }}>
-                                                        <button onClick={saveEditFlat} disabled={savingEdit}
-                                                            style={{ background: '#166534', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 12 }}>
-                                                            {savingEdit ? '...' : '✓'}
-                                                        </button>
-                                                        <button onClick={cancelEdit}
-                                                            style={{ background: '#f3f4f6', border: 'none', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 12 }}>✕</button>
+                                                        <button onClick={saveEditFlat} disabled={savingEdit} style={{ background: '#166534', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 12 }}>{savingEdit ? '...' : '✓'}</button>
+                                                        <button onClick={cancelEdit} style={{ background: '#f3f4f6', border: 'none', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 12 }}>✕</button>
                                                     </div>
                                                 ) : (
-                                                    <button onClick={() => handleDelete(entry.id)}
-                                                        style={{ fontSize: 11, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer' }}>Hapus</button>
+                                                    <button onClick={() => handleDelete(entry.id)} style={{ fontSize: 11, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer' }}>Hapus</button>
                                                 )}
                                             </td>
                                         )}
@@ -985,7 +912,7 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
             {canEdit && (
                 <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: 16 }}>
                     <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 14 }}>Tambah Data {channelLabel}</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : config.hasLocation ? '140px 1fr 1fr' : config.hasSource ? '140px 1fr' : '140px', gap: 10, marginBottom: 10 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : config.hasSource ? '140px 1fr' : '140px', gap: 10, marginBottom: 10 }}>
                         <div>
                             <label style={{ display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 4, color: '#374151' }}>Tanggal</label>
                             <input type="date" value={formDate} onChange={e => setFormDate(e.target.value)} style={inputStyle} />
@@ -994,16 +921,24 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
                             <div>
                                 <label style={{ display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 4, color: '#374151' }}>{config.sourceLabel}</label>
                                 {!showNewSource ? (
-                                    <div style={{ display: 'flex', gap: 6 }}>
-                                        <select value={formSource} onChange={e => setFormSource(e.target.value)} style={{ ...inputStyle, flex: 1 }}>
-                                            <option value="">Pilih {config.sourceLabel.toLowerCase()}</option>
-                                            {channelSources.map(s => (
-                                                <option key={s.id} value={s.name}>{s.name}{s.personnel ? ` (${s.personnel})` : ''}</option>
-                                            ))}
-                                            {existingLabels.filter(l => !channelSources.find(s => s.name === l)).map(l => (
-                                                <option key={`old-${l}`} value={l}>{l}</option>
-                                            ))}
-                                        </select>
+                                    <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                                        <div style={{ flex: 1 }}>
+                                            <select value={formSource} onChange={e => setFormSource(e.target.value)} style={inputStyle}>
+                                                <option value="">Pilih {config.sourceLabel.toLowerCase()}</option>
+                                                {channelSources.map(s => (
+                                                    <option key={s.id} value={s.name}>{s.name}{s.personnel ? ` · ${s.personnel}` : ''}</option>
+                                                ))}
+                                                {existingLabels.filter(l => !channelSources.find(s => s.name === l)).map(l => (
+                                                    <option key={`old-${l}`} value={l}>{l}</option>
+                                                ))}
+                                            </select>
+                                            {/* Auto-fill petugas info untuk gerai */}
+                                            {isGerai && formSource && selectedSourceDataForm?.personnel && (
+                                                <div style={{ marginTop: 6, fontSize: 12, color: '#166534', background: '#f0fdf4', padding: '4px 8px', borderRadius: 6 }}>
+                                                    Petugas: <strong>{selectedSourceDataForm.personnel}</strong> (otomatis tersimpan)
+                                                </div>
+                                            )}
+                                        </div>
                                         <button onClick={() => setShowNewSource(true)} type="button"
                                             style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 8, background: '#f9fafb', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                                             + Baru
@@ -1012,30 +947,21 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
                                 ) : (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                                         <input value={newSourceName} onChange={e => setNewSourceName(e.target.value)}
-                                            placeholder={`Nama ${config.sourceLabel.toLowerCase()} baru`} style={inputStyle} autoFocus />
-                                        {config.hasSubChannel && (
-                                            <input value={newSourcePersonnel} onChange={e => setNewSourcePersonnel(e.target.value)}
-                                                placeholder="Nama anggota (opsional)" style={inputStyle} />
-                                        )}
+                                            placeholder={isGerai ? 'Nama lokasi gerai' : `Nama ${config.sourceLabel.toLowerCase()} baru`}
+                                            style={inputStyle} autoFocus />
+                                        <input value={newSourcePersonnel} onChange={e => setNewSourcePersonnel(e.target.value)}
+                                            placeholder={isGerai ? 'Nama petugas gerai' : 'Nama anggota (opsional)'}
+                                            style={inputStyle} />
                                         <div style={{ display: 'flex', gap: 6 }}>
                                             <button onClick={handleAddSource} disabled={savingSource || !newSourceName.trim()} type="button"
                                                 style={{ ...btnPrimary, padding: '5px 12px', fontSize: 12, opacity: !newSourceName.trim() ? .5 : 1 }}>
                                                 {savingSource ? '...' : 'Simpan'}
                                             </button>
                                             <button onClick={() => { setShowNewSource(false); setNewSourceName(''); setNewSourcePersonnel('') }} type="button"
-                                                style={{ padding: '5px 12px', border: '1px solid #d1d5db', borderRadius: 8, background: '#f9fafb', fontSize: 12, cursor: 'pointer' }}>
-                                                Batal
-                                            </button>
+                                                style={{ padding: '5px 12px', border: '1px solid #d1d5db', borderRadius: 8, background: '#f9fafb', fontSize: 12, cursor: 'pointer' }}>Batal</button>
                                         </div>
                                     </div>
                                 )}
-                            </div>
-                        )}
-                        {config.hasLocation && (
-                            <div>
-                                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 4, color: '#374151' }}>Lokasi</label>
-                                <input value={formLocation} onChange={e => setFormLocation(e.target.value)}
-                                    placeholder="Nama tempat / lokasi gerai" style={inputStyle} />
                             </div>
                         )}
                     </div>
@@ -1044,8 +970,7 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
                             {SUB_CHANNELS.map(sc => (
                                 <div key={sc.key}>
                                     <label style={{ display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 4, color: '#374151' }}>{sc.label} (Rp)</label>
-                                    <input type="number" min="0" step="1000"
-                                        value={formAmounts[sc.key] || ''}
+                                    <input type="number" min="0" step="1000" value={formAmounts[sc.key] || ''}
                                         onChange={e => setFormAmounts(p => ({ ...p, [sc.key]: parseInt(e.target.value) || 0 }))}
                                         placeholder="0" style={numInputStyle} />
                                 </div>
@@ -1060,13 +985,12 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
                     ) : (
                         <div style={{ maxWidth: 200, marginBottom: 12 }}>
                             <label style={{ display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 4, color: '#374151' }}>Jumlah (Rp)</label>
-                            <input type="number" min="0" step="1000"
-                                value={formAmount || ''} onChange={e => setFormAmount(parseInt(e.target.value) || 0)}
+                            <input type="number" min="0" step="1000" value={formAmount || ''}
+                                onChange={e => setFormAmount(parseInt(e.target.value) || 0)}
                                 placeholder="0" style={numInputStyle} />
                         </div>
                     )}
-                    <button disabled={saving || !canSave} onClick={handleSave}
-                        style={{ ...btnPrimary, opacity: !canSave ? .5 : 1 }}>
+                    <button disabled={saving || !canSave} onClick={handleSave} style={{ ...btnPrimary, opacity: !canSave ? .5 : 1 }}>
                         {saving ? 'Menyimpan...' : 'Simpan'}
                     </button>
                 </div>
@@ -1115,9 +1039,7 @@ function TabSafari({ report, canEdit, isMobile }) {
                         </tr>
                     </thead>
                     <tbody>
-                        {logs.length === 0 && (
-                            <tr><td colSpan={9} style={{ padding: '24px', textAlign: 'center', color: '#9ca3af' }}>Belum ada data Safari Dakwah.</td></tr>
-                        )}
+                        {logs.length === 0 && <tr><td colSpan={9} style={{ padding: '24px', textAlign: 'center', color: '#9ca3af' }}>Belum ada data Safari Dakwah.</td></tr>}
                         {logs.map(l => {
                             const pct = l.target > 0 ? (l.realization / l.target * 100) : null
                             return (
@@ -1220,10 +1142,7 @@ function TabRekapPerTim({ report, isMobile }) {
             }
             bySource[sourceLabel].subtotal += detail.amount
         })
-        const sources = Object.values(bySource).map(s => ({
-            ...s,
-            details: Object.entries(s.details).map(([sc, amt]) => ({ sub_channel: sc, amount: amt })),
-        }))
+        const sources = Object.values(bySource).map(s => ({ ...s, details: Object.entries(s.details).map(([sc, amt]) => ({ sub_channel: sc, amount: amt })) }))
         sources.sort((a, b) => b.subtotal - a.subtotal)
         return { sources, total: sources.reduce((sum, s) => sum + s.subtotal, 0) }
     }, [allDetails, selectedChannel])
@@ -1241,11 +1160,7 @@ function TabRekapPerTim({ report, isMobile }) {
                         <button key={c.key} onClick={() => setSelectedChannel(c.key)}
                             style={{ ...pillBase, background: isActive ? '#166534' : '#f3f4f6', color: isActive ? '#fff' : '#374151' }}>
                             {c.label}
-                            {total > 0 && (
-                                <span style={{ marginLeft: 6, fontSize: 10, opacity: .8, background: isActive ? 'rgba(255,255,255,.2)' : 'rgba(0,0,0,.06)', padding: '1px 6px', borderRadius: 99 }}>
-                                    {formatRpShort(total)}
-                                </span>
-                            )}
+                            {total > 0 && <span style={{ marginLeft: 6, fontSize: 10, opacity: .8, background: isActive ? 'rgba(255,255,255,.2)' : 'rgba(0,0,0,.06)', padding: '1px 6px', borderRadius: 99 }}>{formatRpShort(total)}</span>}
                         </button>
                     )
                 })}
@@ -1266,13 +1181,7 @@ function TabRekapPerTim({ report, isMobile }) {
                         <thead>
                             <tr>
                                 <th style={{ ...thStyle, textAlign: 'left', minWidth: 150 }}>Nama</th>
-                                {config.hasSubChannel && (
-                                    <>
-                                        <th style={{ ...thStyle, minWidth: 100 }}>Reguler</th>
-                                        <th style={{ ...thStyle, minWidth: 100 }}>Safdak</th>
-                                        <th style={{ ...thStyle, minWidth: 100 }}>DF</th>
-                                    </>
-                                )}
+                                {config.hasSubChannel && (<><th style={{ ...thStyle, minWidth: 100 }}>Reguler</th><th style={{ ...thStyle, minWidth: 100 }}>Safdak</th><th style={{ ...thStyle, minWidth: 100 }}>DF</th></>)}
                                 <th style={{ ...thStyle, minWidth: 120 }}>Subtotal</th>
                                 <th style={{ ...thStyle, minWidth: 70 }}>%</th>
                             </tr>
@@ -1320,8 +1229,7 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
     const canEdit = canSubmit
     const isMobile = useIsMobile()
 
-    const periodLabel = new Date(report.period_month)
-        .toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+    const periodLabel = new Date(report.period_month).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
 
     const statusMap = {
         draft:     { label: 'Draft',     bg: '#f3f4f6', color: '#6b7280' },
@@ -1340,10 +1248,7 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
                 .rev-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.06); transform: translateY(-1px); }
                 .rev-pill { transition: all .15s !important; }
                 .rev-pill:hover:not(.rev-pill-active) { background: #e5e7eb !important; }
-                @media (max-width: 768px) {
-                    table { font-size: 11px !important; }
-                    table th, table td { padding: 6px 8px !important; }
-                }
+                @media (max-width: 768px) { table { font-size: 11px !important; } table th, table td { padding: 6px 8px !important; } }
             `}</style>
             <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'flex-start', gap: isMobile ? 12 : 0, marginBottom: 20 }}>
                 <div>
@@ -1352,19 +1257,12 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
                         <span style={{ background: st.bg, color: st.color, padding: '2px 10px', borderRadius: 99, fontSize: 12, fontWeight: 500 }}>{st.label}</span>
                     </div>
                     <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>
-                        {periodLabel}
-                        {report.submitted_by && ` · Disubmit oleh ${report.submitted_by?.name}`}
+                        {periodLabel}{report.submitted_by && ` · Disubmit oleh ${report.submitted_by?.name}`}
                     </p>
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <a href={`/reports/${report.id}/export/excel`}
-                        style={{ background: '#fff', color: '#166534', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: '1px solid #166534', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        ↓ Excel
-                    </a>
-                    <a href={`/reports/${report.id}/export/pdf`}
-                        style={{ background: '#fff', color: '#6b7280', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: '1px solid #d1d5db', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        ↓ PDF
-                    </a>
+                    <a href={`/reports/${report.id}/export/excel`} style={{ background: '#fff', color: '#166534', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: '1px solid #166534', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>↓ Excel</a>
+                    <a href={`/reports/${report.id}/export/pdf`} style={{ background: '#fff', color: '#6b7280', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: '1px solid #d1d5db', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>↓ PDF</a>
                     {canSubmit && (
                         <button onClick={() => { if (confirm('Submit laporan ini?')) router.patch(`/reports/${report.id}/submit`) }}
                             style={{ background: '#166534', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: 'none', cursor: 'pointer', flex: isMobile ? 1 : undefined }}>
@@ -1388,13 +1286,7 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
                     { key: 'safari',  label: 'Safari Dakwah' },
                 ].map(t => (
                     <button key={t.key} onClick={() => setTab(t.key)}
-                        style={{
-                            padding: isMobile ? '8px 12px' : '8px 16px', fontSize: 13, fontWeight: 500,
-                            border: 'none', background: 'none', cursor: 'pointer',
-                            borderBottom: tab === t.key ? '2px solid #166534' : '2px solid transparent',
-                            color: tab === t.key ? '#166534' : '#6b7280',
-                            marginBottom: -1, whiteSpace: 'nowrap',
-                        }}>
+                        style={{ padding: isMobile ? '8px 12px' : '8px 16px', fontSize: 13, fontWeight: 500, border: 'none', background: 'none', cursor: 'pointer', borderBottom: tab === t.key ? '2px solid #166534' : '2px solid transparent', color: tab === t.key ? '#166534' : '#6b7280', marginBottom: -1, whiteSpace: 'nowrap' }}>
                         {t.label}
                     </button>
                 ))}
