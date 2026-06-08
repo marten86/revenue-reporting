@@ -54,7 +54,7 @@ export default function Login() {
                         One BWA
                     </h1>
                     <p style={{ fontSize: 13, color: '#6b7280', margin: '6px 0 0', lineHeight: 1.5 }}>
-                        Sistem Pelaporan Revenue INDOTIM
+                        Sistem Informasi Manajemen BWA Indotim
                     </p>
                 </div>
 
