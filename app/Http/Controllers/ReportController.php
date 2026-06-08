@@ -8,6 +8,8 @@ use App\Models\RevenueSource;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use App\Models\SafariDakwahLog;
+
 
 class ReportController extends Controller
 {
@@ -106,6 +108,12 @@ class ReportController extends Controller
             ->get()
             ->groupBy('channel');
 
+        $narasumberList = SafariDakwahLog::distinct()
+            ->whereNotNull('speaker')
+            ->where('speaker', '!=', '')
+            ->orderBy('speaker')
+        ->pluck('speaker');
+        
         return Inertia::render('Reports/Show', [
             'report'          => $report,
             'weeklyBreakdown' => $weeklyBreakdown,
@@ -115,7 +123,8 @@ class ReportController extends Controller
             'rekapPerTim'     => $this->buildRekapPerTim($report),
             'canSubmit'       => ($request->user()->canSubmitReport() || $request->user()->canManageAllBranches()) && $report->isDraft(),
             'canApprove'      => $request->user()->canApproveReport() && $report->isSubmitted(),
-        ]);
+            'narasumberList' => $narasumberList,
+       ]);
     }
 
     public function submit(Request $request, MonthlyReport $report)
