@@ -243,14 +243,32 @@ function GridView({ report, activeChannel, config, sources, isMobile }) {
     }, [selectedSource, channelDetails.length])
 
     // Update cell
-    const updateCell = (day, field, value) => {
-        setGridData(prev => ({
-            ...prev,
-            [day]: { ...prev[day], [field]: parseInt(value) || 0 }
-        }))
-        setSavedMsg('')
-    }
+const updateCell = (day, field, value) => {
+    setGridData(prev => ({
+        ...prev,
+        [day]: { ...prev[day], [field]: parseInt(value) || 0 }
+    }))
+    setSavedMsg('')
+}
 
+const handlePaste = (e, startDay, field) => {
+    e.preventDefault()
+    const text = e.clipboardData.getData('text')
+    const rows = text.trim().split(/\r?\n/)
+
+    setGridData(prev => {
+        const next = { ...prev }
+        rows.forEach((row, i) => {
+            const day = startDay + i
+            if (day > daysInMonth) return
+            // Hapus semua karakter non-digit (titik, koma, spasi, Rp, dll)
+            const value = parseInt(row.trim().replace(/[^0-9]/g, '')) || 0
+            next[day] = { ...next[day], [field]: value }
+        })
+        return next
+    })
+    setSavedMsg('')
+}
     // Calculate totals
     const totals = useMemo(() => {
         if (config.hasSubChannel) {
@@ -416,18 +434,21 @@ function GridView({ report, activeChannel, config, sources, isMobile }) {
                                                     <input type="number" min="0" step="1000"
                                                         value={gridData[day]?.reguler || ''}
                                                         onChange={e => updateCell(day, 'reguler', e.target.value)}
+                                                        onPaste={e => handlePaste(e, day, 'reguler')}
                                                         placeholder="0" style={inputCellStyle} />
                                                 </td>
                                                 <td style={{ padding: '3px 4px' }}>
                                                     <input type="number" min="0" step="1000"
                                                         value={gridData[day]?.safdak || ''}
                                                         onChange={e => updateCell(day, 'safdak', e.target.value)}
+                                                        onPaste={e => handlePaste(e, day, 'safdak')}
                                                         placeholder="0" style={inputCellStyle} />
                                                 </td>
                                                 <td style={{ padding: '3px 4px' }}>
                                                     <input type="number" min="0" step="1000"
-                                                        value={gridData[day]?.df || ''}
+                                                        value={gridData[day]?.df || ''}                                                        
                                                         onChange={e => updateCell(day, 'df', e.target.value)}
+                                                        onPaste={e => handlePaste(e, day, 'df')}
                                                         placeholder="0" style={inputCellStyle} />
                                                 </td>
                                             </>
@@ -436,6 +457,7 @@ function GridView({ report, activeChannel, config, sources, isMobile }) {
                                                 <input type="number" min="0" step="1000"
                                                     value={gridData[day]?.amount || ''}
                                                     onChange={e => updateCell(day, 'amount', e.target.value)}
+                                                    onPaste={e => handlePaste(e, day, 'amount')}
                                                     placeholder="0" style={inputCellStyle} />
                                             </td>
                                         )}
@@ -445,7 +467,7 @@ function GridView({ report, activeChannel, config, sources, isMobile }) {
                                             color: total > 0 ? '#111827' : '#d1d5db',
                                             fontSize: 12,
                                         }}>
-                                            {total > 0 ? formatRpShort(total) : '—'}
+                                            {total > 0 ? formatRp(total) : '—'}
                                         </td>
                                     </tr>
                                 )
@@ -457,13 +479,13 @@ function GridView({ report, activeChannel, config, sources, isMobile }) {
                                 {config.hasSubChannel ? (
                                     <>
                                         <td style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, fontSize: 12, color: '#166534' }}>
-                                            {totals.reguler > 0 ? formatRpShort(totals.reguler) : '—'}
+                                            {totals.reguler > 0 ? formatRp(totals.reguler) : '—'}
                                         </td>
                                         <td style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, fontSize: 12, color: '#166534' }}>
-                                            {totals.safdak > 0 ? formatRpShort(totals.safdak) : '—'}
+                                            {totals.safdak > 0 ? formatRp(totals.safdak) : '—'}
                                         </td>
                                         <td style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, fontSize: 12, color: '#166534' }}>
-                                            {totals.df > 0 ? formatRpShort(totals.df) : '—'}
+                                            {totals.df > 0 ? formatRp(totals.df) : '—'}
                                         </td>
                                     </>
                                 ) : (
