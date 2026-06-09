@@ -87,10 +87,19 @@ class ReportController extends Controller
     }
 
     public function show(Request $request, MonthlyReport $report): Response
-    {
-        abort_unless($request->user()->canAccessBranch($report->branch), 403);
+{
+    abort_unless($request->user()->canAccessBranch($report->branch), 403);
 
-        $report->load([
+    // Auto-sync target_amount dari branch_targets setiap laporan dibuka
+    $latestTarget = $report->branch->targetForMonth(
+        $report->period_month->format('Y-m-d')
+    );
+    if ($latestTarget && (int) $latestTarget->target_total !== (int) $report->target_amount) {
+        $report->update(['target_amount' => $latestTarget->target_total]);
+        $report->recalculate(); // update achievement_pct & gap_amount juga
+    }
+
+    $report->load([
             'branch.area',
             'dailyRevenues',
             'revenueDetails',
