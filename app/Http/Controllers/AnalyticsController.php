@@ -242,16 +242,26 @@ class AnalyticsController extends Controller
 
     // ─── HELPERS ─────────────────────────────────────────────────────────────
     private function getTargetTotal(int $year, int $month, array $branchIds, string $channel): float
-    {
-        $query = BranchTarget::whereIn('branch_id', $branchIds)
-            ->where('year', $year)
-            ->where('month', $month);
+{
+    $periodMonth = sprintf('%04d-%02d', $year, $month);
 
-        if ($channel !== 'all') {
-            $query->where('channel', $channel);
-        }
+    $channelTargetCols = [
+        'Presentasi'   => 'target_presentasi',
+        'WGTS'         => 'target_wgts',
+        'Gerai'        => 'target_gerai',
+        'DFI (AR)'     => 'target_dfi',
+        'DFE (AE)'     => 'target_dfe',
+        'Kotak & QRIS' => 'target_kotak_qris',
+        'Kantor'       => 'target_kantor',
+    ];
 
-        return (float) $query->sum('target_amount');
+    $col = $channel === 'all'
+        ? 'target_total'
+        : ($channelTargetCols[$channel] ?? 'target_total');
+
+    return (float) BranchTarget::whereIn('branch_id', $branchIds)
+        ->where('period_month', $periodMonth)
+        ->sum($col);
     }
 
     private function buildSummary(float $actual, float $target, int $year, ?int $month, ?int $quarter, array $branchIds, string $channel): array
