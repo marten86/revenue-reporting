@@ -43,6 +43,8 @@ Route::middleware(['auth'])->group(function () {
     Route::patch('/reports/{report}/submit', [ReportController::class, 'submit'])->name('reports.submit');
     Route::patch('/reports/{report}/approve', [ReportController::class, 'approve'])->name('reports.approve');
     Route::patch('/reports/{report}/evaluation', [ReportController::class, 'updateEvaluation'])->name('reports.evaluation');
+    Route::get('/reports/{report}/export/excel', [ReportController::class, 'exportExcel'])->name('reports.export.excel');
+    Route::get('/reports/{report}/export/pdf',   [ReportController::class, 'exportPdf'])->name('reports.export.pdf');
 
     // Analytics
     Route::get('/analytics', [App\Http\Controllers\AnalyticsController::class, 'index'])->name('analytics.index');
@@ -97,5 +99,4 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/revenue-sources', [RevenueSourceController::class, 'index'])
     ->name('sources.index')
     ->middleware('role:super_admin,area_manager');
-
 });
