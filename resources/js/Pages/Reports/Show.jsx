@@ -1109,6 +1109,8 @@ function TabRekapPerTim({ report, isMobile }) {
 
 export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit, canApprove, narasumberList = [] }) {
     const [tab, setTab] = useState('rincian')
+    const [showApproveModal, setShowApproveModal] = useState(false)
+    const [approveNote, setApproveNote] = useState('')
     const canEdit = canSubmit
     const isMobile = useIsMobile()
 
@@ -1144,7 +1146,47 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
                     <a href={`/reports/${report.id}/export/excel`} style={{ background: '#fff', color: '#166534', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: '1px solid #166534', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>↓ Excel</a>
                     <a href={`/reports/${report.id}/export/pdf`} style={{ background: '#fff', color: '#6b7280', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: '1px solid #d1d5db', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>↓ PDF</a>
                     {canSubmit && <button onClick={() => { if (confirm('Submit laporan ini?')) router.patch(`/reports/${report.id}/submit`) }} style={{ background: '#166534', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: 'none', cursor: 'pointer', flex: isMobile ? 1 : undefined }}>Submit Laporan</button>}
-                    {canApprove && <button onClick={() => { if (confirm('Setujui laporan ini?')) router.patch(`/reports/${report.id}/approve`) }} style={{ background: '#1d4ed8', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: 'none', cursor: 'pointer', flex: isMobile ? 1 : undefined }}>Setujui</button>}
+                    {canApprove && (
+    <>
+        <button
+            onClick={() => setShowApproveModal(true)}
+            style={{ background: '#1d4ed8', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: 'none', cursor: 'pointer', flex: isMobile ? 1 : undefined }}
+        >Setujui</button>
+
+        {showApproveModal && (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+                onClick={() => setShowApproveModal(false)}>
+                <div style={{ background: '#fff', borderRadius: 12, padding: 24, width: '100%', maxWidth: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}
+                    onClick={e => e.stopPropagation()}>
+                    <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Setujui Laporan</div>
+                    <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 16 }}>
+                        {report.branch?.name} — {new Date(report.period_month).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}
+                    </div>
+                    <textarea
+                        placeholder="Catatan (opsional)..."
+                        value={approveNote}
+                        onChange={e => setApproveNote(e.target.value)}
+                        style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, resize: 'vertical', minHeight: 80, boxSizing: 'border-box', marginBottom: 16 }}
+                    />
+                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                        <button onClick={() => setShowApproveModal(false)}
+                            style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #d1d5db', background: '#fff', fontSize: 13, cursor: 'pointer' }}>
+                            Batal
+                        </button>
+                        <button onClick={() => {
+                            router.patch(`/reports/${report.id}/approve`, { evaluation: approveNote })
+                            setShowApproveModal(false)
+                            setApproveNote('')
+                        }}
+                            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#1d4ed8', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+                            ✓ Setujui
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+    </>
+)}
                 </div>
             </div>
 
@@ -1166,6 +1208,80 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
             {tab === 'rekap' && <TabRekap report={report} weeklyBreakdown={weeklyBreakdown} isMobile={isMobile} />}
             {tab === 'tim' && <TabRekapPerTim report={report} isMobile={isMobile} />}
             {tab === 'safari' && <TabSafari report={report} canEdit={canEdit} isMobile={isMobile} narasumberList={narasumberList} />}
+
+            {/* ── Audit Log Timeline ── */}
+            <div style={{ marginTop: 32, borderTop: '1px solid #e5e7eb', paddingTop: 20 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 14 }}>Riwayat Laporan</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+
+                    {/* Dibuat */}
+                    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 20 }}>
+                            <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#d1d5db', marginTop: 3, flexShrink: 0 }} />
+                            <div style={{ width: 2, height: 28, background: '#e5e7eb' }} />
+                        </div>
+                        <div style={{ paddingBottom: 16 }}>
+                            <div style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>Laporan dibuat</div>
+                            <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
+                                {new Date(report.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Disubmit */}
+                    {report.submitted_at ? (
+                        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 20 }}>
+                                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#3b82f6', marginTop: 3, flexShrink: 0 }} />
+                                <div style={{ width: 2, height: report.approved_at ? 28 : 0, background: '#e5e7eb' }} />
+                            </div>
+                            <div style={{ paddingBottom: report.approved_at ? 16 : 0 }}>
+                                <div style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>
+                                    Disubmit
+                                    {report.submitted_by && <span style={{ fontWeight: 400, color: '#6b7280' }}> oleh <strong>{report.submitted_by.name}</strong></span>}
+                                </div>
+                                <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
+                                    {new Date(report.submitted_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                            <div style={{ minWidth: 20, display: 'flex', justifyContent: 'center' }}>
+                                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#e5e7eb', marginTop: 3, border: '2px dashed #d1d5db' }} />
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 13, color: '#9ca3af', fontStyle: 'italic' }}>Belum disubmit</div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Disetujui */}
+                    {report.approved_at && (
+                        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginTop: 0 }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 20 }}>
+                                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#166534', marginTop: 3, flexShrink: 0 }} />
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>
+                                    Disetujui
+                                    {report.approved_by && <span style={{ fontWeight: 400, color: '#6b7280' }}> oleh <strong>{report.approved_by.name}</strong></span>}
+                                </div>
+                                <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
+                                    {new Date(report.approved_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                                {report.evaluation && (
+                                    <div style={{ marginTop: 6, padding: '8px 12px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6, fontSize: 12, color: '#166534' }}>
+                                        💬 {report.evaluation}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                </div>
+            </div>
+
         </AppLayout>
-    )
-}
+        )
+    }

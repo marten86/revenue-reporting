@@ -221,12 +221,19 @@ class ReportController extends Controller
 
     public function approve(Request $request, MonthlyReport $report)
     {
-        abort_unless($request->user()->canApproveReport(), 403);
-        abort_unless($report->isSubmitted(), 422, 'Laporan belum disubmit.');
+    abort_unless($request->user()->canApproveReport(), 403);
+    abort_unless($report->isSubmitted(), 422, 'Laporan belum disubmit.');
 
-        $report->approve($request->user());
+    $request->validate(['evaluation' => 'nullable|string|max:2000']);
 
-        return back()->with('success', 'Laporan berhasil disetujui.');
+    $report->approve($request->user());
+
+    // Simpan catatan jika ada
+    if ($request->filled('evaluation')) {
+        $report->update(['evaluation' => $request->evaluation]);
+    }
+
+    return back()->with('success', 'Laporan berhasil disetujui.');
     }
 
     public function updateEvaluation(Request $request, MonthlyReport $report)
