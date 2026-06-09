@@ -44,6 +44,9 @@ Route::middleware(['auth'])->group(function () {
     Route::patch('/reports/{report}/approve', [ReportController::class, 'approve'])->name('reports.approve');
     Route::patch('/reports/{report}/evaluation', [ReportController::class, 'updateEvaluation'])->name('reports.evaluation');
 
+    // Analytics
+    Route::get('/analytics', [App\Http\Controllers\AnalyticsController::class, 'index'])->name('analytics.index');
+    
     // Revenue Detail (menggantikan Daily Revenue & Team Revenue)
     Route::post('/reports/{report}/details/bulk', [RevenueDetailController::class, 'bulkUpsert'])->name('details.bulk');
     Route::post('/reports/{report}/details', [RevenueDetailController::class, 'store'])->name('details.store');
