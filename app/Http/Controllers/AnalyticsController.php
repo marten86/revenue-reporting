@@ -13,21 +13,28 @@ use Carbon\Carbon;
 
 class AnalyticsController extends Controller
 {
+    private array $channelColumns = [
+        'Presentasi'  => 'presentasi',
+        'WGTS'        => 'wgts',
+        'Gerai'       => 'gerai',
+        'DFI (AR)'    => 'dfi',
+        'DFE (AE)'    => 'dfe',
+        'Kotak & QRIS'=> 'kotak_qris',
+        'Kantor'      => 'kantor',
+    ];
+
     public function index(Request $request)
     {
-        $user = auth()->user();
-        $period = $request->get('period', 'monthly');
-        $year = (int) $request->get('year', now()->year);
-        $month = (int) $request->get('month', now()->month);
-        $quarter = (int) $request->get('quarter', ceil(now()->month / 3));
+        $user     = auth()->user();
+        $period   = $request->get('period', 'monthly');
+        $year     = (int) $request->get('year', now()->year);
+        $month    = (int) $request->get('month', now()->month);
+        $quarter  = (int) $request->get('quarter', (int) ceil(now()->month / 3));
         $branchId = $request->get('branch_id', 'all');
-        $channel = $request->get('channel', 'all');
+        $channel  = $request->get('channel', 'all');
 
-        // Accessible branches per role
-        $branches = $user->accessibleBranches()->where('is_active', true)->get();
-        $branchIds = $branches->pluck('id')->toArray();
-
-        // Filter branch
+        $branches       = $user->accessibleBranches()->where('is_active', true)->get();
+        $branchIds      = $branches->pluck('id')->toArray();
         $filteredBranchIds = ($branchId !== 'all' && in_array($branchId, $branchIds))
             ? [$branchId]
             : $branchIds;
@@ -40,52 +47,64 @@ class AnalyticsController extends Controller
         };
 
         return Inertia::render('Analytics/Index', [
-            'branches'   => $branches,
-            'channels'   => \App\Models\MonthlyReport::CHANNELS,
-            'period'     => $period,
-            'year'       => $year,
-            'month'      => $month,
-            'quarter'    => $quarter,
-            'branchId'   => $branchId,
-            'channel'    => $channel,
-            'summary'    => $data['summary'],
-            'chartMain'  => $data['chartMain'],
-            'byChannel'  => $data['byChannel'],
-            'byBranch'   => $data['byBranch'],
-            'tableData'  => $data['tableData'],
+            'branches'  => $branches,
+            'channels'  => MonthlyReport::CHANNELS,
+            'period'    => $period,
+            'year'      => $year,
+            'month'     => $month,
+            'quarter'   => $quarter,
+            'branchId'  => $branchId,
+            'channel'   => $channel,
+            'summary'   => $data['summary'],
+            'chartMain' => $data['chartMain'],
+            'byChannel' => $data['byChannel'],
+            'byBranch'  => $data['byBranch'],
+            'tableData' => $data['tableData'],
         ]);
     }
 
-    // ─── MONTHLY ────────────────────────────────────────────────────────────
+    // ─── SUM KOLOM SESUAI CHANNEL ────────────────────────────────────────────
+    private function sumCol(string $channel): string
+    {
+        if ($channel === 'all') {
+            return 'total_daily';
+        }
+        return $this->channelColumns[$channel] ?? 'total_daily';
+    }
+
+    private function baseQuery(array $branchIds): \Illuminate\Database\Eloquent\Builder
+    {
+        return DailyRevenue::query()
+            ->whereHas('monthlyReport', fn($q) => $q->whereIn('branch_id', $branchIds));
+    }
+
+    private function sumRevenue(Carbon $start, Carbon $end, array $branchIds, string $channel): float
+    {
+        $col = $this->sumCol($channel);
+        return (float) $this->baseQuery($branchIds)
+            ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
+            ->sum($col);
+    }
+
+    // ─── MONTHLY ─────────────────────────────────────────────────────────────
     private function getMonthlyData(int $year, int $month, array $branchIds, string $channel): array
     {
-        $startDate = Carbon::create($year, $month, 1)->startOfMonth();
-        $endDate   = Carbon::create($year, $month, 1)->endOfMonth();
+        $start = Carbon::create($year, $month, 1)->startOfMonth();
+        $end   = Carbon::create($year, $month, 1)->endOfMonth();
+        $col   = $this->sumCol($channel);
 
-        $query = DailyRevenue::query()
-            ->whereHas('monthlyReport', fn($q) => $q->whereIn('branch_id', $branchIds))
-            ->whereBetween('date', [$startDate, $endDate]);
-
-        if ($channel !== 'all') {
-            $query->where('channel', $channel);
-        }
-
-        $dailyData = $query->select('date', DB::raw('SUM(total_amount) as total'))
+        $dailyData = $this->baseQuery($branchIds)
+            ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
+            ->select('date', DB::raw("SUM($col) as total"))
             ->groupBy('date')
             ->orderBy('date')
             ->get();
 
-        // Weekly grouping
-        $weeklyData = $dailyData->groupBy(fn($d) => Carbon::parse($d->date)->weekOfMonth);
-
-        // Target per day (monthly target / days in month)
-        $targetTotal = $this->getTargetTotal($year, $month, null, $branchIds, $channel);
-        $daysInMonth = $endDate->day;
-        $dailyTarget = $daysInMonth > 0 ? $targetTotal / $daysInMonth : 0;
+        $targetTotal = $this->getTargetTotal($year, $month, $branchIds, $channel);
+        $dailyTarget = $end->day > 0 ? $targetTotal / $end->day : 0;
 
         $chartMain = $dailyData->map(fn($d) => [
-            'date'   => Carbon::parse($d->date)->format('d'),
-            'label'  => Carbon::parse($d->date)->translatedFormat('d M'),
+            'label'  => Carbon::parse($d->date)->format('d M'),
             'actual' => (int) $d->total,
             'target' => (int) $dailyTarget,
         ])->values()->toArray();
@@ -93,172 +112,136 @@ class AnalyticsController extends Controller
         return [
             'summary'   => $this->buildSummary($dailyData->sum('total'), $targetTotal, $year, $month, null, $branchIds, $channel),
             'chartMain' => $chartMain,
-            'byChannel' => $this->getByChannel($year, $month, null, $branchIds),
-            'byBranch'  => $this->getByBranch($year, $month, null, $branchIds, $channel),
-            'tableData' => $this->getMonthlyTable($year, $branchIds, $channel),
+            'byChannel' => $this->getByChannel($start, $end, $branchIds),
+            'byBranch'  => $this->getByBranch($start, $end, $branchIds, $channel),
+            'tableData' => $this->getYearlyTable($year, $branchIds, $channel),
         ];
     }
 
-    // ─── WEEKLY ─────────────────────────────────────────────────────────────
+    // ─── WEEKLY ──────────────────────────────────────────────────────────────
     private function getWeeklyData(int $year, int $month, array $branchIds, string $channel): array
     {
-        $startDate = Carbon::create($year, $month, 1)->startOfMonth();
-        $endDate   = Carbon::create($year, $month, 1)->endOfMonth();
+        $monthStart = Carbon::create($year, $month, 1)->startOfMonth();
+        $monthEnd   = Carbon::create($year, $month, 1)->endOfMonth();
+        $weekStart  = now()->startOfWeek(Carbon::MONDAY);
+        $weekEnd    = now()->endOfWeek(Carbon::SUNDAY);
+        $weekStart  = $weekStart->lt($monthStart) ? $monthStart->copy() : $weekStart;
+        $weekEnd    = $weekEnd->gt($monthEnd) ? $monthEnd->copy() : $weekEnd;
 
-        // Get current week range within the month
-        $weekStart = now()->startOfWeek(Carbon::MONDAY);
-        $weekEnd   = now()->endOfWeek(Carbon::SUNDAY);
+        $col = $this->sumCol($channel);
 
-        // Clamp to month boundaries
-        $weekStart = $weekStart->lt($startDate) ? $startDate->copy() : $weekStart;
-        $weekEnd   = $weekEnd->gt($endDate) ? $endDate->copy() : $weekEnd;
-
-        $query = DailyRevenue::query()
-            ->whereHas('monthlyReport', fn($q) => $q->whereIn('branch_id', $branchIds))
-            ->whereBetween('date', [$weekStart, $weekEnd]);
-
-        if ($channel !== 'all') {
-            $query->where('channel', $channel);
-        }
-
-        $dailyData = $query->select('date', DB::raw('SUM(total_amount) as total'))
+        $dailyData = $this->baseQuery($branchIds)
+            ->whereBetween('date', [$weekStart->toDateString(), $weekEnd->toDateString()])
+            ->select('date', DB::raw("SUM($col) as total"))
             ->groupBy('date')
             ->orderBy('date')
             ->get();
 
-        $targetTotal  = $this->getTargetTotal($year, $month, null, $branchIds, $channel);
-        $daysInMonth  = $endDate->day;
+        $targetTotal  = $this->getTargetTotal($year, $month, $branchIds, $channel);
+        $daysInMonth  = $monthEnd->day;
         $weekDays     = $weekStart->diffInDays($weekEnd) + 1;
         $weeklyTarget = $daysInMonth > 0 ? ($targetTotal / $daysInMonth) * $weekDays : 0;
+        $dailyTarget  = $weekDays > 0 ? $weeklyTarget / $weekDays : 0;
 
-        $dayNames = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
+        $dayNames  = ['Sen','Sel','Rab','Kam','Jum','Sab','Min'];
         $chartMain = [];
         for ($d = $weekStart->copy(); $d->lte($weekEnd); $d->addDay()) {
-            $found = $dailyData->firstWhere('date', $d->format('Y-m-d'));
+            $found = $dailyData->firstWhere('date', $d->toDateString());
             $chartMain[] = [
-                'label'  => $dayNames[$d->dayOfWeek === 0 ? 6 : $d->dayOfWeek - 1],
-                'date'   => $d->format('d M'),
+                'label'  => $dayNames[$d->dayOfWeek === 0 ? 6 : $d->dayOfWeek - 1] . ' ' . $d->format('d'),
                 'actual' => $found ? (int) $found->total : 0,
-                'target' => (int) ($weeklyTarget / $weekDays),
+                'target' => (int) $dailyTarget,
             ];
         }
 
-        $actualTotal = $dailyData->sum('total');
-
         return [
-            'summary'   => $this->buildSummary($actualTotal, $weeklyTarget, $year, $month, null, $branchIds, $channel),
+            'summary'   => $this->buildSummary($dailyData->sum('total'), $weeklyTarget, $year, $month, null, $branchIds, $channel),
             'chartMain' => $chartMain,
-            'byChannel' => $this->getByChannel($year, $month, null, $branchIds),
-            'byBranch'  => $this->getByBranch($year, $month, null, $branchIds, $channel),
-            'tableData' => $this->getMonthlyTable($year, $branchIds, $channel),
+            'byChannel' => $this->getByChannel($weekStart, $weekEnd, $branchIds),
+            'byBranch'  => $this->getByBranch($weekStart, $weekEnd, $branchIds, $channel),
+            'tableData' => $this->getYearlyTable($year, $branchIds, $channel),
         ];
     }
 
-    // ─── QUARTERLY ──────────────────────────────────────────────────────────
+    // ─── QUARTERLY ───────────────────────────────────────────────────────────
     private function getQuarterlyData(int $year, int $quarter, array $branchIds, string $channel): array
     {
-        $months     = [($quarter - 1) * 3 + 1, ($quarter - 1) * 3 + 2, ($quarter - 1) * 3 + 3];
-        $startDate  = Carbon::create($year, $months[0], 1)->startOfMonth();
-        $endDate    = Carbon::create($year, $months[2], 1)->endOfMonth();
+        $months = [($quarter - 1) * 3 + 1, ($quarter - 1) * 3 + 2, ($quarter - 1) * 3 + 3];
+        $start  = Carbon::create($year, $months[0], 1)->startOfMonth();
+        $end    = Carbon::create($year, $months[2], 1)->endOfMonth();
+        $col    = $this->sumCol($channel);
 
-        $query = DailyRevenue::query()
-            ->whereHas('monthlyReport', fn($q) => $q->whereIn('branch_id', $branchIds))
-            ->whereBetween('date', [$startDate, $endDate]);
-
-        if ($channel !== 'all') {
-            $query->where('channel', $channel);
-        }
-
-        $monthlyData = $query->select(
-                DB::raw("TO_CHAR(date, 'YYYY-MM') as month"),
-                DB::raw('SUM(total_amount) as total')
-            )
-            ->groupBy('month')
-            ->orderBy('month')
-            ->get();
-
-        $monthNames = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
-        $chartMain  = [];
+        $monthNames  = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+        $chartMain   = [];
+        $actualTotal = 0;
+        $targetTotal = 0;
 
         foreach ($months as $m) {
-            $key   = Carbon::create($year, $m, 1)->format('Y-m');
-            $found = $monthlyData->firstWhere('month', $key);
-            $target = $this->getTargetTotal($year, $m, null, $branchIds, $channel);
+            $mStart  = Carbon::create($year, $m, 1)->startOfMonth();
+            $mEnd    = Carbon::create($year, $m, 1)->endOfMonth();
+            $actual  = $this->sumRevenue($mStart, $mEnd, $branchIds, $channel);
+            $target  = $this->getTargetTotal($year, $m, $branchIds, $channel);
             $chartMain[] = [
                 'label'  => $monthNames[$m - 1],
-                'actual' => $found ? (int) $found->total : 0,
+                'actual' => (int) $actual,
                 'target' => (int) $target,
             ];
+            $actualTotal += $actual;
+            $targetTotal += $target;
         }
 
-        $actualTotal = $monthlyData->sum('total');
-        $targetTotal = array_sum(array_map(fn($m) => $this->getTargetTotal($year, $m, null, $branchIds, $channel), $months));
-
         return [
-            'summary'   => $this->buildSummary($actualTotal, $targetTotal, $year, null, $quarter, $branchIds, $channel),
+            'summary'   => $this->buildSummary($actualTotal, $targetTotal, $year, $months[0], null, $branchIds, $channel),
             'chartMain' => $chartMain,
-            'byChannel' => $this->getByChannelRange($startDate, $endDate, $branchIds),
-            'byBranch'  => $this->getByBranchRange($startDate, $endDate, $branchIds, $channel),
-            'tableData' => $this->getMonthlyTable($year, $branchIds, $channel),
+            'byChannel' => $this->getByChannel($start, $end, $branchIds),
+            'byBranch'  => $this->getByBranch($start, $end, $branchIds, $channel),
+            'tableData' => $this->getYearlyTable($year, $branchIds, $channel),
         ];
     }
 
-    // ─── YEARLY ─────────────────────────────────────────────────────────────
+    // ─── YEARLY ──────────────────────────────────────────────────────────────
     private function getYearlyData(int $year, array $branchIds, string $channel): array
     {
-        $startDate = Carbon::create($year, 1, 1)->startOfYear();
-        $endDate   = Carbon::create($year, 12, 31)->endOfYear();
-
-        $query = DailyRevenue::query()
-            ->whereHas('monthlyReport', fn($q) => $q->whereIn('branch_id', $branchIds))
-            ->whereBetween('date', [$startDate, $endDate]);
-
-        if ($channel !== 'all') {
-            $query->where('channel', $channel);
-        }
-
-        $monthlyData = $query->select(
-                DB::raw("TO_CHAR(date, 'YYYY-MM') as month"),
-                DB::raw('SUM(total_amount) as total')
-            )
-            ->groupBy('month')
-            ->orderBy('month')
-            ->get();
-
-        $monthNames = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
-        $chartMain  = [];
-        $prevTotal  = null;
+        $monthNames  = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+        $chartMain   = [];
+        $actualTotal = 0;
+        $targetTotal = 0;
+        $prevActual  = null;
 
         for ($m = 1; $m <= 12; $m++) {
-            $key    = Carbon::create($year, $m, 1)->format('Y-m');
-            $found  = $monthlyData->firstWhere('month', $key);
-            $actual = $found ? (int) $found->total : 0;
-            $target = $this->getTargetTotal($year, $m, null, $branchIds, $channel);
-            $growth = ($prevTotal && $prevTotal > 0) ? round(($actual - $prevTotal) / $prevTotal * 100, 1) : null;
+            $mStart = Carbon::create($year, $m, 1)->startOfMonth();
+            $mEnd   = Carbon::create($year, $m, 1)->endOfMonth();
+            $actual = $this->sumRevenue($mStart, $mEnd, $branchIds, $channel);
+            $target = $this->getTargetTotal($year, $m, $branchIds, $channel);
+            $growth = ($prevActual !== null && $prevActual > 0)
+                ? round(($actual - $prevActual) / $prevActual * 100, 1)
+                : null;
 
             $chartMain[] = [
                 'label'  => $monthNames[$m - 1],
-                'actual' => $actual,
+                'actual' => (int) $actual,
                 'target' => (int) $target,
                 'growth' => $growth,
             ];
-            $prevTotal = $actual ?: $prevTotal;
+            $actualTotal += $actual;
+            $targetTotal += $target;
+            if ($actual > 0) $prevActual = $actual;
         }
 
-        $actualTotal = $monthlyData->sum('total');
-        $targetTotal = array_sum(array_map(fn($m) => $this->getTargetTotal($year, $m, null, $branchIds, $channel), range(1, 12)));
+        $start = Carbon::create($year, 1, 1);
+        $end   = Carbon::create($year, 12, 31);
 
         return [
             'summary'   => $this->buildSummary($actualTotal, $targetTotal, $year, null, null, $branchIds, $channel),
             'chartMain' => $chartMain,
-            'byChannel' => $this->getByChannelRange($startDate, $endDate, $branchIds),
-            'byBranch'  => $this->getByBranchRange($startDate, $endDate, $branchIds, $channel),
-            'tableData' => $this->getMonthlyTable($year, $branchIds, $channel),
+            'byChannel' => $this->getByChannel($start, $end, $branchIds),
+            'byBranch'  => $this->getByBranch($start, $end, $branchIds, $channel),
+            'tableData' => $this->getYearlyTable($year, $branchIds, $channel),
         ];
     }
 
-    // ─── HELPERS ────────────────────────────────────────────────────────────
-    private function getTargetTotal(int $year, int $month, ?int $quarter, array $branchIds, string $channel): float
+    // ─── HELPERS ─────────────────────────────────────────────────────────────
+    private function getTargetTotal(int $year, int $month, array $branchIds, string $channel): float
     {
         $query = BranchTarget::whereIn('branch_id', $branchIds)
             ->where('year', $year)
@@ -273,10 +256,9 @@ class AnalyticsController extends Controller
 
     private function buildSummary(float $actual, float $target, int $year, ?int $month, ?int $quarter, array $branchIds, string $channel): array
     {
-        $pct = $target > 0 ? round($actual / $target * 100, 1) : 0;
-
-        // Growth: compare with previous period
+        $pct        = $target > 0 ? round($actual / $target * 100, 1) : 0;
         $prevActual = 0;
+
         if ($month) {
             $prevMonth  = $month === 1 ? 12 : $month - 1;
             $prevYear   = $month === 1 ? $year - 1 : $year;
@@ -295,72 +277,41 @@ class AnalyticsController extends Controller
         ];
     }
 
-    private function sumRevenue(Carbon $start, Carbon $end, array $branchIds, string $channel): float
+    private function getByChannel(Carbon $start, Carbon $end, array $branchIds): array
     {
-        $query = DailyRevenue::query()
-            ->whereHas('monthlyReport', fn($q) => $q->whereIn('branch_id', $branchIds))
-            ->whereBetween('date', [$start, $end]);
+        $results = [];
+        foreach ($this->channelColumns as $label => $col) {
+            $total = $this->baseQuery($branchIds)
+                ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
+                ->sum($col);
+            if ($total > 0) {
+                $results[] = ['channel' => $label, 'total' => (int) $total];
+            }
+        }
+        return $results;
+    }
 
-        if ($channel !== 'all') {
-            $query->where('channel', $channel);
+    private function getByBranch(Carbon $start, Carbon $end, array $branchIds, string $channel): array
+    {
+        $col      = $this->sumCol($channel);
+        $branches = Branch::whereIn('id', $branchIds)->get();
+        $results  = [];
+
+        foreach ($branches as $branch) {
+            $total = $this->baseQuery([$branch->id])
+                ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
+                ->sum($col);
+            $results[] = [
+                'branch_id'   => $branch->id,
+                'branch_name' => $branch->name,
+                'total'       => (int) $total,
+            ];
         }
 
-        return (float) $query->sum('total_amount');
+        return $results;
     }
 
-    private function getByChannel(int $year, int $month, ?int $quarter, array $branchIds): array
-    {
-        $startDate = Carbon::create($year, $month, 1)->startOfMonth();
-        $endDate   = Carbon::create($year, $month, 1)->endOfMonth();
-        return $this->getByChannelRange($startDate, $endDate, $branchIds);
-    }
-
-    private function getByChannelRange(Carbon $start, Carbon $end, array $branchIds): array
-    {
-        return DailyRevenue::query()
-            ->whereHas('monthlyReport', fn($q) => $q->whereIn('branch_id', $branchIds))
-            ->whereBetween('date', [$start, $end])
-            ->select('channel', DB::raw('SUM(total_amount) as total'))
-            ->groupBy('channel')
-            ->get()
-            ->map(fn($r) => ['channel' => $r->channel, 'total' => (int) $r->total])
-            ->toArray();
-    }
-
-    private function getByBranch(int $year, int $month, ?int $quarter, array $branchIds, string $channel): array
-    {
-        $startDate = Carbon::create($year, $month, 1)->startOfMonth();
-        $endDate   = Carbon::create($year, $month, 1)->endOfMonth();
-        return $this->getByBranchRange($startDate, $endDate, $branchIds, $channel);
-    }
-
-    private function getByBranchRange(Carbon $start, Carbon $end, array $branchIds, string $channel): array
-    {
-        $query = DailyRevenue::query()
-            ->whereHas('monthlyReport', fn($q) => $q->whereIn('branch_id', $branchIds))
-            ->whereBetween('date', [$start, $end])
-            ->select(
-                'monthly_reports.branch_id',
-                DB::raw('SUM(daily_revenues.total_amount) as total')
-            )
-            ->join('monthly_reports', 'daily_revenues.monthly_report_id', '=', 'monthly_reports.id')
-            ->groupBy('monthly_reports.branch_id');
-
-        if ($channel !== 'all') {
-            $query->where('daily_revenues.channel', $channel);
-        }
-
-        $results  = $query->get();
-        $branches = Branch::whereIn('id', $branchIds)->get()->keyBy('id');
-
-        return $results->map(fn($r) => [
-            'branch_id'   => $r->branch_id,
-            'branch_name' => $branches[$r->branch_id]->name ?? '?',
-            'total'       => (int) $r->total,
-        ])->toArray();
-    }
-
-    private function getMonthlyTable(int $year, array $branchIds, string $channel): array
+    private function getYearlyTable(int $year, array $branchIds, string $channel): array
     {
         $monthNames = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
         $branches   = Branch::whereIn('id', $branchIds)->get();
@@ -370,10 +321,10 @@ class AnalyticsController extends Controller
             $row = ['branch' => $branch->name, 'months' => [], 'total' => 0];
 
             for ($m = 1; $m <= 12; $m++) {
-                $start  = Carbon::create($year, $m, 1)->startOfMonth();
-                $end    = Carbon::create($year, $m, 1)->endOfMonth();
-                $actual = $this->sumRevenue($start, $end, [$branch->id], $channel);
-                $target = $this->getTargetTotal($year, $m, null, [$branch->id], $channel);
+                $mStart = Carbon::create($year, $m, 1)->startOfMonth();
+                $mEnd   = Carbon::create($year, $m, 1)->endOfMonth();
+                $actual = $this->sumRevenue($mStart, $mEnd, [$branch->id], $channel);
+                $target = $this->getTargetTotal($year, $m, [$branch->id], $channel);
 
                 $row['months'][] = [
                     'label'  => $monthNames[$m - 1],
