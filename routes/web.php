@@ -69,10 +69,6 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/reports/{report}/safari/{log}', [SafariDakwahController::class, 'update'])->name('safari.update');
     Route::delete('/reports/{report}/safari/{log}', [SafariDakwahController::class, 'destroy'])->name('safari.destroy');
 
-    // Export
-    Route::get('/reports/{report}/export/excel', [ExportController::class, 'excel'])->name('export.excel');
-    Route::get('/reports/{report}/export/pdf', [ExportController::class, 'pdf'])->name('export.pdf');
-
     // Target Cabang
     Route::get('/targets', [BranchTargetController::class, 'index'])
         ->name('targets.index')
