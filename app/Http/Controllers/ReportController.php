@@ -1,228 +1,337 @@
-<!DOCTYPE html>
-<html lang="id">
-<head>
-<meta charset="UTF-8">
-<style>
-  * { font-family: Arial, sans-serif; font-size: 10px; margin: 0; padding: 0; box-sizing: border-box; }
-  body { margin: 15px; color: #1f2937; }
+<?php
 
-  /* ── Header ── */
-  .header { text-align: center; margin-bottom: 14px; border-bottom: 2px solid #166534; padding-bottom: 10px; }
-  .header h1 { font-size: 15px; color: #166534; margin-bottom: 2px; }
-  .header h2 { font-size: 12px; margin-bottom: 3px; }
-  .header p  { color: #6b7280; font-size: 9px; }
+namespace App\Http\Controllers;
 
-  /* ── Summary cards ── */
-  .cards { width: 100%; margin-bottom: 14px; border-collapse: collapse; }
-  .cards td { width: 25%; border: 1px solid #d1d5db; border-radius: 4px; padding: 7px 10px; }
-  .card-label { color: #6b7280; font-size: 9px; margin-bottom: 3px; }
-  .card-value { font-size: 13px; font-weight: bold; color: #166534; }
-  .card-value.warn { color: #d97706; }
-  .card-value.danger { color: #dc2626; }
+use App\Models\Branch;
+use App\Models\MonthlyReport;
+use App\Models\RevenueSource;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
+use App\Models\SafariDakwahLog;
 
-  /* ── Section ── */
-  .section { margin-bottom: 18px; }
-  .section-title { font-size: 11px; font-weight: bold; color: #166534; border-bottom: 1px solid #bbf7d0; padding-bottom: 3px; margin-bottom: 8px; }
 
-  /* ── Tables ── */
-  table.data { width: 100%; border-collapse: collapse; font-size: 9px; }
-  table.data th { background: #166534; color: #fff; padding: 4px 6px; text-align: left; white-space: nowrap; }
-  table.data td { padding: 3px 6px; border-bottom: 1px solid #f3f4f6; }
-  table.data tr:nth-child(even) td { background: #f9fafb; }
-  table.data tr.subtotal td { font-weight: bold; font-style: italic; background: #f3f4f6; }
-  table.data tr.grand-total td { font-weight: bold; background: #dcfce7; }
-  .text-right { text-align: right; }
-  .text-center { text-align: center; }
+class ReportController extends Controller
+{
+    public function index(Request $request): Response
+    {
+        $user  = $request->user();
+        $month = $request->get('month', now()->format('Y-m-01'));
 
-  /* ── Footer ── */
-  .footer { margin-top: 20px; text-align: right; color: #9ca3af; font-size: 8px; border-top: 1px solid #e5e7eb; padding-top: 6px; }
-</style>
-</head>
-<body>
+        $reports = MonthlyReport::with(['branch.area'])
+            ->whereHas('branch', function ($q) use ($user) {
+                if (!$user->canManageAllBranches()) {
+                    $q->where('id', $user->branch_id);
+                }
+            })
+            ->where('period_month', $month)
+            ->orderByRaw("CASE status
+                WHEN 'submitted' THEN 1
+                WHEN 'approved'  THEN 2
+                WHEN 'draft'     THEN 3
+                ELSE 4 END")
+            ->get();
 
-{{-- ── Header ── --}}
-<div class="header">
-  <h1>SIM BWA Indotim</h1>
-  <h2>Laporan Revenue Bulanan &mdash; {{ $report->branch->name }}</h2>
-  <p>
-    Periode: {{ \Carbon\Carbon::parse($report->period_month)->translatedFormat('F Y') }}
-    &nbsp;|&nbsp;
-    Status: {{ ucfirst($report->status) }}
-    &nbsp;|&nbsp;
-    Dicetak: {{ now()->translatedFormat('d F Y, H:i') }}
-  </p>
-</div>
+        return Inertia::render('Reports/Index', [
+            'reports'      => $reports,
+            'currentMonth' => $month,
+        ]);
+    }
 
-{{-- ── Summary Cards ── --}}
-@php
-  $pct = $report->target_amount > 0
-    ? $report->total_revenue / $report->target_amount * 100
-    : 0;
-  $pctClass = $pct >= 100 ? '' : ($pct >= 75 ? 'warn' : 'danger');
-@endphp
-<table class="cards">
-  <tr>
-    <td>
-      <div class="card-label">Total Revenue</div>
-      <div class="card-value">Rp {{ number_format($report->total_revenue, 0, ',', '.') }}</div>
-    </td>
-    <td>
-      <div class="card-label">Target</div>
-      <div class="card-value">Rp {{ number_format($report->target_amount, 0, ',', '.') }}</div>
-    </td>
-    <td>
-      <div class="card-label">Capaian</div>
-      <div class="card-value {{ $pctClass }}">{{ number_format($pct, 1) }}%</div>
-    </td>
-    <td>
-      <div class="card-label">Gap</div>
-      <div class="card-value {{ $report->total_revenue >= $report->target_amount ? '' : 'danger' }}">
-        Rp {{ number_format($report->target_amount - $report->total_revenue, 0, ',', '.') }}
-      </div>
-    </td>
-  </tr>
-</table>
+    public function create(Request $request): Response
+    {
+        $user     = $request->user();
+        $branches = $user->accessibleBranches()->get(['id', 'name', 'code']);
 
-{{-- ── Rekap Per Kanal ── --}}
-<div class="section">
-  <div class="section-title">Rekap Per Kanal (Harian)</div>
-  <table class="data">
-    <thead>
-      <tr>
-        <th>Tgl</th>
-        <th>Hari</th>
-        <th class="text-right">Presentasi</th>
-        <th class="text-right">WGTS</th>
-        <th class="text-right">Gerai</th>
-        <th class="text-right">DFI</th>
-        <th class="text-right">DFE</th>
-        <th class="text-right">Kotak & QRIS</th>
-        <th class="text-right">Kantor</th>
-        <th class="text-right">Total</th>
-      </tr>
-    </thead>
-    <tbody>
-      @php
-        $t = array_fill(0, 7, 0);
-      @endphp
-      @foreach($dailies as $d)
-        @php
-          $vals = [
-            (int)($d->presentasi ?? 0),
-            (int)($d->wgts       ?? 0),
-            (int)($d->gerai      ?? 0),
-            (int)($d->dfi        ?? 0),
-            (int)($d->dfe        ?? 0),
-            (int)($d->kotak_qris ?? 0),
-            (int)($d->kantor     ?? 0),
-          ];
-          foreach ($vals as $i => $v) $t[$i] += $v;
-        @endphp
-        <tr>
-          <td class="text-center">{{ \Carbon\Carbon::parse($d->date)->format('d') }}</td>
-          <td>{{ $d->day_name ?? \Carbon\Carbon::parse($d->date)->translatedFormat('D') }}</td>
-          @foreach($vals as $v)
-            <td class="text-right">{{ $v > 0 ? number_format($v, 0, ',', '.') : '—' }}</td>
-          @endforeach
-          <td class="text-right"><strong>{{ number_format((int)($d->total_daily ?? 0), 0, ',', '.') }}</strong></td>
-        </tr>
-      @endforeach
-      <tr class="grand-total">
-        <td colspan="2"><strong>GRAND TOTAL</strong></td>
-        @foreach($t as $v)
-          <td class="text-right">{{ number_format($v, 0, ',', '.') }}</td>
-        @endforeach
-        <td class="text-right">{{ number_format((int)$report->total_revenue, 0, ',', '.') }}</td>
-      </tr>
-    </tbody>
-  </table>
-</div>
+        return Inertia::render('Reports/Create', [
+            'branches' => $branches,
+        ]);
+    }
 
-{{-- ── Rekap Per Tim ── --}}
-<div class="section">
-  <div class="section-title">Rekap Per Tim / Sumber</div>
-  <table class="data">
-    <thead>
-      <tr>
-        <th style="width:22%">Kanal</th>
-        <th>Sumber / Tim</th>
-        <th class="text-right" style="width:18%">Total</th>
-      </tr>
-    </thead>
-    <tbody>
-      @foreach($byTeam as $row)
-        <tr class="{{ ($row['is_subtotal'] ?? false) ? 'subtotal' : '' }}">
-          <td>{{ $row['channel'] }}</td>
-          <td>{{ $row['source'] }}</td>
-          <td class="text-right">
-            @if(($row['total'] ?? 0) > 0)
-              {{ number_format($row['total'], 0, ',', '.') }}
-            @else
-              —
-            @endif
-          </td>
-        </tr>
-      @endforeach
-      <tr class="grand-total">
-        <td colspan="2"><strong>GRAND TOTAL</strong></td>
-        <td class="text-right"><strong>{{ number_format((int)$report->total_revenue, 0, ',', '.') }}</strong></td>
-      </tr>
-    </tbody>
-  </table>
-</div>
+    public function store(Request $request)
+    {
+        $data = $request->validate([
+            'branch_id'    => 'required|uuid|exists:branches,id',
+            'period_month' => 'required|date_format:Y-m-d',
+        ]);
 
-{{-- ── Safari Dakwah ── --}}
-@if($safaris->count() > 0)
-<div class="section">
-  <div class="section-title">Rev Safari Dakwah</div>
-  <table class="data">
-    <thead>
-      <tr>
-        <th>Tanggal</th>
-        <th>Lokasi</th>
-        <th>Narasumber</th>
-        <th class="text-right">Target</th>
-        <th class="text-right">Komitmen</th>
-        <th class="text-right">Realisasi</th>
-        <th class="text-right">Capaian %</th>
-      </tr>
-    </thead>
-    <tbody>
-      @php $st = $sc = $sr = 0; @endphp
-      @foreach($safaris as $s)
-        @php
-          $target = (int)($s->target ?? 0);
-          $real   = (int)($s->realization ?? 0);
-          $pctS   = $target > 0 ? round($real / $target * 100, 1) : 0;
-          $st += $target;
-          $sc += (int)($s->commitment ?? 0);
-          $sr += $real;
-        @endphp
-        <tr>
-          <td>{{ \Carbon\Carbon::parse($s->date)->format('d/m/Y') }}</td>
-          <td>{{ $s->location ?? '—' }}</td>
-          <td>{{ $s->speaker ?? '—' }}</td>
-          <td class="text-right">{{ number_format($target, 0, ',', '.') }}</td>
-          <td class="text-right">{{ number_format((int)($s->commitment ?? 0), 0, ',', '.') }}</td>
-          <td class="text-right">{{ number_format($real, 0, ',', '.') }}</td>
-          <td class="text-right">{{ $pctS }}%</td>
-        </tr>
-      @endforeach
-      <tr class="grand-total">
-        <td colspan="3"><strong>TOTAL</strong></td>
-        <td class="text-right">{{ number_format($st, 0, ',', '.') }}</td>
-        <td class="text-right">{{ number_format($sc, 0, ',', '.') }}</td>
-        <td class="text-right">{{ number_format($sr, 0, ',', '.') }}</td>
-        <td class="text-right">{{ $st > 0 ? number_format($sr / $st * 100, 1) : '0' }}%</td>
-      </tr>
-    </tbody>
-  </table>
-</div>
-@endif
+        $branch = Branch::findOrFail($data['branch_id']);
+        abort_unless($request->user()->canAccessBranch($branch), 403);
 
-<div class="footer">
-  Digenerate oleh SIM BWA Indotim &mdash; onebwa.my.id &nbsp;|&nbsp; {{ now()->format('d/m/Y H:i') }}
-</div>
+        $existing = MonthlyReport::where('branch_id', $data['branch_id'])
+            ->where('period_month', $data['period_month'])
+            ->first();
 
-</body>
-</html>
+        if ($existing) {
+            return redirect()->route('reports.show', $existing)
+                ->with('warning', 'Laporan periode ini sudah ada.');
+        }
+
+        $target = $branch->targetForMonth($data['period_month']);
+
+        $report = MonthlyReport::create([
+            'branch_id'     => $data['branch_id'],
+            'period_month'  => $data['period_month'],
+            'status'        => MonthlyReport::STATUS_DRAFT,
+            'target_amount' => $target?->target_total ?? 0,
+        ]);
+
+        // Inisialisasi cache harian (30/31 baris kosong) agar
+        // tab Rekap langsung menampilkan grid tanggal lengkap.
+        $report->recalculate();
+
+        $jumlahHari = $report->dailyRevenues()->count();
+
+        return redirect()->route('reports.show', $report)
+            ->with('success', "Laporan berhasil dibuat. {$jumlahHari} baris harian telah disiapkan.");
+    }
+
+    public function show(Request $request, MonthlyReport $report): Response
+    {
+        abort_unless($request->user()->canAccessBranch($report->branch), 403);
+
+        // Auto-sync target_amount dari branch_targets setiap laporan dibuka
+        $latestTarget = $report->branch->targetForMonth(
+            $report->period_month->format('Y-m-d')
+        );
+        if ($latestTarget && (int) $latestTarget->target_total !== (int) $report->target_amount) {
+            $report->update(['target_amount' => $latestTarget->target_total]);
+            $report->recalculate(); // update achievement_pct & gap_amount juga
+        }
+
+        $report->load([
+            'branch.area',
+            'dailyRevenues',
+            'revenueDetails',
+            'safariDakwahLogs',
+            'submittedBy',
+            'approvedBy',
+        ]);
+
+        $weeklyBreakdown = $this->buildWeeklyBreakdown($report->dailyRevenues);
+
+        $sources = RevenueSource::where('branch_id', $report->branch_id)
+            ->active()
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get()
+            ->groupBy('channel');
+
+        $narasumberList = SafariDakwahLog::distinct()
+            ->whereNotNull('speaker')
+            ->where('speaker', '!=', '')
+            ->orderBy('speaker')
+            ->pluck('speaker');
+
+        return Inertia::render('Reports/Show', [
+            'report'          => $report,
+            'weeklyBreakdown' => $weeklyBreakdown,
+            'channels'        => MonthlyReport::CHANNELS,
+            'subChannels'     => MonthlyReport::SUB_CHANNELS,
+            'sources'         => $sources,
+            'rekapPerTim'     => $this->buildRekapPerTim($report),
+            'canSubmit'       => ($request->user()->canSubmitReport() || $request->user()->canManageAllBranches()) && $report->isDraft(),
+            'canApprove'      => $request->user()->canApproveReport() && $report->isSubmitted(),
+            'narasumberList'  => $narasumberList,
+        ]);
+    }
+
+    public function exportExcel(Request $request, MonthlyReport $report)
+    {
+        abort_unless($request->user()->canAccessBranch($report->branch), 403);
+
+        $filename = 'Laporan_' . $report->branch->code . '_'
+            . \Carbon\Carbon::parse($report->period_month)->format('Y-m') . '.xlsx';
+
+        return \Maatwebsite\Excel\Facades\Excel::download(
+            new \App\Exports\MonthlyReportExport($report),
+            $filename
+        );
+    }
+
+    public function exportPdf(Request $request, MonthlyReport $report)
+    {
+        abort_unless($request->user()->canAccessBranch($report->branch), 403);
+
+        $dailies = $report->dailyRevenues()->orderBy('date')->get();
+        $safaris = $report->safariDakwahLogs()->orderBy('date')->get();
+
+        // Build byTeam dari revenue_details
+        $details = \Illuminate\Support\Facades\DB::table('revenue_details')
+            ->where('monthly_report_id', $report->id)
+            ->selectRaw('channel, source_label, SUM(amount) as total')
+            ->groupBy('channel', 'source_label')
+            ->orderBy('channel')
+            ->orderByRaw('SUM(amount) DESC')
+            ->get();
+
+        $byTeam         = [];
+        $currentChannel = null;
+        $channelTotal   = 0;
+
+        foreach ($details as $d) {
+            if ($currentChannel !== null && $currentChannel !== $d->channel) {
+                $byTeam[] = [
+                    'channel'     => '',
+                    'source'      => 'Subtotal ' . $currentChannel,
+                    'total'       => $channelTotal,
+                    'is_subtotal' => true,
+                ];
+                $channelTotal = 0;
+            }
+            $currentChannel  = $d->channel;
+            $channelTotal   += (int) $d->total;
+            $byTeam[]        = [
+                'channel'     => $d->channel,
+                'source'      => $d->source_label ?? '—',
+                'total'       => (int) $d->total,
+                'is_subtotal' => false,
+            ];
+        }
+
+        if ($currentChannel !== null) {
+            $byTeam[] = [
+                'channel'     => '',
+                'source'      => 'Subtotal ' . $currentChannel,
+                'total'       => $channelTotal,
+                'is_subtotal' => true,
+            ];
+        }
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView(
+            'exports.laporan-bulanan',
+            compact('report', 'dailies', 'safaris', 'byTeam')
+        )->setPaper('a4', 'landscape');
+
+        $filename = 'Laporan_' . $report->branch->code . '_'
+            . \Carbon\Carbon::parse($report->period_month)->format('Y-m') . '.pdf';
+
+        return $pdf->download($filename);
+    }
+
+    public function submit(Request $request, MonthlyReport $report)
+    {
+        abort_unless($request->user()->canAccessBranch($report->branch), 403);
+        abort_unless($report->isDraft(), 422, 'Laporan sudah disubmit.');
+
+        $report->submit($request->user());
+
+        return back()->with('success', 'Laporan berhasil disubmit.');
+    }
+
+    public function approve(Request $request, MonthlyReport $report)
+    {
+        abort_unless($request->user()->canApproveReport(), 403);
+        abort_unless($report->isSubmitted(), 422, 'Laporan belum disubmit.');
+
+        $report->approve($request->user());
+
+        return back()->with('success', 'Laporan berhasil disetujui.');
+    }
+
+    public function updateEvaluation(Request $request, MonthlyReport $report)
+    {
+        abort_unless($request->user()->canAccessBranch($report->branch), 403);
+        $request->validate(['evaluation' => 'nullable|string|max:2000']);
+        $report->update(['evaluation' => $request->evaluation]);
+        return back()->with('success', 'Evaluasi disimpan.');
+    }
+
+    private function buildWeeklyBreakdown($dailyRevenues): array
+    {
+        $weeks       = [];
+        $currentWeek = [];
+        $days        = ['ahad', 'minggu'];
+
+        foreach ($dailyRevenues as $day) {
+            $currentWeek[] = $day;
+            if (in_array(strtolower($day->day_name), $days) || $day === $dailyRevenues->last()) {
+                $weeks[] = [
+                    'days'             => $currentWeek,
+                    'total_presentasi' => collect($currentWeek)->sum('presentasi'),
+                    'total_gerai'      => collect($currentWeek)->sum('gerai'),
+                    'total_wgts'       => collect($currentWeek)->sum('wgts'),
+                    'total_dfi'        => collect($currentWeek)->sum('dfi'),
+                    'total_dfe'        => collect($currentWeek)->sum('dfe'),
+                    'total_kotak_qris' => collect($currentWeek)->sum('kotak_qris'),
+                    'total_kantor'     => collect($currentWeek)->sum('kantor'),
+                    'total'            => collect($currentWeek)->sum('total_daily'),
+                ];
+                $currentWeek = [];
+            }
+        }
+
+        return $weeks;
+    }
+
+    private function buildRekapPerTim($report, string $selectedChannel = null): array
+    {
+        $allDetails = $report->revenueDetails ?? [];
+
+        if ($selectedChannel) {
+            $allDetails = array_filter($allDetails, fn($d) => $d['channel'] === $selectedChannel);
+        }
+
+        $byChannel = [];
+        foreach ($allDetails as $detail) {
+            $channel = $detail['channel'];
+            if (!isset($byChannel[$channel])) {
+                $byChannel[$channel] = [];
+            }
+            $byChannel[$channel][] = $detail;
+        }
+
+        $result = [];
+        foreach ($byChannel as $channel => $details) {
+            $bySource = [];
+
+            foreach ($details as $d) {
+                $sourceLabel = $d['source_label'] ?? 'Tanpa Sumber';
+
+                if (!isset($bySource[$sourceLabel])) {
+                    $bySource[$sourceLabel] = [
+                        'source_label' => $sourceLabel,
+                        'subtotal'     => 0,
+                        'details'      => [],
+                    ];
+                }
+
+                if ($d['sub_channel']) {
+                    $existing = false;
+                    foreach ($bySource[$sourceLabel]['details'] as &$detail) {
+                        if ($detail['sub_channel'] === $d['sub_channel']) {
+                            $detail['amount'] += $d['amount'];
+                            $existing = true;
+                            break;
+                        }
+                    }
+                    unset($detail);
+
+                    if (!$existing) {
+                        $bySource[$sourceLabel]['details'][] = [
+                            'sub_channel' => $d['sub_channel'],
+                            'amount'      => $d['amount'],
+                        ];
+                    }
+                } else {
+                    $bySource[$sourceLabel]['details'][] = [
+                        'sub_channel' => null,
+                        'amount'      => $d['amount'],
+                    ];
+                }
+
+                $bySource[$sourceLabel]['subtotal'] += $d['amount'];
+            }
+
+            usort($bySource, fn($a, $b) => $b['subtotal'] <=> $a['subtotal']);
+
+            $result[$channel] = [
+                'channel' => $channel,
+                'sources' => array_values($bySource),
+                'total'   => array_sum(array_column($bySource, 'subtotal')),
+            ];
+        }
+
+        return $result;
+    }
+}
