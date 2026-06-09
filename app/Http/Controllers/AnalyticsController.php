@@ -140,77 +140,65 @@ class AnalyticsController extends Controller
 
     // ─── WEEKLY ──────────────────────────────────────────────────────────────
     // FIX: Minggu aktif sesuai bulan dipilih, growth vs minggu lalu
+    // ─── WEEKLY (Agregasi per minggu dalam satu bulan) ──────────────────────
     private function getWeeklyData(int $year, int $month, array $branchIds, string $channel): array
     {
-        $monthStart = Carbon::create($year, $month, 1)->startOfMonth();
-        $monthEnd   = Carbon::create($year, $month, 1)->endOfMonth();
-        $today      = now();
+        $monthStart  = Carbon::create($year, $month, 1)->startOfMonth();
+        $monthEnd    = Carbon::create($year, $month, 1)->endOfMonth();
+        $col         = $this->revenueCol($channel);
+        $targetTotal = $this->getTargetTotal($year, $month, $branchIds, $channel);
+        $daysInMonth = $monthEnd->daysInMonth;
 
-        // Jika bulan dipilih = bulan sekarang → pakai minggu berjalan
-        // Jika bulan lain → pakai minggu terakhir di bulan itu
-        if ($year == $today->year && $month == $today->month) {
-            $weekStart = $today->copy()->startOfWeek(Carbon::MONDAY);
-            $weekEnd   = $today->copy()->endOfWeek(Carbon::SUNDAY);
-        } else {
-            $weekEnd   = $monthEnd->copy()->endOfWeek(Carbon::SUNDAY);
-            $weekStart = $weekEnd->copy()->startOfWeek(Carbon::MONDAY);
-        }
-
-        // Clamp ke batas bulan
-        if ($weekStart->lt($monthStart)) $weekStart = $monthStart->copy();
-        if ($weekEnd->gt($monthEnd))     $weekEnd   = $monthEnd->copy();
-
-        $col      = $this->revenueCol($channel);
-        $weekDays = $weekStart->diffInDays($weekEnd) + 1;
-
-        // Target proporsional (target_bulan / hari_bulan * hari_minggu)
-        $targetTotal  = $this->getTargetTotal($year, $month, $branchIds, $channel);
-        $daysInMonth  = $monthEnd->daysInMonth;
-        $weeklyTarget = $daysInMonth > 0 ? round(($targetTotal / $daysInMonth) * $weekDays) : 0;
-        $dailyTarget  = $weekDays > 0 ? round($weeklyTarget / $weekDays) : 0;
-
-        $rows = $this->queryDaily($weekStart->toDateString(), $weekEnd->toDateString(), $branchIds, $col)
+        // Ambil semua data harian dalam bulan (1 query)
+        $dailyRows = $this->queryDaily($monthStart->toDateString(), $monthEnd->toDateString(), $branchIds, $col)
             ->keyBy('date');
 
-        // Loop semua hari dalam minggu
-        $dayNames    = ['Sen','Sel','Rab','Kam','Jum','Sab','Min'];
-        $chartMain   = [];
-        $actualTotal = 0;
-        for ($d = $weekStart->copy(); $d->lte($weekEnd); $d->addDay()) {
-            $key    = $d->toDateString();
-            $found  = $rows->get($key);
-            $actual = $found ? (int) $found->total : 0;
-            $dow    = $d->dayOfWeek === 0 ? 6 : $d->dayOfWeek - 1;
-            $chartMain[] = [
-                'label'  => $dayNames[$dow] . ' ' . $d->format('d'),
-                'actual' => $actual,
-                'target' => (int) $dailyTarget,
+        // Pecah bulan menjadi minggu-minggu (Sen-Min, clamp ke batas bulan)
+        $weeks       = [];
+        $d           = $monthStart->copy()->startOfWeek(Carbon::MONDAY);
+        if ($d->lt($monthStart)) $d = $monthStart->copy();
+
+        while ($d->lte($monthEnd)) {
+            $wStart = $d->copy();
+            $wEnd   = $d->copy()->endOfWeek(Carbon::SUNDAY);
+            if ($wEnd->gt($monthEnd)) $wEnd = $monthEnd->copy();
+
+            $weekDays     = $wStart->diffInDays($wEnd) + 1;
+            $weekTarget   = $daysInMonth > 0 ? round(($targetTotal / $daysInMonth) * $weekDays) : 0;
+            $weekActual   = 0;
+
+            for ($day = $wStart->copy(); $day->lte($wEnd); $day->addDay()) {
+                $found       = $dailyRows->get($day->toDateString());
+                $weekActual += $found ? (int) $found->total : 0;
+            }
+
+            $weeks[] = [
+                'label'  => 'W' . (count($weeks) + 1) . ' (' . $wStart->format('d') . '–' . $wEnd->format('d M') . ')',
+                'actual' => $weekActual,
+                'target' => (int) $weekTarget,
             ];
-            $actualTotal += $actual;
+
+            $d = $wEnd->copy()->addDay();
         }
 
-        // FIX: Growth vs minggu sebelumnya (bukan bulan lalu)
-        $prevWeekStart = $weekStart->copy()->subWeek();
-        $prevWeekEnd   = $weekEnd->copy()->subWeek();
-        $prevActual    = (float) $this->queryDaily(
-            $prevWeekStart->toDateString(),
-            $prevWeekEnd->toDateString(),
-            $branchIds,
-            $col
-        )->sum('total');
+        $actualTotal = array_sum(array_column($weeks, 'actual'));
+        $targetSum   = array_sum(array_column($weeks, 'target'));
 
-        $growth = $prevActual > 0 ? round(($actualTotal - $prevActual) / $prevActual * 100, 1) : null;
+        // Growth vs bulan lalu
+        $summary = $this->buildSummaryMonthly(
+            (float) $actualTotal,
+            (float) $targetTotal,
+            $year,
+            $month,
+            $branchIds,
+            $channel
+        );
 
         return [
-            'summary' => [
-                'total_revenue' => (int) $actualTotal,
-                'target'        => (int) $weeklyTarget,
-                'achievement'   => $weeklyTarget > 0 ? round($actualTotal / $weeklyTarget * 100, 1) : 0,
-                'growth'        => $growth,
-            ],
-            'chartMain' => $chartMain,
-            'byChannel' => $this->getByChannel($weekStart->toDateString(), $weekEnd->toDateString(), $branchIds),
-            'byBranch'  => $this->getByBranch($weekStart->toDateString(), $weekEnd->toDateString(), $branchIds, $channel),
+            'summary'   => $summary,
+            'chartMain' => $weeks,
+            'byChannel' => $this->getByChannel($monthStart->toDateString(), $monthEnd->toDateString(), $branchIds),
+            'byBranch'  => $this->getByBranch($monthStart->toDateString(), $monthEnd->toDateString(), $branchIds, $channel),
             'tableData' => $this->getYearlyTable($year, $branchIds, $channel),
         ];
     }
