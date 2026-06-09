@@ -243,8 +243,7 @@ class AnalyticsController extends Controller
     // ─── HELPERS ─────────────────────────────────────────────────────────────
     private function getTargetTotal(int $year, int $month, array $branchIds, string $channel): float
 {
-    $periodMonth = sprintf('%04d-%02d', $year, $month);
-
+    $periodMonth = sprintf('%04d-%02d-01', $year, $month);
     $channelTargetCols = [
         'Presentasi'   => 'target_presentasi',
         'WGTS'         => 'target_wgts',
