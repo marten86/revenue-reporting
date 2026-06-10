@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\RevenueSourceController;
 use App\Http\Controllers\BranchManagementController;
 use App\Http\Controllers\UserManagementController;
+use App\Http\Controllers\AreaManagementController;
 
 // Auth
 Route::get('/login', [AuthController::class, 'showLogin'])->name('login')->middleware('guest');
@@ -95,4 +96,15 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/revenue-sources', [RevenueSourceController::class, 'index'])
     ->name('sources.index')
     ->middleware('role:super_admin,area_manager');
+
+    Route::prefix('areas')->name('areas.')->group(function () {
+    Route::get('/',                            [AreaManagementController::class, 'index'])->name('index');
+    Route::post('/',                           [AreaManagementController::class, 'store'])->name('store');
+    Route::put('/{area}',                      [AreaManagementController::class, 'update'])->name('update');
+    Route::patch('/{area}/toggle',             [AreaManagementController::class, 'toggle'])->name('toggle');
+    Route::delete('/{area}',                   [AreaManagementController::class, 'destroy'])->name('destroy');
+    Route::post('/{area}/branches',            [AreaManagementController::class, 'assignBranches'])->name('assignBranches');
+    Route::delete('/{area}/branches/{branch}', [AreaManagementController::class, 'unassignBranch'])->name('unassignBranch');
+    });
+
 });

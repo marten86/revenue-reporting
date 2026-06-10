@@ -11,7 +11,9 @@ class Area extends Model
 {
     use HasUuids, SoftDeletes;
 
-    protected $fillable = ['name', 'code', 'region'];
+    protected $fillable = ['name', 'code', 'region', 'is_active'];
+
+    protected $casts = ['is_active' => 'boolean'];
 
     public function branches(): HasMany
     {
@@ -21,5 +23,10 @@ class Area extends Model
     public function users(): HasMany
     {
         return $this->hasMany(User::class);
+    }
+
+    public function scopeActive($query)
+    {
+        return $query->where('is_active', true);
     }
 }
