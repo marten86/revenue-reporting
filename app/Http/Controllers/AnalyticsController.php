@@ -38,66 +38,90 @@ class AnalyticsController extends Controller
 
     // ─── ENTRY POINT ─────────────────────────────────────────────────────────
     public function index(Request $request)
-    {
-        $user     = auth()->user();
-        $period   = $request->get('period', 'monthly');
-        $year     = (int) $request->get('year', now()->year);
-        $month    = (int) $request->get('month', now()->month);
-        $quarter  = (int) $request->get('quarter', (int) ceil(now()->month / 3));
-        $branchId = $request->get('branch_id', 'all');
-        $channel  = $request->get('channel', 'all');
+{
+    $user     = auth()->user();
+    $period   = $request->get('period', 'monthly');
+    $year     = (int) $request->get('year', now()->year);
+    $month    = (int) $request->get('month', now()->month);
+    $quarter  = (int) $request->get('quarter', (int) ceil(now()->month / 3));
+    $branchId = $request->get('branch_id', 'all');
+    $areaId   = $request->get('area_id', 'all');   // ← BARU
+    $channel  = $request->get('channel', 'all');
 
-        $branches  = $user->accessibleBranches()->where('is_active', true)->get();
-        $allIds    = $branches->pluck('id')->toArray();
+    $branches = $user->accessibleBranches()->where('is_active', true)->get();
+    $allIds   = $branches->pluck('id')->toArray();
 
+    // ── Filter: area dulu, baru cabang ──
+    // Kalau pilih area → scope ke cabang dalam area itu
+    if ($areaId !== 'all' && $user->isSuperAdmin()) {
+        $areaFilteredIds = $branches->where('area_id', $areaId)->pluck('id')->toArray();
+        $branchIds = ($branchId !== 'all' && in_array($branchId, $areaFilteredIds))
+            ? [$branchId]
+            : $areaFilteredIds;
+    } else {
         $branchIds = ($branchId !== 'all' && in_array($branchId, $allIds))
             ? [$branchId]
             : $allIds;
-
-        $empty = [
-            'summary'   => ['total_revenue' => 0, 'target' => 0, 'achievement' => 0, 'growth' => null],
-            'chartMain' => [],
-            'byChannel' => [],
-            'byBranch'  => [],
-            'tableData' => [],
-        ];
-
-        if (empty($branchIds)) {
-            return Inertia::render('Analytics/Index', array_merge([
-                'branches' => $branches,
-                'channels' => MonthlyReport::CHANNELS,
-                'period'   => $period,
-                'year'     => $year,
-                'month'    => $month,
-                'quarter'  => $quarter,
-                'branchId' => $branchId,
-                'channel'  => $channel,
-            ], $empty));
-        }
-
-        $data = match($period) {
-            'weekly'    => $this->getWeeklyData($year, $month, $branchIds, $channel),
-            'quarterly' => $this->getQuarterlyData($year, $quarter, $branchIds, $channel),
-            'yearly'    => $this->getYearlyData($year, $branchIds, $channel),
-            default     => $this->getMonthlyData($year, $month, $branchIds, $channel),
-        };
-
-        return Inertia::render('Analytics/Index', [
-            'branches'  => $branches,
-            'channels'  => MonthlyReport::CHANNELS,
-            'period'    => $period,
-            'year'      => $year,
-            'month'     => $month,
-            'quarter'   => $quarter,
-            'branchId'  => $branchId,
-            'channel'   => $channel,
-            'summary'   => $data['summary'],
-            'chartMain' => $data['chartMain'],
-            'byChannel' => $data['byChannel'],
-            'byBranch'  => $data['byBranch'],
-            'tableData' => $data['tableData'],
-        ]);
     }
+
+    // ── Areas (hanya untuk Super Admin) ──
+    $areas = [];
+    if ($user->isSuperAdmin()) {
+        $areas = \App\Models\Area::orderBy('name')
+            ->get(['id', 'name', 'code'])
+            ->toArray();
+    }
+
+    $empty = [
+        'summary'   => ['total_revenue' => 0, 'target' => 0, 'achievement' => 0, 'growth' => null],
+        'chartMain' => [],
+        'byChannel' => [],
+        'byBranch'  => [],
+        'tableData' => [],
+    ];
+
+    if (empty($branchIds)) {
+        return Inertia::render('Analytics/Index', array_merge([
+            'branches'    => $branches,
+            'areas'       => $areas,       // ← BARU
+            'channels'    => \App\Models\MonthlyReport::CHANNELS,
+            'period'      => $period,
+            'year'        => $year,
+            'month'       => $month,
+            'quarter'     => $quarter,
+            'branchId'    => $branchId,
+            'areaId'      => $areaId,      // ← BARU
+            'channel'     => $channel,
+            'isSuperAdmin' => $user->isSuperAdmin(), // ← BARU
+        ], $empty));
+    }
+
+    $data = match($period) {
+        'weekly'    => $this->getWeeklyData($year, $month, $branchIds, $channel),
+        'quarterly' => $this->getQuarterlyData($year, $quarter, $branchIds, $channel),
+        'yearly'    => $this->getYearlyData($year, $branchIds, $channel),
+        default     => $this->getMonthlyData($year, $month, $branchIds, $channel),
+    };
+
+    return Inertia::render('Analytics/Index', [
+        'branches'     => $branches,
+        'areas'        => $areas,          // ← BARU
+        'channels'     => \App\Models\MonthlyReport::CHANNELS,
+        'period'       => $period,
+        'year'         => $year,
+        'month'        => $month,
+        'quarter'      => $quarter,
+        'branchId'     => $branchId,
+        'areaId'       => $areaId,         // ← BARU
+        'channel'      => $channel,
+        'isSuperAdmin' => $user->isSuperAdmin(), // ← BARU
+        'summary'      => $data['summary'],
+        'chartMain'    => $data['chartMain'],
+        'byChannel'    => $data['byChannel'],
+        'byBranch'     => $data['byBranch'],
+        'tableData'    => $data['tableData'],
+    ]);
+}
 
     // ─── MONTHLY ─────────────────────────────────────────────────────────────
     // FIX: Semua hari dalam bulan tampil, hari tanpa data = 0
@@ -513,7 +537,7 @@ class AnalyticsController extends Controller
             $targetMap[$t->branch_id][(int) $t->m] = (float) $t->target;
         }
 
-        $branches = Branch::whereIn('id', $branchIds)->orderBy('name')->get();
+        $branches = $user->accessibleBranches()->where('is_active', true)->get(['id','name','code','area_id','city']);
         $result   = [];
 
         foreach ($branches as $branch) {
