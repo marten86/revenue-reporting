@@ -12,17 +12,17 @@ class BranchTargetController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()->canManageAllBranches(), 403);
+    abort_unless($request->user()->canManageAllBranches(), 403);
 
-        $month   = $request->get('month', now()->format('Y-m-01'));
-        $branches = Branch::with([
-            'targets' => fn($q) => $q->where('period_month', $month),
-        ])->get();
+    $month    = $request->get('month', now()->format('Y-m-01'));
+    $branches = $request->user()->accessibleBranches()->with([
+        'targets' => fn($q) => $q->where('period_month', $month),
+    ])->get();
 
-        return Inertia::render('Targets/Index', [
-            'branches'     => $branches,
-            'currentMonth' => $month,
-        ]);
+    return Inertia::render('Targets/Index', [
+        'branches'     => $branches,
+        'currentMonth' => $month,
+    ]);
     }
 
     public function store(Request $request)

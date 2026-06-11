@@ -11,19 +11,22 @@ class BranchManagementController extends Controller
 {
     public function index(Request $request)
     {
-        abort_unless($request->user()->canManageAllBranches(), 403);
+    abort_unless($request->user()->canManageAllBranches(), 403);
 
-        $branches = Branch::with('area')
-            ->withCount('users')
-            ->orderBy('name')
-            ->get();
+    $branches = $request->user()->accessibleBranches()
+        ->with('area')
+        ->withCount('users')
+        ->orderBy('name')
+        ->get();
 
-        $areas = Area::orderBy('name')->get(['id', 'name']);
+    $areas = $request->user()->isSuperAdmin()
+        ? Area::orderBy('name')->get(['id', 'name'])
+        : Area::where('id', $request->user()->area_id)->get(['id', 'name']);
 
-        return Inertia::render('Branches/Index', [
-            'branches' => $branches,
-            'areas'    => $areas,
-        ]);
+    return Inertia::render('Branches/Index', [
+        'branches' => $branches,
+        'areas'    => $areas,
+    ]);
     }
 
     public function store(Request $request)
