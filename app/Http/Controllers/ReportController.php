@@ -15,26 +15,24 @@ class ReportController extends Controller
 {
     public function index(Request $request): Response
     {
-        $user  = $request->user();
-        $month = $request->get('month', now()->format('Y-m-01'));
+    $user  = $request->user();
+    $month = $request->get('month', now()->format('Y-m-01'));
 
-        $reports = MonthlyReport::with(['branch.area'])
-            ->whereHas('branch', function ($q) use ($user) {
-                if (!$user->canManageAllBranches()) {
-                    $q->where('id', $user->branch_id);
-                }
-            })
-            ->where('period_month', $month)
-            ->orderByRaw("CASE status
-                WHEN 'submitted' THEN 1
-                WHEN 'approved'  THEN 2
-                WHEN 'draft'     THEN 3
-                ELSE 4 END")
-            ->get();
+    $branchIds = $user->accessibleBranches()->pluck('id');
 
-        return Inertia::render('Reports/Index', [
-            'reports'      => $reports,
-            'currentMonth' => $month,
+    $reports = MonthlyReport::with(['branch.area'])
+        ->whereIn('branch_id', $branchIds)
+        ->where('period_month', $month)
+        ->orderByRaw("CASE status
+            WHEN 'submitted' THEN 1
+            WHEN 'approved'  THEN 2
+            WHEN 'draft'     THEN 3
+            ELSE 4 END")
+        ->get();
+
+    return Inertia::render('Reports/Index', [
+        'reports'      => $reports,
+        'currentMonth' => $month,
         ]);
     }
 
