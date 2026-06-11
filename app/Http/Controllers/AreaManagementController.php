@@ -25,9 +25,7 @@ class AreaManagementController extends Controller
             ->orderBy('name')
             ->get();
 
-        $unassignedBranches = Branch::whereNull('area_id')
-            ->orderBy('name')
-            ->get(['id', 'name', 'code']);
+        'unassignedBranches' => $unassignedBranches,
 
         return Inertia::render('Areas/Index', [
             'areas'              => $areas,
