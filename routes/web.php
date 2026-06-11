@@ -43,6 +43,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/reports/{report}', [ReportController::class, 'show'])->name('reports.show');
     Route::patch('/reports/{report}/submit', [ReportController::class, 'submit'])->name('reports.submit');
     Route::patch('/reports/{report}/approve', [ReportController::class, 'approve'])->name('reports.approve');
+    Route::patch('/reports/{report}/revise', [ReportController::class, 'revise'])->name('reports.revise');
     Route::patch('/reports/{report}/evaluation', [ReportController::class, 'updateEvaluation'])->name('reports.evaluation');
     Route::get('/reports/{report}/export/excel', [ReportController::class, 'exportExcel'])->name('reports.export.excel');
     Route::get('/reports/{report}/export/pdf',   [ReportController::class, 'exportPdf'])->name('reports.export.pdf');

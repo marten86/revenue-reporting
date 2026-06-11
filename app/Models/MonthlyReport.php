@@ -28,12 +28,14 @@ class MonthlyReport extends Model
         'total_dfi', 'total_dfe', 'total_kotak_qris', 'total_kantor',
         'evaluation', 'submitted_by', 'submitted_at',
         'approved_by', 'approved_at',
+        'revision_notes', 'revised_by', 'revised_at',
     ];
 
     protected $casts = [
         'period_month'    => 'date',
         'submitted_at'    => 'datetime',
         'approved_at'     => 'datetime',
+        'revised_at'      => 'datetime',
         'achievement_pct' => 'decimal:4',
     ];
 
@@ -69,6 +71,11 @@ class MonthlyReport extends Model
     public function approvedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    public function revisedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'revised_by');
     }
 
     // ── Recalculate (inti arsitektur baru) ───────────────────
@@ -165,6 +172,20 @@ class MonthlyReport extends Model
         ]);
     }
 
+    public function revise(User $user, string $notes): void
+    {
+        $this->update([
+            'status'         => self::STATUS_DRAFT,
+            'revision_notes' => $notes,
+            'revised_by'     => $user->id,
+            'revised_at'     => now(),
+            // Reset approval fields
+            'approved_by'    => null,
+            'approved_at'    => null,
+            'evaluation'     => null,
+        ]);
+    }
+
     // ── Scopes & Helpers ────────────────────────────────────
 
     public function scopeForMonth($query, string $month)
@@ -175,4 +196,5 @@ class MonthlyReport extends Model
     public function isDraft(): bool     { return $this->status === self::STATUS_DRAFT; }
     public function isSubmitted(): bool { return $this->status === self::STATUS_SUBMITTED; }
     public function isApproved(): bool  { return $this->status === self::STATUS_APPROVED; }
+    public function isRevision(): bool  { return $this->revised_at !== null && $this->status === self::STATUS_DRAFT; }
 }

@@ -106,6 +106,7 @@ class ReportController extends Controller
             'safariDakwahLogs',
             'submittedBy',
             'approvedBy',
+            'revisedBy',
         ]);
 
         $weeklyBreakdown = $this->buildWeeklyBreakdown($report->dailyRevenues);
@@ -132,6 +133,7 @@ class ReportController extends Controller
             'rekapPerTim'     => $this->buildRekapPerTim($report),
             'canSubmit'       => ($request->user()->canSubmitReport() || $request->user()->canManageAllBranches()) && $report->isDraft(),
             'canApprove'      => $request->user()->canApproveReport() && $report->isSubmitted(),
+            'canRevise'       => $request->user()->canApproveReport() && $report->isSubmitted(),
             'narasumberList'  => $narasumberList,
         ]);
     }
@@ -221,19 +223,33 @@ class ReportController extends Controller
 
     public function approve(Request $request, MonthlyReport $report)
     {
-    abort_unless($request->user()->canApproveReport(), 403);
-    abort_unless($report->isSubmitted(), 422, 'Laporan belum disubmit.');
+        abort_unless($request->user()->canApproveReport(), 403);
+        abort_unless($report->isSubmitted(), 422, 'Laporan belum disubmit.');
 
-    $request->validate(['evaluation' => 'nullable|string|max:2000']);
+        $request->validate(['evaluation' => 'nullable|string|max:2000']);
 
-    $report->approve($request->user());
+        $report->approve($request->user());
 
-    // Simpan catatan jika ada
-    if ($request->filled('evaluation')) {
-        $report->update(['evaluation' => $request->evaluation]);
+        // Simpan catatan jika ada
+        if ($request->filled('evaluation')) {
+            $report->update(['evaluation' => $request->evaluation]);
+        }
+
+        return back()->with('success', 'Laporan berhasil disetujui.');
     }
 
-    return back()->with('success', 'Laporan berhasil disetujui.');
+    public function revise(Request $request, MonthlyReport $report)
+    {
+        abort_unless($request->user()->canApproveReport(), 403);
+        abort_unless($report->isSubmitted(), 422, 'Hanya laporan yang sudah disubmit yang bisa direvisi.');
+
+        $request->validate([
+            'revision_notes' => 'required|string|max:2000',
+        ]);
+
+        $report->revise($request->user(), $request->revision_notes);
+
+        return back()->with('success', 'Laporan dikembalikan untuk revisi.');
     }
 
     public function updateEvaluation(Request $request, MonthlyReport $report)
