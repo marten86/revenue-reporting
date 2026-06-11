@@ -11,27 +11,23 @@ use Inertia\Inertia;
 class AreaManagementController extends Controller
 {
     public function index()
-    {
-        // Hanya Super Admin yang bisa akses halaman ini
-        if (Auth::user()->role !== 'super_admin') {
-            abort(403, 'Hanya Super Admin yang dapat mengakses halaman ini.');
-        }
-
-        $areas = Area::withCount('branches')
-            ->with(['branches' => function ($q) {
-                $q->select('id', 'area_id', 'name', 'code', 'is_active')
-                  ->orderBy('name');
-            }])
-            ->orderBy('name')
-            ->get();
-
-        'unassignedBranches' => $unassignedBranches,
-
-        return Inertia::render('Areas/Index', [
-            'areas'              => $areas,
-            'unassignedBranches' => $unassignedBranches,
-        ]);
+{
+    if (Auth::user()->role !== 'super_admin') {
+        abort(403, 'Hanya Super Admin yang dapat mengakses halaman ini.');
     }
+
+    $areas = Area::withCount('branches')
+        ->with(['branches' => function ($q) {
+            $q->select('id', 'area_id', 'name', 'code', 'city', 'is_active')
+              ->orderBy('name');
+        }])
+        ->orderBy('name')
+        ->get();
+
+    return Inertia::render('Areas/Index', [
+        'areas' => $areas,
+    ]);
+}
 
     public function store(Request $request)
     {
