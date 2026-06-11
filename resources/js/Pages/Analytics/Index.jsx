@@ -38,7 +38,6 @@ const formatRp = (v) => {
 
 const formatRpFull = (v) => 'Rp ' + (v || 0).toLocaleString('id-ID')
 
-// ─── Custom Tooltip ───────────────────────────────────────────────────────────
 const CustomTooltip = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null
     return (
@@ -55,7 +54,6 @@ const CustomTooltip = ({ active, payload, label }) => {
     )
 }
 
-// ─── Summary Card ─────────────────────────────────────────────────────────────
 const SummaryCard = ({ title, value, sub, color, icon }) => (
     <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:12,padding:'20px 24px',flex:1,minWidth:180}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
@@ -69,16 +67,17 @@ const SummaryCard = ({ title, value, sub, color, icon }) => (
     </div>
 )
 
-// ─── Main Component ───────────────────────────────────────────────────────────
 export default function AnalyticsIndex({
-    branches, channels, period, year, month, quarter,
-    branchId, channel, summary, chartMain, byChannel, byBranch, tableData
+    branches, areas, channels, period, year, month, quarter,
+    branchId, areaId, channel, isSuperAdmin,
+    summary, chartMain, byChannel, byBranch, tableData
 }) {
     const [localPeriod,  setLocalPeriod]  = useState(period)
     const [localYear,    setLocalYear]    = useState(year)
     const [localMonth,   setLocalMonth]   = useState(month)
     const [localQuarter, setLocalQuarter] = useState(quarter)
     const [localBranch,  setLocalBranch]  = useState(branchId)
+    const [localAreaId,  setLocalAreaId]  = useState(areaId ?? 'all')
     const [localChannel, setLocalChannel] = useState(channel)
 
     const applyFilter = () => {
@@ -88,6 +87,7 @@ export default function AnalyticsIndex({
             month:     localMonth,
             quarter:   localQuarter,
             branch_id: localBranch,
+            area_id:   localAreaId,
             channel:   localChannel,
         }, { preserveState: false })
     }
@@ -98,10 +98,17 @@ export default function AnalyticsIndex({
     const achievementColor = summary.achievement >= 100 ? '#16a34a'
         : summary.achievement >= 75 ? '#d97706' : '#dc2626'
     const growthColor = (summary.growth ?? 0) >= 0 ? '#16a34a' : '#dc2626'
+    const showGrowth  = period === 'yearly'
 
-    // ─── Chart Utama: pisahkan growth ke sumbu kanan ──────────────────────────
-    // Untuk yearly, kita tampilkan growth sebagai line terpisah dengan YAxis kanan
-    const showGrowth = period === 'yearly'
+    // Cabang yang ditampilkan di dropdown — filter by area kalau Super Admin pilih area
+    const filteredBranches = (branches || []).filter(b =>
+        localAreaId === 'all' || b.area_id === localAreaId
+    )
+
+    // Label area yang dipilih (untuk subtitle)
+    const selectedAreaLabel = localAreaId === 'all'
+        ? 'Semua Area'
+        : (areas || []).find(a => a.id === localAreaId)?.name ?? 'Area'
 
     const chartTitle = {
         weekly:    '📅 Revenue Minggu Ini per Hari',
@@ -117,10 +124,17 @@ export default function AnalyticsIndex({
                 {/* Header */}
                 <div style={{marginBottom:24}}>
                     <h1 style={{fontSize:24,fontWeight:700,color:'#111827',margin:0}}>📈 Analytics Revenue</h1>
-                    <p style={{color:'#6b7280',marginTop:4,fontSize:14}}>Analisis performa revenue BWA Indotim</p>
+                    <p style={{color:'#6b7280',marginTop:4,fontSize:14}}>
+                        Analisis performa revenue BWA
+                        {isSuperAdmin && localAreaId !== 'all' && (
+                            <span style={{marginLeft:6,background:'#eff6ff',color:'#1d4ed8',padding:'1px 8px',borderRadius:6,fontSize:12,fontWeight:600}}>
+                                {selectedAreaLabel}
+                            </span>
+                        )}
+                    </p>
                 </div>
 
-                {/* ── Filter Bar ─────────────────────────────────────────────── */}
+                {/* ── Filter Bar ── */}
                 <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:12,padding:'16px 20px',marginBottom:24,display:'flex',flexWrap:'wrap',gap:12,alignItems:'flex-end'}}>
 
                     <div>
@@ -162,12 +176,33 @@ export default function AnalyticsIndex({
                         </div>
                     )}
 
+                    {/* Filter Area — hanya Super Admin */}
+                    {isSuperAdmin && (
+                        <div>
+                            <label style={{fontSize:11,color:'#6b7280',display:'block',marginBottom:4}}>Area</label>
+                            <select
+                                value={localAreaId}
+                                onChange={e => {
+                                    setLocalAreaId(e.target.value)
+                                    setLocalBranch('all') // reset cabang saat ganti area
+                                }}
+                                style={{border:'1px solid #d1d5db',padding:'8px 12px',borderRadius:8,fontSize:14,minWidth:150}}>
+                                <option value="all">Semua Area</option>
+                                {(areas || []).map(a => (
+                                    <option key={a.id} value={a.id}>{a.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
                     <div>
                         <label style={{fontSize:11,color:'#6b7280',display:'block',marginBottom:4}}>Cabang</label>
                         <select value={localBranch} onChange={e => setLocalBranch(e.target.value)}
                             style={{border:'1px solid #d1d5db',padding:'8px 12px',borderRadius:8,fontSize:14,minWidth:160}}>
                             <option value="all">Semua Cabang</option>
-                            {(branches || []).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                            {filteredBranches.map(b => (
+                                <option key={b.id} value={b.id}>{b.name}</option>
+                            ))}
                         </select>
                     </div>
 
@@ -186,7 +221,7 @@ export default function AnalyticsIndex({
                     </button>
                 </div>
 
-                {/* ── Summary Cards ──────────────────────────────────────────── */}
+                {/* ── Summary Cards ── */}
                 <div style={{display:'flex',gap:16,marginBottom:24,flexWrap:'wrap'}}>
                     <SummaryCard title="Total Revenue" icon="💰"
                         value={formatRp(summary.total_revenue)}
@@ -209,22 +244,19 @@ export default function AnalyticsIndex({
                             : 'Data tidak cukup'} />
                 </div>
 
-                {/* ── Row 1: Chart Utama + Pie ───────────────────────────────── */}
+                {/* ── Row 1: Chart Utama + Pie ── */}
                 <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:20,marginBottom:20}}>
 
-                    {/* Chart Utama */}
                     <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:12,padding:20}}>
                         <h3 style={{margin:'0 0 16px',fontSize:15,fontWeight:600,color:'#374151'}}>{chartTitle}</h3>
                         <ResponsiveContainer width="100%" height={300}>
                             <ComposedChart data={chartMain || []} margin={{top:5,right:showGrowth?50:20,left:10,bottom:5}}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
                                 <XAxis dataKey="label" tick={{fontSize:11,fill:'#6b7280'}} />
-                                {/* YAxis kiri — revenue */}
                                 <YAxis yAxisId="left"
                                     tickFormatter={v => formatRp(v)}
                                     tick={{fontSize:10,fill:'#6b7280'}}
                                     width={72} />
-                                {/* YAxis kanan — growth % (hanya yearly) */}
                                 {showGrowth && (
                                     <YAxis yAxisId="right" orientation="right"
                                         tickFormatter={v => `${v}%`}
@@ -245,7 +277,6 @@ export default function AnalyticsIndex({
                         </ResponsiveContainer>
                     </div>
 
-                    {/* Pie Chart per Kanal */}
                     <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:12,padding:20}}>
                         <h3 style={{margin:'0 0 16px',fontSize:15,fontWeight:600,color:'#374151'}}>🍩 Komposisi per Kanal</h3>
                         {(byChannel || []).length > 0 ? (
@@ -279,10 +310,9 @@ export default function AnalyticsIndex({
                     </div>
                 </div>
 
-                {/* ── Row 2: Bar Cabang + Capaian ─────────────────────────────── */}
+                {/* ── Row 2: Bar Cabang + Capaian ── */}
                 <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:20,marginBottom:20}}>
 
-                    {/* Bar per Cabang */}
                     <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:12,padding:20}}>
                         <h3 style={{margin:'0 0 16px',fontSize:15,fontWeight:600,color:'#374151'}}>🏢 Perbandingan per Cabang</h3>
                         {(byBranch || []).length > 0 ? (
@@ -306,7 +336,6 @@ export default function AnalyticsIndex({
                         )}
                     </div>
 
-                    {/* % Capaian per Cabang */}
                     <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:12,padding:20}}>
                         <h3 style={{margin:'0 0 16px',fontSize:15,fontWeight:600,color:'#374151'}}>🎯 % Capaian per Cabang</h3>
                         {(byBranch || []).length > 0 ? (
@@ -343,10 +372,13 @@ export default function AnalyticsIndex({
                     </div>
                 </div>
 
-                {/* ── Tabel Breakdown Tahunan ────────────────────────────────── */}
+                {/* ── Tabel Breakdown Tahunan ── */}
                 <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:12,padding:20}}>
                     <h3 style={{margin:'0 0 16px',fontSize:15,fontWeight:600,color:'#374151'}}>
                         📋 Tabel Breakdown Bulanan {year}
+                        {isSuperAdmin && localAreaId !== 'all' && (
+                            <span style={{marginLeft:8,fontSize:12,color:'#6b7280',fontWeight:400}}>— {selectedAreaLabel}</span>
+                        )}
                     </h3>
                     <div style={{overflowX:'auto'}}>
                         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>

@@ -140,7 +140,7 @@ export default function AppLayout({ title, children }) {
                 position: 'fixed', top: 0, left: 0, zIndex: 50,
                 transform: isMobile && !sidebarOpen ? `translateX(-${SIDEBAR_FULL}px)` : 'translateX(0)',
                 boxShadow: sidebarOpen && isMobile ? '4px 0 24px rgba(0,0,0,.2)' : 'none',
-                overflow: 'hidden',
+                overflow: 'visible',
             }}>
                 {/* Logo */}
                 <div style={{ padding: '16px 18px', borderBottom: '1px solid rgba(255,255,255,.1)', flexShrink: 0 }}>
@@ -156,7 +156,9 @@ export default function AppLayout({ title, children }) {
                             </div>
                             <div style={{ overflow: 'hidden', flex: 1 }}>
                                 <div style={{ color: '#fff', fontWeight: 600, fontSize: 15, whiteSpace: 'nowrap' }}>One BWA</div>
-                                <div style={{ color: '#4ade80', fontSize: 11, letterSpacing: '.08em', fontWeight: 500 }}>INDOTIM</div>
+                                <div style={{ color: '#4ade80', fontSize: 11, letterSpacing: '.08em', fontWeight: 500 }}>
+                                    {user?.role === 'super_admin' ? 'NASIONAL' : (user?.area_name ?? 'INDOTIM')}
+                                </div>
                             </div>
                             {/* Close (mobile) atau Toggle (desktop) */}
                             {isMobile ? (
@@ -185,7 +187,7 @@ export default function AppLayout({ title, children }) {
                             <div style={{
                                 width: 42, height: 42, borderRadius: 10, background: '#fff',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,.15)',
+                                overflow: 'visible', boxShadow: '0 2px 8px rgba(0,0,0,.15)',
                             }}>
                                 <img src="/images/one-bwa-logo.png" alt="One BWA" style={{ width: 34, height: 34, objectFit: 'contain' }} />
                             </div>
