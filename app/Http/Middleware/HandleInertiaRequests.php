@@ -2,6 +2,7 @@
 namespace App\Http\Middleware;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
+use App\Models\MonthlyReport;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -22,6 +23,15 @@ class HandleInertiaRequests extends Middleware
             $areaName = \App\Models\Area::where('id', $user->area_id)->value('name');
         }
 
+        // Hitung laporan pending approval (hanya untuk approver)
+        $pendingApprovals = 0;
+        if ($user && $user->canApproveReport()) {
+            $branchIds = $user->accessibleBranches()->pluck('id');
+            $pendingApprovals = MonthlyReport::whereIn('branch_id', $branchIds)
+                ->where('status', MonthlyReport::STATUS_SUBMITTED)
+                ->count();
+        }
+
         return array_merge(parent::share($request), [
             'auth' => [
                 'user' => $user?->only([
@@ -35,6 +45,7 @@ class HandleInertiaRequests extends Middleware
                 'warning' => fn() => $request->session()->get('warning'),
                 'error'   => fn() => $request->session()->get('error'),
             ],
+            'pendingApprovals' => $pendingApprovals,
         ]);
     }
 }
