@@ -133,14 +133,14 @@ export default function AppLayout({ title, children }) {
 
             {/* ── Sidebar ── */}
             <aside className="sidebar-panel" style={{
-                width: sidebarWidth,
-                minHeight: '100vh',
-                background: 'linear-gradient(180deg, #14532d 0%, #1a3a2a 100%)',
-                display: 'flex', flexDirection: 'column',
-                position: 'fixed', top: 0, left: 0, zIndex: 50,
-                transform: isMobile && !sidebarOpen ? `translateX(-${SIDEBAR_FULL}px)` : 'translateX(0)',
-                boxShadow: sidebarOpen && isMobile ? '4px 0 24px rgba(0,0,0,.2)' : 'none',
-                overflow: 'visible',
+            width: sidebarWidth,
+            height: '100vh',
+            background: 'linear-gradient(180deg, #14532d 0%, #1a3a2a 100%)',
+            display: 'flex', flexDirection: 'column',
+            position: 'fixed', top: 0, left: 0, zIndex: 50,
+            transform: isMobile && !sidebarOpen ? `translateX(-${SIDEBAR_FULL}px)` : 'translateX(0)',
+            boxShadow: sidebarOpen && isMobile ? '4px 0 24px rgba(0,0,0,.2)' : 'none',
+            overflow: 'hidden',
             }}>
                 {/* Logo */}
                 <div style={{ padding: '16px 18px', borderBottom: '1px solid rgba(255,255,255,.1)', flexShrink: 0 }}>
@@ -208,7 +208,7 @@ export default function AppLayout({ title, children }) {
                 </div>
 
                 {/* Nav */}
-                <nav style={{ flex: 1, padding: '14px 0', overflowY: 'auto', overflowX: 'hidden' }}>
+                <nav style={{ flex: 1, padding: '14px 0', overflowY: collapsed && !isMobile ? 'hidden' : 'auto', overflowX: 'hidden' }}>
                     {navItems.map(section => {
                         const visibleLinks = section.links.filter(l =>
                             !l.roles || l.roles.includes(user?.role)

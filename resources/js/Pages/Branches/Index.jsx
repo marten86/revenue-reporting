@@ -21,7 +21,7 @@ export default function BranchIndex({ branches, areas }) {
 
     const startEdit = (b) => {
         setEditId(b.id)
-        setEditData({ name: b.name, code: b.code, city: b.city, province: b.province })
+        setEditData({ name: b.name, code: b.code, city: b.city, province: b.province, area_id: b.area_id })
     }
 
     const saveEdit = () => {
@@ -71,9 +71,21 @@ export default function BranchIndex({ branches, areas }) {
                                     <td style={tdStyle}>
                                         {isEdit ? <input value={editData.city} onChange={e => setEditData(p => ({...p, city: e.target.value}))} style={{...inputStyle, padding: '4px 8px'}} /> : b.city}
                                     </td>
-                                    <td style={tdStyle}>
-                                        {isEdit ? <input value={editData.province} onChange={e => setEditData(p => ({...p, province: e.target.value}))} style={{...inputStyle, padding: '4px 8px'}} /> : b.province}
-                                    </td>
+                                    <td style={{ padding: '8px 12px' }}>
+    {isEdit ? (
+        <select
+            value={editData.area_id}
+            onChange={e => setEditData(p => ({ ...p, area_id: e.target.value }))}
+            style={{ ...inputStyle, padding: '4px 8px', minWidth: 120 }}
+        >
+            {(areas || []).map(a => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+            ))}
+        </select>
+    ) : (
+        <span style={{ fontSize: 12, color: '#6b7280' }}>{b.area?.name ?? '—'}</span>
+    )}
+</td>
                                     <td style={{...tdStyle, textAlign: 'center'}}>
                                         <span style={{fontFamily: 'monospace', fontWeight: 500}}>{b.users_count}</span>
                                     </td>
