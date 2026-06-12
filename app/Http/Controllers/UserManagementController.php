@@ -59,19 +59,16 @@ class UserManagementController extends Controller
             'role'      => ['required', Rule::in(['super_admin', 'area_manager', 'branch_head', 'staff'])],
             'branch_id' => 'nullable|uuid|exists:branches,id',
             'area_id'   => 'nullable|uuid|exists:areas,id',
+            'phone'     => 'nullable|string|max:20',
         ]);
 
-        // Tentukan area_id final
         if ($data['branch_id']) {
-            // Cabang dipilih → area ikut cabang
             $areaId = Branch::find($data['branch_id'])->area_id;
         } elseif (!empty($data['area_id'])) {
-            // Area Manager/Super Admin pilih area langsung
             $areaId = $data['area_id'];
         } elseif ($data['role'] === 'super_admin') {
             $areaId = null;
         } else {
-            // Fallback: pakai area user yang login
             $areaId = $request->user()->area_id;
         }
 
@@ -82,6 +79,7 @@ class UserManagementController extends Controller
             'role'      => $data['role'],
             'branch_id' => $data['branch_id'] ?? null,
             'area_id'   => $areaId,
+            'phone'     => $data['phone'] ?? null,
         ]);
 
         return back()->with('success', "User \"{$data['name']}\" berhasil ditambahkan.");
@@ -97,19 +95,16 @@ class UserManagementController extends Controller
             'role'      => ['required', Rule::in(['super_admin', 'area_manager', 'branch_head', 'staff'])],
             'branch_id' => 'nullable|uuid|exists:branches,id',
             'area_id'   => 'nullable|uuid|exists:areas,id',
+            'phone'     => 'nullable|string|max:20',
         ]);
 
-        // Tentukan area_id final
         if ($data['branch_id']) {
-            // Cabang dipilih → area ikut cabang
             $areaId = Branch::find($data['branch_id'])->area_id;
         } elseif (!empty($data['area_id'])) {
-            // Area dipilih langsung (untuk area_manager/super_admin)
             $areaId = $data['area_id'];
         } elseif ($data['role'] === 'super_admin') {
             $areaId = null;
         } else {
-            // Pertahankan area_id lama
             $areaId = $user->area_id;
         }
 
@@ -119,6 +114,7 @@ class UserManagementController extends Controller
             'role'      => $data['role'],
             'branch_id' => $data['branch_id'] ?? null,
             'area_id'   => $areaId,
+            'phone'     => $data['phone'] ?? null,
         ]);
 
         return back()->with('success', "User \"{$user->name}\" berhasil diperbarui.");

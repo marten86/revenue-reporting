@@ -1107,10 +1107,12 @@ function TabRekapPerTim({ report, isMobile }) {
 // Halaman utama
 // ══════════════════════════════════════════════════════════
 
-export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit, canApprove, narasumberList = [] }) {
+export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit, canApprove, canRevise, narasumberList = [] }) {
     const [tab, setTab] = useState('rincian')
     const [showApproveModal, setShowApproveModal] = useState(false)
     const [approveNote, setApproveNote] = useState('')
+    const [showReviseModal, setShowReviseModal] = useState(false)
+    const [reviseNote, setReviseNote] = useState('')
     const canEdit = canSubmit
     const isMobile = useIsMobile()
 
@@ -1123,6 +1125,9 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
     }
     const st = statusMap[report.status] ?? statusMap.draft
 
+    // Detect if this is a draft that was sent back for revision
+    const isRevisionDraft = report.status === 'draft' && report.revised_at
+
     return (
         <AppLayout title={`${report.branch?.name} — ${periodLabel}`}>
             <style>{`
@@ -1134,6 +1139,33 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
                 .rev-pill:hover:not(.rev-pill-active) { background: #e5e7eb !important; }
                 @media (max-width: 768px) { table { font-size: 11px !important; } table th, table td { padding: 6px 8px !important; } }
             `}</style>
+
+            {/* ── Revision Banner ── */}
+            {isRevisionDraft && (
+                <div style={{
+                    background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 10,
+                    padding: '14px 18px', marginBottom: 16, display: 'flex', gap: 12, alignItems: 'flex-start',
+                }}>
+                    <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>⚠️</span>
+                    <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#92400e', marginBottom: 4 }}>
+                            Laporan dikembalikan untuk revisi
+                            {report.revised_by && <span style={{ fontWeight: 400 }}> oleh <strong>{report.revised_by.name}</strong></span>}
+                        </div>
+                        {report.revision_notes && (
+                            <div style={{ fontSize: 13, color: '#78350f', lineHeight: 1.5 }}>
+                                {report.revision_notes}
+                            </div>
+                        )}
+                        {report.revised_at && (
+                            <div style={{ fontSize: 11, color: '#b45309', marginTop: 6 }}>
+                                {new Date(report.revised_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
             <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'flex-start', gap: isMobile ? 12 : 0, marginBottom: 20 }}>
                 <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, flexWrap: 'wrap' }}>
@@ -1147,46 +1179,91 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
                     <a href={`/reports/${report.id}/export/pdf`} style={{ background: '#fff', color: '#6b7280', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: '1px solid #d1d5db', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>↓ PDF</a>
                     {canSubmit && <button onClick={() => { if (confirm('Submit laporan ini?')) router.patch(`/reports/${report.id}/submit`) }} style={{ background: '#166534', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: 'none', cursor: 'pointer', flex: isMobile ? 1 : undefined }}>Submit Laporan</button>}
                     {canApprove && (
-    <>
-        <button
-            onClick={() => setShowApproveModal(true)}
-            style={{ background: '#1d4ed8', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: 'none', cursor: 'pointer', flex: isMobile ? 1 : undefined }}
-        >Setujui</button>
+                        <>
+                            <button
+                                onClick={() => setShowApproveModal(true)}
+                                style={{ background: '#1d4ed8', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: 'none', cursor: 'pointer', flex: isMobile ? 1 : undefined }}
+                            >Setujui</button>
 
-        {showApproveModal && (
-            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
-                onClick={() => setShowApproveModal(false)}>
-                <div style={{ background: '#fff', borderRadius: 12, padding: 24, width: '100%', maxWidth: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}
-                    onClick={e => e.stopPropagation()}>
-                    <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Setujui Laporan</div>
-                    <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 16 }}>
-                        {report.branch?.name} — {new Date(report.period_month).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}
-                    </div>
-                    <textarea
-                        placeholder="Catatan (opsional)..."
-                        value={approveNote}
-                        onChange={e => setApproveNote(e.target.value)}
-                        style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, resize: 'vertical', minHeight: 80, boxSizing: 'border-box', marginBottom: 16 }}
-                    />
-                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                        <button onClick={() => setShowApproveModal(false)}
-                            style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #d1d5db', background: '#fff', fontSize: 13, cursor: 'pointer' }}>
-                            Batal
-                        </button>
-                        <button onClick={() => {
-                            router.patch(`/reports/${report.id}/approve`, { evaluation: approveNote })
-                            setShowApproveModal(false)
-                            setApproveNote('')
-                        }}
-                            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#1d4ed8', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
-                            ✓ Setujui
-                        </button>
-                    </div>
-                </div>
-            </div>
-        )}
-    </>
-)}
+                            {showApproveModal && (
+                                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+                                    onClick={() => setShowApproveModal(false)}>
+                                    <div style={{ background: '#fff', borderRadius: 12, padding: 24, width: '100%', maxWidth: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}
+                                        onClick={e => e.stopPropagation()}>
+                                        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Setujui Laporan</div>
+                                        <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 16 }}>
+                                            {report.branch?.name} — {new Date(report.period_month).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}
+                                        </div>
+                                        <textarea
+                                            placeholder="Catatan (opsional)..."
+                                            value={approveNote}
+                                            onChange={e => setApproveNote(e.target.value)}
+                                            style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, resize: 'vertical', minHeight: 80, boxSizing: 'border-box', marginBottom: 16 }}
+                                        />
+                                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                                            <button onClick={() => setShowApproveModal(false)}
+                                                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #d1d5db', background: '#fff', fontSize: 13, cursor: 'pointer' }}>
+                                                Batal
+                                            </button>
+                                            <button onClick={() => {
+                                                router.patch(`/reports/${report.id}/approve`, { evaluation: approveNote })
+                                                setShowApproveModal(false)
+                                                setApproveNote('')
+                                            }}
+                                                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#1d4ed8', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+                                                ✓ Setujui
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    )}
+                    {canRevise && (
+                        <>
+                            <button
+                                onClick={() => setShowReviseModal(true)}
+                                style={{ background: '#fff', color: '#d97706', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: '1px solid #d97706', cursor: 'pointer', flex: isMobile ? 1 : undefined }}
+                            >Revisi</button>
+
+                            {showReviseModal && (
+                                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+                                    onClick={() => setShowReviseModal(false)}>
+                                    <div style={{ background: '#fff', borderRadius: 12, padding: 24, width: '100%', maxWidth: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}
+                                        onClick={e => e.stopPropagation()}>
+                                        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8, color: '#92400e' }}>Kembalikan untuk Revisi</div>
+                                        <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 16 }}>
+                                            {report.branch?.name} — {new Date(report.period_month).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}
+                                        </div>
+                                        <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 6, color: '#374151' }}>Catatan revisi <span style={{ color: '#dc2626' }}>*</span></div>
+                                        <textarea
+                                            placeholder="Jelaskan apa yang perlu diperbaiki..."
+                                            value={reviseNote}
+                                            onChange={e => setReviseNote(e.target.value)}
+                                            style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, resize: 'vertical', minHeight: 100, boxSizing: 'border-box', marginBottom: 16 }}
+                                            autoFocus
+                                        />
+                                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                                            <button onClick={() => { setShowReviseModal(false); setReviseNote('') }}
+                                                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #d1d5db', background: '#fff', fontSize: 13, cursor: 'pointer' }}>
+                                                Batal
+                                            </button>
+                                            <button
+                                                disabled={!reviseNote.trim()}
+                                                onClick={() => {
+                                                    router.patch(`/reports/${report.id}/revise`, { revision_notes: reviseNote })
+                                                    setShowReviseModal(false)
+                                                    setReviseNote('')
+                                                }}
+                                                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: !reviseNote.trim() ? '#d1d5db' : '#d97706', color: '#fff', fontSize: 13, fontWeight: 500, cursor: !reviseNote.trim() ? 'not-allowed' : 'pointer' }}>
+                                                Kembalikan
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    )}
                 </div>
             </div>
 
@@ -1233,9 +1310,9 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
                         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 20 }}>
                                 <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#3b82f6', marginTop: 3, flexShrink: 0 }} />
-                                <div style={{ width: 2, height: report.approved_at ? 28 : 0, background: '#e5e7eb' }} />
+                                <div style={{ width: 2, height: (report.revised_at || report.approved_at) ? 28 : 0, background: '#e5e7eb' }} />
                             </div>
-                            <div style={{ paddingBottom: report.approved_at ? 16 : 0 }}>
+                            <div style={{ paddingBottom: (report.revised_at || report.approved_at) ? 16 : 0 }}>
                                 <div style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>
                                     Disubmit
                                     {report.submitted_by && <span style={{ fontWeight: 400, color: '#6b7280' }}> oleh <strong>{report.submitted_by.name}</strong></span>}
@@ -1252,6 +1329,30 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
                             </div>
                             <div>
                                 <div style={{ fontSize: 13, color: '#9ca3af', fontStyle: 'italic' }}>Belum disubmit</div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Dikembalikan untuk Revisi */}
+                    {report.revised_at && (
+                        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 20 }}>
+                                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#d97706', marginTop: 3, flexShrink: 0 }} />
+                                <div style={{ width: 2, height: report.approved_at ? 28 : 0, background: '#e5e7eb' }} />
+                            </div>
+                            <div style={{ paddingBottom: report.approved_at ? 16 : 0 }}>
+                                <div style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>
+                                    Dikembalikan untuk revisi
+                                    {report.revised_by && <span style={{ fontWeight: 400, color: '#6b7280' }}> oleh <strong>{report.revised_by.name}</strong></span>}
+                                </div>
+                                <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
+                                    {new Date(report.revised_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                                {report.revision_notes && (
+                                    <div style={{ marginTop: 6, padding: '8px 12px', background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 6, fontSize: 12, color: '#92400e' }}>
+                                        💬 {report.revision_notes}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
@@ -1283,5 +1384,5 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
             </div>
 
         </AppLayout>
-        )
-    }
+    )
+}

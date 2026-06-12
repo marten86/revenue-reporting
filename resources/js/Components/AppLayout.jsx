@@ -12,7 +12,7 @@ function useIsMobile(bp = 768) {
 }
 
 export default function AppLayout({ title, children }) {
-    const { auth, flash } = usePage().props
+    const { auth, flash, pendingApprovals } = usePage().props
     const user = auth?.user
     const isMobile = useIsMobile()
     const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -56,14 +56,15 @@ export default function AppLayout({ title, children }) {
         {
             section: 'Laporan',
             links: [
-                { href: '/reports',        label: 'Semua Laporan', icon: '📋' },
+                { href: '/reports',        label: 'Semua Laporan', icon: '📋', badge: pendingApprovals },
                 { href: '/reports/create', label: 'Buat Laporan',  icon: '✚', roles: ['branch_head', 'staff', 'area_manager', 'super_admin'] },
             ],
         },
         {
             section: 'Konfigurasi',
             links: [
-                { href: '/areas',            label: 'Kelola Area',      icon: '🗺️', roles: ['super_admin'] },           { href: '/targets',          label: 'Target Cabang',    icon: '🎯', roles: ['super_admin', 'area_manager'] },
+                { href: '/areas',            label: 'Kelola Area',      icon: '🗺️', roles: ['super_admin'] },
+                { href: '/targets',          label: 'Target Cabang',    icon: '🎯', roles: ['super_admin', 'area_manager'] },
                 { href: '/branches',         label: 'Kelola Cabang',    icon: '🏢', roles: ['super_admin', 'area_manager'] },
                 { href: '/revenue-sources',  label: 'Kelola Sumber',    icon: '👥', roles: ['super_admin', 'area_manager'] },
                 { href: '/users',            label: 'Kelola User',      icon: '👤', roles: ['super_admin', 'area_manager'] },
@@ -121,7 +122,7 @@ export default function AppLayout({ title, children }) {
                 .nav-link-wrap:hover .nav-tooltip { display: block; }
             `}</style>
 
-            {/* ── Overlay (mobile only) ── */}
+            {/* —— Overlay (mobile only) —— */}
             {isMobile && sidebarOpen && (
                 <div className="sidebar-overlay"
                     onClick={() => setSidebarOpen(false)}
@@ -131,16 +132,16 @@ export default function AppLayout({ title, children }) {
                     }} />
             )}
 
-            {/* ── Sidebar ── */}
+            {/* —— Sidebar —— */}
             <aside className="sidebar-panel" style={{
-            width: sidebarWidth,
-            height: '100vh',
-            background: 'linear-gradient(180deg, #14532d 0%, #1a3a2a 100%)',
-            display: 'flex', flexDirection: 'column',
-            position: 'fixed', top: 0, left: 0, zIndex: 50,
-            transform: isMobile && !sidebarOpen ? `translateX(-${SIDEBAR_FULL}px)` : 'translateX(0)',
-            boxShadow: sidebarOpen && isMobile ? '4px 0 24px rgba(0,0,0,.2)' : 'none',
-            overflow: 'hidden',
+                width: sidebarWidth,
+                height: '100vh',
+                background: 'linear-gradient(180deg, #14532d 0%, #1a3a2a 100%)',
+                display: 'flex', flexDirection: 'column',
+                position: 'fixed', top: 0, left: 0, zIndex: 50,
+                transform: isMobile && !sidebarOpen ? `translateX(-${SIDEBAR_FULL}px)` : 'translateX(0)',
+                boxShadow: sidebarOpen && isMobile ? '4px 0 24px rgba(0,0,0,.2)' : 'none',
+                overflow: 'hidden',
             }}>
                 {/* Logo */}
                 <div style={{ padding: '16px 18px', borderBottom: '1px solid rgba(255,255,255,.1)', flexShrink: 0 }}>
@@ -224,36 +225,71 @@ export default function AppLayout({ title, children }) {
                                 ) : (
                                     <div style={{ margin: '10px 12px 6px', borderTop: '1px solid rgba(255,255,255,.1)' }} />
                                 )}
-                                {visibleLinks.map(link => (
-                                    <div key={link.href} className="nav-link-wrap">
-                                        <Link href={link.href}
-                                            className="nav-link"
-                                            onClick={() => isMobile && setSidebarOpen(false)}
-                                            style={{
-                                                display: 'flex', alignItems: 'center',
-                                                gap: collapsed && !isMobile ? 0 : 12,
-                                                justifyContent: collapsed && !isMobile ? 'center' : 'flex-start',
-                                                padding: collapsed && !isMobile ? '10px 0' : '10px 16px',
-                                                margin: '2px 10px',
-                                                borderRadius: 8, textDecoration: 'none',
-                                                fontSize: 14, fontWeight: isActive(link.href) ? 600 : 400,
-                                                background: isActive(link.href) ? 'rgba(255,255,255,.12)' : 'transparent',
-                                                color: isActive(link.href) ? '#fff' : '#a7f3d0',
-                                                borderLeft: (!collapsed || isMobile) && isActive(link.href) ? '3px solid #4ade80' : '3px solid transparent',
-                                            }}>
-                                            <span style={{ fontSize: 16, width: 22, textAlign: 'center', flexShrink: 0 }}>{link.icon}</span>
-                                            {(!collapsed || isMobile) && (
-                                                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                    {link.label}
+                                {visibleLinks.map(link => {
+                                    const showBadge = link.badge > 0
+                                    return (
+                                        <div key={link.href} className="nav-link-wrap">
+                                            <Link href={link.href}
+                                                className="nav-link"
+                                                onClick={() => isMobile && setSidebarOpen(false)}
+                                                style={{
+                                                    display: 'flex', alignItems: 'center',
+                                                    gap: collapsed && !isMobile ? 0 : 12,
+                                                    justifyContent: collapsed && !isMobile ? 'center' : 'flex-start',
+                                                    padding: collapsed && !isMobile ? '10px 0' : '10px 16px',
+                                                    margin: '2px 10px',
+                                                    borderRadius: 8, textDecoration: 'none',
+                                                    fontSize: 14, fontWeight: isActive(link.href) ? 600 : 400,
+                                                    background: isActive(link.href) ? 'rgba(255,255,255,.12)' : 'transparent',
+                                                    color: isActive(link.href) ? '#fff' : '#a7f3d0',
+                                                    borderLeft: (!collapsed || isMobile) && isActive(link.href) ? '3px solid #4ade80' : '3px solid transparent',
+                                                    position: 'relative',
+                                                }}>
+                                                {/* Icon — dengan badge dot saat collapsed */}
+                                                <span style={{ fontSize: 16, width: 22, textAlign: 'center', flexShrink: 0, position: 'relative' }}>
+                                                    {link.icon}
+                                                    {/* Badge dot saat collapsed */}
+                                                    {showBadge && collapsed && !isMobile && (
+                                                        <span style={{
+                                                            position: 'absolute', top: -4, right: -4,
+                                                            background: '#ef4444', color: '#fff',
+                                                            fontSize: 9, fontWeight: 700,
+                                                            width: 14, height: 14, borderRadius: 99,
+                                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                            lineHeight: 1,
+                                                        }}>
+                                                            {link.badge > 9 ? '9+' : link.badge}
+                                                        </span>
+                                                    )}
                                                 </span>
+
+                                                {/* Label + badge pill saat expanded */}
+                                                {(!collapsed || isMobile) && (
+                                                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
+                                                        {link.label}
+                                                    </span>
+                                                )}
+                                                {(!collapsed || isMobile) && showBadge && (
+                                                    <span style={{
+                                                        background: '#ef4444', color: '#fff',
+                                                        fontSize: 11, fontWeight: 700,
+                                                        padding: '1px 7px', borderRadius: 99,
+                                                        flexShrink: 0, lineHeight: '18px',
+                                                    }}>
+                                                        {link.badge}
+                                                    </span>
+                                                )}
+                                            </Link>
+                                            {/* Tooltip saat collapsed desktop */}
+                                            {collapsed && !isMobile && (
+                                                <div className="nav-tooltip">
+                                                    {link.label}
+                                                    {showBadge && ` (${link.badge} menunggu)`}
+                                                </div>
                                             )}
-                                        </Link>
-                                        {/* Tooltip saat collapsed desktop */}
-                                        {collapsed && !isMobile && (
-                                            <div className="nav-tooltip">{link.label}</div>
-                                        )}
-                                    </div>
-                                ))}
+                                        </div>
+                                    )
+                                })}
                             </div>
                         )
                     })}
@@ -325,7 +361,7 @@ export default function AppLayout({ title, children }) {
 
             </aside>
 
-            {/* ── Main content ── */}
+            {/* —— Main content —— */}
             <div style={{
                 marginLeft: isMobile ? 0 : sidebarWidth,
                 flex: 1, display: 'flex', flexDirection: 'column',

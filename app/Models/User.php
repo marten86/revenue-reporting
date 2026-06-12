@@ -17,7 +17,7 @@ class User extends Authenticatable
     const ROLE_BRANCH_HEAD  = 'branch_head';
     const ROLE_STAFF        = 'staff';
 
-    protected $fillable = ['name', 'email', 'password', 'role', 'branch_id', 'area_id'];
+    protected $fillable = ['name', 'email', 'password', 'role', 'branch_id', 'area_id', 'phone'];
 
     protected $hidden = ['password', 'remember_token'];
 
@@ -51,9 +51,9 @@ class User extends Authenticatable
     }
 
     public function canSubmitReport(): bool
-{
-    return in_array($this->role, [self::ROLE_BRANCH_HEAD, self::ROLE_STAFF]);
-}
+    {
+        return in_array($this->role, [self::ROLE_BRANCH_HEAD, self::ROLE_STAFF]);
+    }
 
     public function canApproveReport(): bool
     {

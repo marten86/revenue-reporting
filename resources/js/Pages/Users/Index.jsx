@@ -17,7 +17,10 @@ const roleColors = {
     staff: { bg: '#f3f4f6', color: '#6b7280' },
 }
 
-export default function UserIndex({ users, branches, roles }) {
+const needsBranch = (role) => ['branch_head', 'staff'].includes(role)
+const needsArea = (role) => ['area_manager'].includes(role)
+
+export default function UserIndex({ users, branches, areas, roles }) {
     const [editId, setEditId] = useState(null)
     const [editData, setEditData] = useState({})
     const [resetId, setResetId] = useState(null)
@@ -25,10 +28,8 @@ export default function UserIndex({ users, branches, roles }) {
     const [resetting, setResetting] = useState(false)
 
     const { data, setData, post, processing, reset, errors } = useForm({
-        name: '', email: '', password: '', role: 'branch_head', branch_id: '',
+        name: '', email: '', password: '', role: 'branch_head', branch_id: '', area_id: '', phone: '',
     })
-
-    const needsBranch = (role) => ['branch_head', 'staff'].includes(role)
 
     const handleAdd = (e) => {
         e.preventDefault()
@@ -37,7 +38,14 @@ export default function UserIndex({ users, branches, roles }) {
 
     const startEdit = (u) => {
         setEditId(u.id)
-        setEditData({ name: u.name, email: u.email, role: u.role, branch_id: u.branch_id ?? '' })
+        setEditData({
+            name: u.name,
+            email: u.email,
+            role: u.role,
+            branch_id: u.branch_id ?? '',
+            area_id: u.area_id ?? '',
+            phone: u.phone ?? '',
+        })
     }
 
     const saveEdit = () => {
@@ -54,6 +62,12 @@ export default function UserIndex({ users, branches, roles }) {
             onSuccess: () => { setResetId(null); setNewPassword('') },
             onFinish: () => setResetting(false),
         })
+    }
+
+    const renderAssignment = (u) => {
+        if (needsBranch(u.role)) return u.branch?.name ?? <span style={{color:'#d97706',fontSize:11}}>⚠ Belum ada cabang</span>
+        if (needsArea(u.role)) return u.area?.name ?? <span style={{color:'#d97706',fontSize:11}}>⚠ Belum ada area</span>
+        return <span style={{color:'#9ca3af'}}>—</span>
     }
 
     return (
@@ -75,8 +89,9 @@ export default function UserIndex({ users, branches, roles }) {
                         <tr>
                             <th style={thStyle}>Nama</th>
                             <th style={thStyle}>Email</th>
+                            <th style={thStyle}>No. WA</th>
                             <th style={thStyle}>Role</th>
-                            <th style={thStyle}>Cabang</th>
+                            <th style={thStyle}>Area / Cabang</th>
                             <th style={{ ...thStyle, width: 200 }}>Aksi</th>
                         </tr>
                     </thead>
@@ -86,35 +101,79 @@ export default function UserIndex({ users, branches, roles }) {
                             const rc = roleColors[u.role] ?? roleColors.staff
                             return (
                                 <tr key={u.id} className="usr-row">
+                                    {/* Nama */}
                                     <td style={tdStyle}>
                                         {isEdit
                                             ? <input value={editData.name} onChange={e => setEditData(p => ({...p, name: e.target.value}))} style={{...inputStyle, padding: '4px 8px'}} />
                                             : <span style={{fontWeight: 500}}>{u.name}</span>}
                                     </td>
+
+                                    {/* Email */}
                                     <td style={tdStyle}>
                                         {isEdit
                                             ? <input value={editData.email} onChange={e => setEditData(p => ({...p, email: e.target.value}))} style={{...inputStyle, padding: '4px 8px'}} />
                                             : <span style={{fontSize: 12, color: '#6b7280'}}>{u.email}</span>}
                                     </td>
+
+                                    {/* No. WA */}
+                                    <td style={tdStyle}>
+                                        {isEdit
+                                            ? <input
+                                                value={editData.phone}
+                                                onChange={e => setEditData(p => ({...p, phone: e.target.value}))}
+                                                placeholder="628xxxxxxxxxx"
+                                                style={{...inputStyle, padding: '4px 8px', width: 150}}
+                                              />
+                                            : <span style={{fontSize: 12, color: u.phone ? '#374151' : '#d1d5db', fontFamily: u.phone ? 'monospace' : 'inherit'}}>
+                                                {u.phone ?? '—'}
+                                              </span>
+                                        }
+                                    </td>
+
+                                    {/* Role */}
                                     <td style={tdStyle}>
                                         {isEdit ? (
-                                            <select value={editData.role} onChange={e => setEditData(p => ({...p, role: e.target.value}))} style={{...inputStyle, padding: '4px 8px'}}>
+                                            <select
+                                                value={editData.role}
+                                                onChange={e => setEditData(p => ({
+                                                    ...p,
+                                                    role: e.target.value,
+                                                    branch_id: '',
+                                                    area_id: '',
+                                                }))}
+                                                style={{...inputStyle, padding: '4px 8px'}}
+                                            >
                                                 {roles.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                                             </select>
                                         ) : (
-                                            <span style={{padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 500, background: rc.bg, color: rc.color}}>{roleLabels[u.role]}</span>
+                                            <span style={{padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 500, background: rc.bg, color: rc.color}}>
+                                                {roleLabels[u.role]}
+                                            </span>
                                         )}
                                     </td>
+
+                                    {/* Area / Cabang */}
                                     <td style={tdStyle}>
-                                        {isEdit && needsBranch(editData.role) ? (
-                                            <select value={editData.branch_id} onChange={e => setEditData(p => ({...p, branch_id: e.target.value}))} style={{...inputStyle, padding: '4px 8px'}}>
-                                                <option value="">— Pilih —</option>
-                                                {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                                            </select>
+                                        {isEdit ? (
+                                            needsBranch(editData.role) ? (
+                                                <select value={editData.branch_id} onChange={e => setEditData(p => ({...p, branch_id: e.target.value}))} style={{...inputStyle, padding: '4px 8px'}}>
+                                                    <option value="">— Pilih Cabang —</option>
+                                                    {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                                                </select>
+                                            ) : needsArea(editData.role) ? (
+                                                <select value={editData.area_id} onChange={e => setEditData(p => ({...p, area_id: e.target.value}))} style={{...inputStyle, padding: '4px 8px'}}>
+                                                    <option value="">— Pilih Area —</option>
+                                                    {areas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                                                </select>
+                                            ) : (
+                                                <span style={{fontSize: 12, color: '#9ca3af'}}>—</span>
+                                            )
                                         ) : (
-                                            <span style={{fontSize: 12}}>{u.branch?.name ?? '—'}</span>
+                                            <span style={{fontSize: 12}}>{renderAssignment(u)}</span>
                                         )}
                                     </td>
+
+                                    {/* Aksi */}
                                     <td style={tdStyle}>
                                         {isEdit ? (
                                             <div style={{display: 'flex', gap: 4}}>
@@ -163,37 +222,72 @@ export default function UserIndex({ users, branches, roles }) {
             <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: 20 }}>
                 <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 16 }}>Tambah User Baru</div>
                 <form onSubmit={handleAdd}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 140px 140px 1fr', gap: 10, marginBottom: 14 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 130px 130px 140px 1fr', gap: 10, marginBottom: 14 }}>
+                        {/* Nama */}
                         <div>
                             <label style={{display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 4, color: '#374151'}}>Nama</label>
                             <input value={data.name} onChange={e => setData('name', e.target.value)} placeholder="Nama lengkap" style={inputStyle} />
                             {errors.name && <p style={{color: '#dc2626', fontSize: 11, margin: '2px 0 0'}}>{errors.name}</p>}
                         </div>
+
+                        {/* Email */}
                         <div>
                             <label style={{display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 4, color: '#374151'}}>Email</label>
                             <input type="email" value={data.email} onChange={e => setData('email', e.target.value)} placeholder="email@onebwa.my.id" style={inputStyle} />
                             {errors.email && <p style={{color: '#dc2626', fontSize: 11, margin: '2px 0 0'}}>{errors.email}</p>}
                         </div>
+
+                        {/* Password */}
                         <div>
                             <label style={{display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 4, color: '#374151'}}>Password</label>
                             <input type="password" value={data.password} onChange={e => setData('password', e.target.value)} placeholder="Min. 6 karakter" style={inputStyle} />
                             {errors.password && <p style={{color: '#dc2626', fontSize: 11, margin: '2px 0 0'}}>{errors.password}</p>}
                         </div>
+
+                        {/* Role */}
                         <div>
                             <label style={{display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 4, color: '#374151'}}>Role</label>
-                            <select value={data.role} onChange={e => setData('role', e.target.value)} style={inputStyle}>
+                            <select value={data.role} onChange={e => setData(d => ({...d, role: e.target.value, branch_id: '', area_id: ''}))} style={inputStyle}>
                                 {roles.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                             </select>
                         </div>
+
+                        {/* No. WA */}
                         <div>
-                            <label style={{display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 4, color: '#374151'}}>Cabang</label>
-                            <select value={data.branch_id} onChange={e => setData('branch_id', e.target.value)} style={inputStyle}
-                                disabled={!needsBranch(data.role)}>
-                                <option value="">{needsBranch(data.role) ? '— Pilih Cabang —' : '— Tidak perlu —'}</option>
-                                {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                            </select>
+                            <label style={{display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 4, color: '#374151'}}>No. WA</label>
+                            <input value={data.phone} onChange={e => setData('phone', e.target.value)} placeholder="628xxxxxxxxxx" style={inputStyle} />
+                            {errors.phone && <p style={{color: '#dc2626', fontSize: 11, margin: '2px 0 0'}}>{errors.phone}</p>}
+                        </div>
+
+                        {/* Area atau Cabang — kondisional */}
+                        <div>
+                            {needsBranch(data.role) ? (
+                                <>
+                                    <label style={{display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 4, color: '#374151'}}>Cabang</label>
+                                    <select value={data.branch_id} onChange={e => setData('branch_id', e.target.value)} style={inputStyle}>
+                                        <option value="">— Pilih Cabang —</option>
+                                        {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                                    </select>
+                                    {errors.branch_id && <p style={{color: '#dc2626', fontSize: 11, margin: '2px 0 0'}}>{errors.branch_id}</p>}
+                                </>
+                            ) : needsArea(data.role) ? (
+                                <>
+                                    <label style={{display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 4, color: '#374151'}}>Area</label>
+                                    <select value={data.area_id} onChange={e => setData('area_id', e.target.value)} style={inputStyle}>
+                                        <option value="">— Pilih Area —</option>
+                                        {areas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                                    </select>
+                                    {errors.area_id && <p style={{color: '#dc2626', fontSize: 11, margin: '2px 0 0'}}>{errors.area_id}</p>}
+                                </>
+                            ) : (
+                                <>
+                                    <label style={{display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 4, color: '#374151'}}>Area / Cabang</label>
+                                    <input disabled value="— Tidak perlu —" style={{...inputStyle, background: '#f9fafb', color: '#9ca3af'}} />
+                                </>
+                            )}
                         </div>
                     </div>
+
                     <button type="submit" disabled={processing}
                         style={{ background: '#166534', color: '#fff', padding: '8px 20px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: 'none', cursor: 'pointer' }}>
                         {processing ? 'Menyimpan...' : 'Tambah User'}
