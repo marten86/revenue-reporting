@@ -1,7 +1,7 @@
 import { Link, router } from '@inertiajs/react'
 import AppLayout from '../../Components/AppLayout'
 import {
-    LineChart, Line, BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell,
+    ComposedChart, LineChart, Line, BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell,
     XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
 
@@ -194,10 +194,10 @@ export default function BranchDashboard({
 
             {/* Row 1: Trend + Channel Pie */}
             <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, marginBottom: 14 }}>
-                <ChartCard title="Tren Revenue Cabang" subtitle="6 bulan terakhir — realisasi vs target">
+                <ChartCard title="Tren Revenue vs Biaya" subtitle="6 bulan terakhir">
                     {(monthlyTrend ?? []).length > 0 ? (
                         <ResponsiveContainer width="100%" height={280}>
-                            <AreaChart data={monthlyTrend}>
+                            <ComposedChart data={monthlyTrend}>
                                 <defs>
                                     <linearGradient id="gradBranchRevenue" x1="0" y1="0" x2="0" y2="1">
                                         <stop offset="5%" stopColor="#16a34a" stopOpacity={0.15} />
@@ -206,12 +206,14 @@ export default function BranchDashboard({
                                 </defs>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
                                 <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#9ca3af' }} />
-                                <YAxis tickFormatter={formatRpAxis} tick={{ fontSize: 11, fill: '#9ca3af' }} />
+                                <YAxis yAxisId="left" tickFormatter={formatRpAxis} tick={{ fontSize: 11, fill: '#9ca3af' }} />
+                                <YAxis yAxisId="right" orientation="right" tickFormatter={v => `${v}%`} tick={{ fontSize: 11, fill: '#9ca3af' }} domain={[0, 100]} />
                                 <Tooltip content={<CustomTooltip />} />
                                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                                <Area type="monotone" dataKey="revenue" name="Realisasi" stroke="#16a34a" strokeWidth={2.5} fill="url(#gradBranchRevenue)" />
-                                <Line type="monotone" dataKey="target" name="Target" stroke="#d1d5db" strokeWidth={2} strokeDasharray="6 3" dot={false} />
-                            </AreaChart>
+                                <Area yAxisId="left" type="monotone" dataKey="revenue" name="Revenue" stroke="#16a34a" strokeWidth={2.5} fill="url(#gradBranchRevenue)" />
+                                <Bar yAxisId="left" dataKey="cost" name="Biaya" fill="#ef4444" opacity={0.7} radius={[2, 2, 0, 0]} maxBarSize={30} />
+                                <Line yAxisId="right" type="monotone" dataKey="cost_ratio" name="Rasio %" stroke="#d97706" strokeWidth={2} dot={{ fill: '#d97706', r: 3 }} />
+                            </ComposedChart>
                         </ResponsiveContainer>
                     ) : (
                         <div style={{ height: 280, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 13 }}>Belum ada data tren.</div>

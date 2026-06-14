@@ -452,11 +452,22 @@ class DashboardController extends Controller
                 ->where('period_month', $month)
                 ->value('target_total');
 
+            $cost = DB::table('monthly_costs')
+                ->where('branch_id', $branchId)
+                ->where('period_month', $month)
+                ->whereNull('deleted_at')
+                ->value('total_cost');
+
+            $revenue   = (int) ($report?->total_revenue ?? 0);
+            $costTotal = (int) ($cost ?? 0);
+
             $trend[] = [
-                'month'   => $month,
-                'label'   => Carbon::parse($month)->translatedFormat('M Y'),
-                'revenue' => (int) ($report?->total_revenue ?? 0),
-                'target'  => (int) ($target ?? 0),
+                'month'      => $month,
+                'label'      => Carbon::parse($month)->translatedFormat('M Y'),
+                'revenue'    => $revenue,
+                'target'     => (int) ($target ?? 0),
+                'cost'       => $costTotal,
+                'cost_ratio' => $revenue > 0 ? round($costTotal / $revenue * 100, 1) : 0,
             ];
         }
 
