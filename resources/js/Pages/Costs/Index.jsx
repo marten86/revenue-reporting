@@ -76,7 +76,9 @@ export default function CostsIndex({ costs, currentMonth }) {
                                     {formatRpShort(c.total_cost)}
                                 </td>
                                 <td style={{ padding: '10px 14px', fontSize: 12, color: '#6b7280' }}>
-                                    {c.cost_details_count ?? '—'} item
+                                    {c.cost_details_count > 0
+                                    ? `${c.filled_details_count ?? 0} / ${c.cost_details_count} item`
+                                    : '— item'}
                                 </td>
                                 <td style={{ padding: '10px 14px' }}><StatusBadge status={c.status} /></td>
                                 <td style={{ padding: '10px 14px', fontSize: 12, color: '#9ca3af' }}>
