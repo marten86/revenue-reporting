@@ -26,6 +26,11 @@ class Branch extends Model
         return $this->hasMany(MonthlyReport::class);
     }
 
+    public function monthlyCosts(): HasMany
+    {
+        return $this->hasMany(MonthlyCost::class);
+    }
+
     public function targets(): HasMany
     {
         return $this->hasMany(BranchTarget::class);
@@ -46,6 +51,13 @@ class Branch extends Model
     public function targetForMonth(string $month): ?BranchTarget
     {
         return $this->targets()
+            ->where('period_month', $month)
+            ->first();
+    }
+
+    public function costForMonth(string $month): ?MonthlyCost
+    {
+        return $this->monthlyCosts()
             ->where('period_month', $month)
             ->first();
     }

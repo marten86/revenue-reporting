@@ -3,10 +3,8 @@ import { Link, router } from '@inertiajs/react'
 import AppLayout from '../../Components/AppLayout'
 import {
     LineChart, Line, BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell,
-    XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+    XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart,
 } from 'recharts'
-
-// ── Utilitas ──
 
 const formatRp = (n) => new Intl.NumberFormat('id-ID', {
     style: 'currency', currency: 'IDR', maximumFractionDigits: 0
@@ -38,6 +36,11 @@ const CHANNEL_COLORS = {
 
 const PIE_COLORS = ['#16a34a', '#2563eb', '#9333ea', '#ea580c', '#0891b2', '#d97706', '#6b7280']
 
+// Warna rasio: hijau ≤30%, kuning 31-50%, merah >50%
+const ratioColor = (ratio) => ratio <= 30 ? '#166534' : ratio <= 50 ? '#d97706' : '#dc2626'
+const ratioBg    = (ratio) => ratio <= 30 ? '#dcfce7' : ratio <= 50 ? '#fef3c7' : '#fee2e2'
+const ratioLabel = (ratio) => ratio <= 30 ? 'Sehat' : ratio <= 50 ? 'Perhatian' : 'Tinggi'
+
 const StatusBadge = ({ status }) => {
     const map = {
         draft:     { label: 'Draft',     bg: '#f3f4f6', color: '#6b7280' },
@@ -64,7 +67,7 @@ const CustomTooltip = ({ active, payload, label }) => {
                     <div style={{ width: 8, height: 8, borderRadius: 2, background: entry.color }} />
                     <span style={{ color: '#6b7280' }}>{entry.name}:</span>
                     <span style={{ fontWeight: 600, fontFamily: 'monospace' }}>
-                        {formatRpShort(entry.value)}
+                        {entry.name === 'Rasio' ? `${entry.value}%` : formatRpShort(entry.value)}
                     </span>
                 </div>
             ))}
@@ -86,8 +89,8 @@ const ChartCard = ({ title, subtitle, children, style: extraStyle }) => (
 const AreaSummaryCard = ({ area }) => {
     const pct = area.achievement
     const color = pct >= 100 ? '#166534' : pct >= 75 ? '#d97706' : pct > 0 ? '#dc2626' : '#9ca3af'
-    const bgColor = pct >= 100 ? '#f0fdf4' : pct >= 75 ? '#fffbeb' : pct > 0 ? '#fff1f2' : '#f9fafb'
     const { status_counts: sc } = area
+    const ratio = area.cost_ratio ?? 0
 
     return (
         <div style={{
@@ -121,14 +124,21 @@ const AreaSummaryCard = ({ area }) => {
                 </div>
             </div>
 
-            {/* Progress bar */}
+            {/* Progress bar revenue */}
             <div style={{ padding: '0 16px 8px' }}>
                 <div style={{ background: '#f3f4f6', borderRadius: 999, height: 6, overflow: 'hidden' }}>
-                    <div style={{
-                        width: `${Math.min(pct, 100)}%`, height: '100%',
-                        background: color, borderRadius: 999, transition: 'width .5s ease'
-                    }} />
+                    <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: color, borderRadius: 999, transition: 'width .5s ease' }} />
                 </div>
+            </div>
+
+            {/* Rasio Cost */}
+            <div style={{ padding: '8px 16px', borderTop: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: 11, color: '#9ca3af' }}>
+                    Biaya: {formatRpShort(area.total_cost)}
+                </div>
+                <span style={{ background: ratioBg(ratio), color: ratioColor(ratio), padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600 }}>
+                    Rasio {ratio > 0 ? `${ratio}%` : '—'}
+                </span>
             </div>
 
             {/* Status laporan */}
@@ -140,7 +150,7 @@ const AreaSummaryCard = ({ area }) => {
                 )}
                 {sc.submitted > 0 && (
                     <span style={{ background: '#dbeafe', color: '#1d4ed8', padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 500 }}>
-                        ↑ {sc.submitted} menunggu
+                        → {sc.submitted} menunggu
                     </span>
                 )}
                 {sc.draft > 0 && (
@@ -158,16 +168,13 @@ const AreaSummaryCard = ({ area }) => {
     )
 }
 
-// ══════════════════════════════════════════════════════
-// Dashboard Area
-// ══════════════════════════════════════════════════════
-
 export default function AreaDashboard({
     branches, summary, areaSummary, areaLabel, isSuperAdmin,
     currentMonth, monthlyTrend, channelBreakdown, dailyProgress,
     topPerformers, channelPerBranch, availableMonths,
 }) {
     const pct         = summary.achievement_pct ?? 0
+    const costRatio   = summary.cost_ratio ?? 0
     const periodLabel = new Date(currentMonth + 'T00:00:00')
         .toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
 
@@ -191,17 +198,16 @@ export default function AreaDashboard({
                 .metric-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.06); transform: translateY(-1px); }
                 @media (max-width: 768px) {
                     .grid-4 { grid-template-columns: repeat(2, 1fr) !important; }
+                    .grid-6 { grid-template-columns: repeat(2, 1fr) !important; }
                     .grid-2 { grid-template-columns: 1fr !important; }
                     .grid-3 { grid-template-columns: 1fr !important; }
                 }
             `}</style>
 
-            {/* ── Header ── */}
+            {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
                 <div>
-                    <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0 }}>
-                        Dashboard — {areaLabel}
-                    </h1>
+                    <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0 }}>Dashboard — {areaLabel}</h1>
                     <p style={{ fontSize: 13, color: '#6b7280', margin: '4px 0 0' }}>{periodLabel}</p>
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -220,7 +226,7 @@ export default function AreaDashboard({
                 </div>
             </div>
 
-            {/* ── Super Admin: Ringkasan Per Area ── */}
+            {/* Super Admin: Ringkasan Per Area */}
             {isSuperAdmin && areaSummary && (
                 <div style={{ marginBottom: 28 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
@@ -247,10 +253,23 @@ export default function AreaDashboard({
                                 </div>
                             </div>
                             <div>
-                                <div style={{ fontSize: 11, color: '#9ca3af' }}>Total Target</div>
+                                <div style={{ fontSize: 11, color: '#9ca3af' }}>Total Biaya</div>
                                 <div style={{ fontSize: 20, fontWeight: 700, color: '#111827' }}>
-                                    {formatRpShort(areaSummary.reduce((s, a) => s + a.total_target, 0))}
+                                    {formatRpShort(areaSummary.reduce((s, a) => s + a.total_cost, 0))}
                                 </div>
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 11, color: '#9ca3af' }}>Rasio Biaya Nasional</div>
+                                {(() => {
+                                    const rev  = areaSummary.reduce((s, a) => s + a.total_revenue, 0)
+                                    const cost = areaSummary.reduce((s, a) => s + a.total_cost, 0)
+                                    const r    = rev > 0 ? (cost / rev * 100).toFixed(1) : 0
+                                    return (
+                                        <div style={{ fontSize: 20, fontWeight: 700, color: ratioColor(r) }}>
+                                            {rev > 0 ? `${r}%` : '—'}
+                                        </div>
+                                    )
+                                })()}
                             </div>
                             <div>
                                 <div style={{ fontSize: 11, color: '#9ca3af' }}>Capaian Nasional</div>
@@ -282,8 +301,8 @@ export default function AreaDashboard({
                 </div>
             )}
 
-            {/* ── Summary Cards ── */}
-            <div className="grid-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
+            {/* Summary Cards — 6 cards: tambah Total Biaya + Rasio */}
+            <div className="grid-6" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12, marginBottom: 24 }}>
                 {[
                     {
                         label: 'Total Revenue', icon: '💰',
@@ -295,6 +314,17 @@ export default function AreaDashboard({
                         value: `${pct.toFixed(1)}%`,
                         sub: pct >= 85 ? '✓ On track' : `Kurang ${formatRpShort(summary.total_target - summary.total_revenue)}`,
                         valueColor: pct >= 85 ? '#166534' : pct >= 60 ? '#d97706' : '#dc2626',
+                    },
+                    {
+                        label: 'Total Biaya', icon: '💸',
+                        value: formatRpShort(summary.total_cost),
+                        sub: `${branches.filter(b => b.total_cost > 0).length} cabang ada biaya`,
+                    },
+                    {
+                        label: 'Rasio Biaya', icon: '📉',
+                        value: summary.total_revenue > 0 ? `${costRatio}%` : '—',
+                        sub: ratioLabel(costRatio),
+                        valueColor: ratioColor(costRatio),
                     },
                     {
                         label: 'Laporan Masuk', icon: '📋',
@@ -309,23 +339,23 @@ export default function AreaDashboard({
                         sub: areaLabel,
                     },
                 ].map((m, i) => (
-                    <div key={i} className="metric-card" style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: '16px 18px' }}>
+                    <div key={i} className="metric-card" style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: '14px 16px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                            <div style={{ fontSize: 11, fontWeight: 500, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em' }}>{m.label}</div>
-                            <span style={{ fontSize: 20 }}>{m.icon}</span>
+                            <div style={{ fontSize: 10, fontWeight: 500, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em' }}>{m.label}</div>
+                            <span style={{ fontSize: 18 }}>{m.icon}</span>
                         </div>
-                        <div style={{ fontSize: 26, fontWeight: 700, color: m.valueColor ?? '#111827', lineHeight: 1, marginTop: 8 }}>{m.value}</div>
-                        <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 8 }}>{m.sub}</div>
+                        <div style={{ fontSize: 22, fontWeight: 700, color: m.valueColor ?? '#111827', lineHeight: 1, marginTop: 8 }}>{m.value}</div>
+                        <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 6 }}>{m.sub}</div>
                     </div>
                 ))}
             </div>
 
-            {/* ── Row 1: Trend + Channel Pie ── */}
+            {/* Row 1: Trend + Channel Pie */}
             <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, marginBottom: 14 }}>
-                <ChartCard title="Tren Revenue Bulanan" subtitle="6 bulan terakhir — realisasi vs target">
+                <ChartCard title="Tren Revenue & Biaya" subtitle="6 bulan terakhir">
                     {(monthlyTrend ?? []).length > 0 ? (
                         <ResponsiveContainer width="100%" height={280}>
-                            <AreaChart data={monthlyTrend}>
+                            <ComposedChart data={monthlyTrend}>
                                 <defs>
                                     <linearGradient id="gradRevenue" x1="0" y1="0" x2="0" y2="1">
                                         <stop offset="5%" stopColor="#16a34a" stopOpacity={0.15} />
@@ -334,12 +364,14 @@ export default function AreaDashboard({
                                 </defs>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
                                 <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#9ca3af' }} />
-                                <YAxis tickFormatter={formatRpAxis} tick={{ fontSize: 11, fill: '#9ca3af' }} />
+                                <YAxis yAxisId="left" tickFormatter={formatRpAxis} tick={{ fontSize: 11, fill: '#9ca3af' }} />
+                                <YAxis yAxisId="right" orientation="right" tickFormatter={v => `${v}%`} tick={{ fontSize: 11, fill: '#9ca3af' }} domain={[0, 100]} />
                                 <Tooltip content={<CustomTooltip />} />
                                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                                <Area type="monotone" dataKey="revenue" name="Realisasi" stroke="#16a34a" strokeWidth={2.5} fill="url(#gradRevenue)" />
-                                <Line type="monotone" dataKey="target" name="Target" stroke="#d1d5db" strokeWidth={2} strokeDasharray="6 3" dot={false} />
-                            </AreaChart>
+                                <Area yAxisId="left" type="monotone" dataKey="revenue" name="Revenue" stroke="#16a34a" strokeWidth={2.5} fill="url(#gradRevenue)" />
+                                <Bar yAxisId="left" dataKey="cost" name="Biaya" fill="#ef4444" opacity={0.7} radius={[2, 2, 0, 0]} />
+                                <Line yAxisId="right" type="monotone" dataKey="cost_ratio" name="Rasio" stroke="#d97706" strokeWidth={2} dot={{ fill: '#d97706', r: 3 }} />
+                            </ComposedChart>
                         </ResponsiveContainer>
                     ) : (
                         <div style={{ height: 280, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 13 }}>Belum ada data tren.</div>
@@ -352,9 +384,7 @@ export default function AreaDashboard({
                             <ResponsiveContainer width="100%" height={200}>
                                 <PieChart>
                                     <Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2} dataKey="value">
-                                        {pieData.map((entry, i) => (
-                                            <Cell key={i} fill={entry.color} />
-                                        ))}
+                                        {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                                     </Pie>
                                     <Tooltip formatter={(value) => formatRpShort(value)} />
                                 </PieChart>
@@ -375,7 +405,7 @@ export default function AreaDashboard({
                 </ChartCard>
             </div>
 
-            {/* ── Row 2: Daily Progress + Channel Bar ── */}
+            {/* Row 2: Daily Progress + Channel Bar */}
             <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
                 <ChartCard title="Progress Harian" subtitle="Kumulatif realisasi vs target">
                     {(dailyProgress ?? []).length > 0 ? (
@@ -404,21 +434,13 @@ export default function AreaDashboard({
                 <ChartCard title="Revenue per Kanal" subtitle={periodLabel}>
                     {(channelBreakdown ?? []).length > 0 ? (
                         <ResponsiveContainer width="100%" height={260}>
-                            <BarChart
-                                data={(channelBreakdown ?? []).map(d => ({
-                                    name: CHANNEL_LABELS[d.channel] ?? d.channel,
-                                    total: d.total,
-                                }))}
-                                layout="vertical"
-                            >
+                            <BarChart data={(channelBreakdown ?? []).map(d => ({ name: CHANNEL_LABELS[d.channel] ?? d.channel, total: d.total }))} layout="vertical">
                                 <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
                                 <XAxis type="number" tickFormatter={formatRpAxis} tick={{ fontSize: 11, fill: '#9ca3af' }} />
                                 <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 11, fill: '#374151' }} />
                                 <Tooltip content={<CustomTooltip />} />
                                 <Bar dataKey="total" name="Revenue" radius={[0, 4, 4, 0]}>
-                                    {(channelBreakdown ?? []).map((d, i) => (
-                                        <Cell key={i} fill={CHANNEL_COLORS[d.channel] ?? '#6b7280'} />
-                                    ))}
+                                    {(channelBreakdown ?? []).map((d, i) => <Cell key={i} fill={CHANNEL_COLORS[d.channel] ?? '#6b7280'} />)}
                                 </Bar>
                             </BarChart>
                         </ResponsiveContainer>
@@ -428,7 +450,7 @@ export default function AreaDashboard({
                 </ChartCard>
             </div>
 
-            {/* ── Row 3: Stacked Bar per Cabang ── */}
+            {/* Row 3: Stacked Bar per Cabang */}
             <ChartCard title="Revenue per Cabang per Kanal" subtitle="Komposisi kanal tiap cabang" style={{ marginBottom: 14 }}>
                 {(channelPerBranch ?? []).length > 0 ? (
                     <ResponsiveContainer width="100%" height={300}>
@@ -448,7 +470,7 @@ export default function AreaDashboard({
                 )}
             </ChartCard>
 
-            {/* ── Row 4: Branch Table + Top Performers ── */}
+            {/* Row 4: Branch Table + Top Performers */}
             <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 14, marginBottom: 14 }}>
                 {/* Branch Table */}
                 <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }}>
@@ -459,8 +481,8 @@ export default function AreaDashboard({
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                             <thead>
                                 <tr style={{ background: '#f9fafb' }}>
-                                    {['#', 'Cabang', 'Target', 'Realisasi', 'Capaian', 'Progress', 'Status', ''].map(h => (
-                                        <th key={h} style={{ padding: '9px 12px', textAlign: ['Target', 'Realisasi', 'Capaian'].includes(h) ? 'right' : 'left', fontSize: 11, fontWeight: 500, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid #e5e7eb', whiteSpace: 'nowrap' }}>{h}</th>
+                                    {['#', 'Cabang', 'Revenue', 'Capaian', 'Biaya', 'Rasio', 'Status', ''].map(h => (
+                                        <th key={h} style={{ padding: '9px 12px', textAlign: ['Revenue', 'Capaian', 'Biaya', 'Rasio'].includes(h) ? 'right' : 'left', fontSize: 11, fontWeight: 500, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid #e5e7eb', whiteSpace: 'nowrap' }}>{h}</th>
                                     ))}
                                 </tr>
                             </thead>
@@ -472,17 +494,21 @@ export default function AreaDashboard({
                                             <div style={{ fontWeight: 500, fontSize: 13 }}>{b.name}</div>
                                             <div style={{ fontSize: 11, color: '#9ca3af' }}>{b.city}</div>
                                         </td>
-                                        <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>{formatRpShort(b.target_amount)}</td>
                                         <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12, fontWeight: 500 }}>
                                             {b.total_revenue ? formatRpShort(b.total_revenue) : <span style={{ color: '#d1d5db' }}>—</span>}
                                         </td>
                                         <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 600, fontSize: 12, color: b.achievement_pct >= 85 ? '#166534' : b.achievement_pct >= 60 ? '#d97706' : b.total_revenue ? '#dc2626' : '#d1d5db' }}>
                                             {b.total_revenue ? `${b.achievement_pct.toFixed(1)}%` : '—'}
                                         </td>
-                                        <td style={{ padding: '10px 12px', minWidth: 100 }}>
-                                            <div style={{ background: '#e5e7eb', borderRadius: 3, height: 6, overflow: 'hidden' }}>
-                                                <div style={{ height: '100%', borderRadius: 3, width: `${Math.min(b.achievement_pct, 100)}%`, background: b.achievement_pct >= 85 ? '#16a34a' : b.achievement_pct >= 60 ? '#d97706' : '#dc2626', transition: 'width .5s ease' }} />
-                                            </div>
+                                        <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>
+                                            {b.total_cost > 0 ? formatRpShort(b.total_cost) : <span style={{ color: '#d1d5db' }}>—</span>}
+                                        </td>
+                                        <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                                            {b.total_cost > 0 ? (
+                                                <span style={{ background: ratioBg(b.cost_ratio), color: ratioColor(b.cost_ratio), padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600 }}>
+                                                    {b.cost_ratio}%
+                                                </span>
+                                            ) : <span style={{ color: '#d1d5db', fontSize: 12 }}>—</span>}
                                         </td>
                                         <td style={{ padding: '10px 12px' }}><StatusBadge status={b.status} /></td>
                                         <td style={{ padding: '10px 12px' }}>
@@ -501,6 +527,13 @@ export default function AreaDashboard({
                                 )}
                             </tbody>
                         </table>
+                    </div>
+
+                    {/* Legend rasio */}
+                    <div style={{ padding: '10px 16px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 16, fontSize: 11, color: '#6b7280' }}>
+                        <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 99, background: '#166534', marginRight: 4 }}></span>Sehat (≤30%)</span>
+                        <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 99, background: '#d97706', marginRight: 4 }}></span>Perhatian (31–50%)</span>
+                        <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 99, background: '#dc2626', marginRight: 4 }}></span>Tinggi (&gt;50%)</span>
                     </div>
                 </div>
 
@@ -528,11 +561,7 @@ export default function AreaDashboard({
                                         </td>
                                         <td style={{ padding: '9px 14px', fontWeight: 500 }}>{p.source_label}</td>
                                         <td style={{ padding: '9px 14px' }}>
-                                            <span style={{
-                                                padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 500,
-                                                background: CHANNEL_COLORS[p.channel] ? `${CHANNEL_COLORS[p.channel]}18` : '#f3f4f6',
-                                                color: CHANNEL_COLORS[p.channel] ?? '#6b7280',
-                                            }}>
+                                            <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 500, background: CHANNEL_COLORS[p.channel] ? `${CHANNEL_COLORS[p.channel]}18` : '#f3f4f6', color: CHANNEL_COLORS[p.channel] ?? '#6b7280' }}>
                                                 {CHANNEL_LABELS[p.channel] ?? p.channel}
                                             </span>
                                         </td>
