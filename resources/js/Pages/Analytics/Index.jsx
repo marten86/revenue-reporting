@@ -72,8 +72,8 @@ const SummaryCard = ({ title, value, sub, color, icon }) => (
 
 export default function AnalyticsIndex({
     branches, areas, channels, period, year, month, quarter,
-    branchId, areaId, channel, isSuperAdmin,
-    summary, chartMain, byChannel, byBranch, tableData
+    branchId, areaId, channel, isSuperAdmin, isBranchLevel,
+    summary, chartMain, byChannel, byBranch, bySource, tableData
 }) {
     const [localPeriod,  setLocalPeriod]  = useState(period)
     const [localYear,    setLocalYear]    = useState(year)
@@ -276,21 +276,46 @@ export default function AnalyticsIndex({
                 {/* Row 2: Bar Cabang + Capaian */}
                 <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:20,marginBottom:20}}>
                     <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:12,padding:20}}>
-                        <h3 style={{margin:'0 0 16px',fontSize:15,fontWeight:600,color:'#374151'}}>🏢 Perbandingan per Cabang</h3>
-                        {(byBranch || []).length > 0 ? (
-                            <ResponsiveContainer width="100%" height={260}>
-                                <BarChart data={byBranch} margin={{top:5,right:20,left:10,bottom:5}}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-                                    <XAxis dataKey="branch_name" tick={{fontSize:11,fill:'#6b7280'}} />
-                                    <YAxis tickFormatter={v => formatRp(v)} tick={{fontSize:10,fill:'#6b7280'}} width={72} />
-                                    <Tooltip content={<CustomTooltip />} />
-                                    <Bar dataKey="total" name="Revenue" radius={[6,6,0,0]}>
-                                        {byBranch.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                                    </Bar>
-                                </BarChart>
-                            </ResponsiveContainer>
+                        {isBranchLevel ? (
+                            <>
+                                <h3 style={{margin:'0 0 16px',fontSize:15,fontWeight:600,color:'#374151'}}>🏆 Top Performer per Tim/Sumber</h3>
+                                {(bySource || []).length > 0 ? (
+                                    <ResponsiveContainer width="100%" height={260}>
+                                        <BarChart data={bySource} layout="vertical" margin={{top:5,right:20,left:10,bottom:5}}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                                            <XAxis type="number" tickFormatter={v => formatRp(v)} tick={{fontSize:10,fill:'#6b7280'}} />
+                                            <YAxis type="category" dataKey="source_label" width={100} tick={{fontSize:11,fill:'#374151'}} />
+                                            <Tooltip content={<CustomTooltip />} />
+                                            <Bar dataKey="total" name="Revenue" radius={[0,4,4,0]}>
+                                                {(bySource || []).map((d, i) => (
+                                                    <Cell key={i} fill={CHANNEL_COLORS[d.channel] || COLORS[i % COLORS.length]} />
+                                                ))}
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                ) : (
+                                    <div style={{textAlign:'center',color:'#9ca3af',paddingTop:80}}>Belum ada data</div>
+                                )}
+                            </>
                         ) : (
-                            <div style={{textAlign:'center',color:'#9ca3af',paddingTop:80}}>Pilih "Semua Cabang" untuk melihat perbandingan</div>
+                            <>
+                                <h3 style={{margin:'0 0 16px',fontSize:15,fontWeight:600,color:'#374151'}}>🏢 Perbandingan per Cabang</h3>
+                                {(byBranch || []).length > 0 ? (
+                                    <ResponsiveContainer width="100%" height={260}>
+                                        <BarChart data={byBranch} margin={{top:5,right:20,left:10,bottom:5}}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                                            <XAxis dataKey="branch_name" tick={{fontSize:11,fill:'#6b7280'}} />
+                                            <YAxis tickFormatter={v => formatRp(v)} tick={{fontSize:10,fill:'#6b7280'}} width={72} />
+                                            <Tooltip content={<CustomTooltip />} />
+                                            <Bar dataKey="total" name="Revenue" radius={[6,6,0,0]}>
+                                                {byBranch.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                ) : (
+                                    <div style={{textAlign:'center',color:'#9ca3af',paddingTop:80}}>Pilih "Semua Cabang" untuk melihat perbandingan</div>
+                                )}
+                            </>
                         )}
                     </div>
 

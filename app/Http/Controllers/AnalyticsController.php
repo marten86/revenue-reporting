@@ -107,23 +107,33 @@ class AnalyticsController extends Controller
         $data['summary']['total_cost']  = $totalCost;
         $data['summary']['cost_ratio']  = $costRatio;
 
+        // bySource — khusus untuk branch_head/staff (1 cabang)
+        $isBranchLevel = $user->isBranchHead() || $user->isStaff();
+        $bySource = [];
+        if ($isBranchLevel && !empty($branchIds)) {
+            [$costStart, $costEnd] = $this->getCostDateRange($period, $year, $month, $quarter);
+            $bySource = $this->getBySource($costStart, $costEnd, $branchIds, $channel);
+        }
+
         return Inertia::render('Analytics/Index', [
-            'branches'     => $branches,
-            'areas'        => $areas,
-            'channels'     => \App\Models\MonthlyReport::CHANNELS,
-            'period'       => $period,
-            'year'         => $year,
-            'month'        => $month,
-            'quarter'      => $quarter,
-            'branchId'     => $branchId,
-            'areaId'       => $areaId,
-            'channel'      => $channel,
-            'isSuperAdmin' => $user->isSuperAdmin(),
-            'summary'      => $data['summary'],
-            'chartMain'    => $data['chartMain'],
-            'byChannel'    => $data['byChannel'],
-            'byBranch'     => $data['byBranch'],
-            'tableData'    => $data['tableData'],
+            'branches'       => $branches,
+            'areas'          => $areas,
+            'channels'       => \App\Models\MonthlyReport::CHANNELS,
+            'period'         => $period,
+            'year'           => $year,
+            'month'          => $month,
+            'quarter'        => $quarter,
+            'branchId'       => $branchId,
+            'areaId'         => $areaId,
+            'channel'        => $channel,
+            'isSuperAdmin'   => $user->isSuperAdmin(),
+            'isBranchLevel'  => $isBranchLevel,
+            'summary'        => $data['summary'],
+            'chartMain'      => $data['chartMain'],
+            'byChannel'      => $data['byChannel'],
+            'byBranch'       => $data['byBranch'],
+            'bySource'       => $bySource,
+            'tableData'      => $data['tableData'],
         ]);
     }
 
@@ -438,6 +448,34 @@ class AnalyticsController extends Controller
             ->get();
 
         return $rows->map(fn($r) => ['branch_id' => $r->branch_id, 'branch_name' => $r->branch_name, 'total' => (int) $r->total])->toArray();
+    }
+
+    private function getBySource(string $start, string $end, array $branchIds, string $channel): array
+    {
+        $col = $this->revenueCol($channel);
+
+        $rows = DB::table('revenue_details')
+            ->join('monthly_reports', 'revenue_details.monthly_report_id', '=', 'monthly_reports.id')
+            ->whereIn('monthly_reports.branch_id', $branchIds)
+            ->whereNull('monthly_reports.deleted_at')
+            ->whereBetween('revenue_details.date', [$start, $end])
+            ->whereNotNull('revenue_details.source_label')
+            ->when($channel !== 'all', fn($q) => $q->where('revenue_details.channel', $channel))
+            ->select(
+                'revenue_details.source_label',
+                'revenue_details.channel',
+                DB::raw('SUM(revenue_details.amount) as total')
+            )
+            ->groupBy('revenue_details.source_label', 'revenue_details.channel')
+            ->orderBy('total', 'desc')
+            ->limit(15)
+            ->get();
+
+        return $rows->map(fn($r) => [
+            'source_label' => $r->source_label,
+            'channel'      => $r->channel,
+            'total'        => (int) $r->total,
+        ])->toArray();
     }
 
     private function getYearlyTable(int $year, array $branchIds, string $channel): array
