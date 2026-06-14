@@ -8,9 +8,16 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-// Kirim reminder WA setiap tanggal 1, jam 08:00
+// Reminder submit laporan — setiap tanggal 1, jam 08:00 WITA
 Schedule::command('reminder:monthly-submit')
     ->monthlyOn(1, '08:00')
+    ->timezone('Asia/Makassar')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// Reminder isi laporan harian — setiap Senin, jam 08:00 WITA
+Schedule::command('reminder:weekly-fill')
+    ->weeklyOn(1, '08:00')
     ->timezone('Asia/Makassar')
     ->withoutOverlapping()
     ->runInBackground();
