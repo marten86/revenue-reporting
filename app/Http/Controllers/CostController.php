@@ -20,7 +20,8 @@ class CostController extends Controller
 
         $branchIds = $user->accessibleBranches()->pluck('id');
 
-        $costs = MonthlyCost::with(['branch.area'])
+        $costs = MonthlyCost::with(['branch.area'])->withCount('costDetails')
+
             ->whereIn('branch_id', $branchIds)
             ->where('period_month', $month)
             ->orderByRaw("CASE status
