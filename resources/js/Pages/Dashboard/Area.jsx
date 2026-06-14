@@ -481,8 +481,8 @@ export default function AreaDashboard({
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                             <thead>
                                 <tr style={{ background: '#f9fafb' }}>
-                                    {['#', 'Cabang', 'Revenue', 'Capaian', 'Biaya', 'Rasio', 'Status', ''].map(h => (
-                                        <th key={h} style={{ padding: '9px 12px', textAlign: ['Revenue', 'Capaian', 'Biaya', 'Rasio'].includes(h) ? 'right' : 'left', fontSize: 11, fontWeight: 500, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid #e5e7eb', whiteSpace: 'nowrap' }}>{h}</th>
+                                    {['#', 'Cabang', 'Target', 'Revenue', 'Capaian', 'Biaya', 'Rasio', 'Status', ''].map(h => (
+                                        <th key={h} style={{ padding: '9px 12px', textAlign: ['Target', 'Revenue', 'Capaian', 'Biaya', 'Rasio'].includes(h) ? 'right' : 'left', fontSize: 11, fontWeight: 500, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid #e5e7eb', whiteSpace: 'nowrap' }}>{h}</th>
                                     ))}
                                 </tr>
                             </thead>
@@ -493,6 +493,9 @@ export default function AreaDashboard({
                                         <td style={{ padding: '10px 12px' }}>
                                             <div style={{ fontWeight: 500, fontSize: 13 }}>{b.name}</div>
                                             <div style={{ fontSize: 11, color: '#9ca3af' }}>{b.city}</div>
+                                        </td>
+                                        <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>
+                                            {formatRpShort(b.target_amount)}
                                         </td>
                                         <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12, fontWeight: 500 }}>
                                             {b.total_revenue ? formatRpShort(b.total_revenue) : <span style={{ color: '#d1d5db' }}>—</span>}
