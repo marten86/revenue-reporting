@@ -56,9 +56,8 @@ export default function AppLayout({ title, children }) {
         {
             section: 'Laporan',
             links: [
-                { href: '/reports',        label: 'Semua Laporan', icon: '📋', badge: pendingApprovals },
-                { href: '/reports/create', label: 'Buat Laporan',  icon: '✚', roles: ['branch_head', 'staff', 'area_manager', 'super_admin'] },
-                { href: '/costs', label: 'Laporan Biaya', icon: '💰', roles: ['super_admin', 'area_manager'] },
+                { href: '/reports', label: 'Laporan Revenue', icon: '📈', badge: pendingApprovals },
+                { href: '/costs',   label: 'Laporan Biaya',   icon: '💰', roles: ['super_admin', 'area_manager'] },
             ],
         },
         {
