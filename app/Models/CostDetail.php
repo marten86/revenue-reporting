@@ -11,11 +11,10 @@ class CostDetail extends Model
     use HasUuids;
 
     protected $fillable = [
-        'monthly_cost_id', 'date', 'category', 'description', 'amount', 'sort_order',
+        'monthly_cost_id', 'category', 'description', 'amount', 'sort_order',
     ];
 
     protected $casts = [
-        'date'   => 'date',
         'amount' => 'integer',
     ];
 
@@ -24,7 +23,6 @@ class CostDetail extends Model
         return $this->belongsTo(MonthlyCost::class);
     }
 
-    // Auto recalculate saat detail disimpan/dihapus
     protected static function booted(): void
     {
         static::saved(function (CostDetail $detail) {

@@ -109,23 +109,14 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('/{area}/branches/{branch}', [AreaManagementController::class, 'unassignBranch'])->name('unassignBranch');
     });
 
-    // ── Laporan Biaya ────────────────────────────────────────────────────────────
-    Route::middleware('auth')->group(function () {
-    Route::get('/costs',          [CostController::class, 'index'])->name('costs.index');
-    Route::get('/costs/create',   [CostController::class, 'create'])->name('costs.create');
-    Route::post('/costs',         [CostController::class, 'store'])->name('costs.store');
-    Route::get('/costs/{cost}',   [CostController::class, 'show'])->name('costs.show');
-
-    // Detail items
-    Route::post('/costs/{cost}/details',              [CostController::class, 'storeDetail'])->name('cost-details.store');
-    Route::put('/costs/{cost}/details/{detail}',      [CostController::class, 'updateDetail'])->name('cost-details.update');
-    Route::delete('/costs/{cost}/details/bulk',       [CostController::class, 'bulkDestroyDetail'])->name('cost-details.bulk-destroy');
-    Route::delete('/costs/{cost}/details/{detail}',   [CostController::class, 'destroyDetail'])->name('cost-details.destroy');
-
-    // Workflow
-    Route::patch('/costs/{cost}/submit',  [CostController::class, 'submit'])->name('costs.submit');
-    Route::patch('/costs/{cost}/approve', [CostController::class, 'approve'])->name('costs.approve');
-    Route::patch('/costs/{cost}/revise',  [CostController::class, 'revise'])->name('costs.revise');
-    });
+   // ── Laporan Biaya ────────────────────────────────────────────────────────────
+    Route::get('/costs',                   [CostController::class, 'index'])->name('costs.index');
+    Route::get('/costs/create',            [CostController::class, 'create'])->name('costs.create');
+    Route::post('/costs',                  [CostController::class, 'store'])->name('costs.store');
+    Route::get('/costs/{cost}',            [CostController::class, 'show'])->name('costs.show');
+    Route::post('/costs/{cost}/grid',      [CostController::class, 'saveGrid'])->name('costs.grid');
+    Route::patch('/costs/{cost}/submit',   [CostController::class, 'submit'])->name('costs.submit');
+    Route::patch('/costs/{cost}/approve',  [CostController::class, 'approve'])->name('costs.approve');
+    Route::patch('/costs/{cost}/revise',   [CostController::class, 'revise'])->name('costs.revise');
 
 });

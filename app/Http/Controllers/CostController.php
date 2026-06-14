@@ -76,6 +76,17 @@ class CostController extends Controller
             'total_cost'   => 0,
         ]);
 
+        // Inisialisasi 16 baris kategori dengan amount 0
+        $categories = MonthlyCost::categories();
+        foreach ($categories as $i => $category) {
+            $cost->costDetails()->create([
+                'category'   => $category,
+                'description' => null,
+                'amount'     => 0,
+                'sort_order' => $i + 1,
+            ]);
+        }
+
         return redirect()->route('costs.show', $cost)
             ->with('success', 'Laporan biaya berhasil dibuat.');
     }
@@ -88,7 +99,7 @@ class CostController extends Controller
 
         $cost->load([
             'branch.area',
-            'costDetails',
+            'costDetails' => fn($q) => $q->orderBy('sort_order'),
             'submittedBy',
             'approvedBy',
             'revisedBy',
@@ -96,90 +107,60 @@ class CostController extends Controller
 
         $user = $request->user();
 
-        // Rekap per kategori
-        $rekapPerKategori = $cost->costDetails
-            ->groupBy('category')
-            ->map(fn($items, $category) => [
-                'category' => $category,
-                'total'    => $items->sum('amount'),
-                'count'    => $items->count(),
-            ])
-            ->sortByDesc('total')
-            ->values();
+        // Pastikan semua 16 kategori ada
+        $existingCategories = $cost->costDetails->pluck('category')->toArray();
+        $allCategories      = MonthlyCost::categories();
+        foreach ($allCategories as $i => $category) {
+            if (!in_array($category, $existingCategories)) {
+                $cost->costDetails()->create([
+                    'category'   => $category,
+                    'description' => null,
+                    'amount'     => 0,
+                    'sort_order' => $i + 1,
+                ]);
+            }
+        }
+
+        // Reload setelah sync
+        $cost->load(['costDetails' => fn($q) => $q->orderBy('sort_order')]);
 
         return Inertia::render('Costs/Show', [
-            'cost'             => $cost,
-            'categories'       => MonthlyCost::categories(),
-            'rekapPerKategori' => $rekapPerKategori,
-            'canSubmit'        => ($user->canSubmitReport() || $user->canManageAllBranches()) && $cost->isDraft(),
-            'canApprove'       => $user->isAreaManager() && $cost->isSubmitted(),
-            'canRevise'        => $user->isAreaManager() && $cost->isSubmitted(),
+            'cost'       => $cost,
+            'categories' => $allCategories,
+            'canSubmit'  => ($user->canSubmitReport() || $user->canManageAllBranches()) && $cost->isDraft(),
+            'canApprove' => $user->isAreaManager() && $cost->isSubmitted(),
+            'canRevise'  => $user->isAreaManager() && $cost->isSubmitted(),
         ]);
     }
 
-    // ── Detail CRUD ──────────────────────────────────────────────────────────
+    // ── Grid Save (upsert semua kategori sekaligus) ──────────────────────────
 
-    public function storeDetail(Request $request, MonthlyCost $cost)
-    {
-        abort_unless($request->user()->canAccessBranch($cost->branch), 403);
-        abort_unless($cost->isDraft(), 422, 'Laporan sudah disubmit.');
-
-        $data = $request->validate([
-            'date'        => 'required|date',
-            'category'    => 'required|string',
-            'description' => 'nullable|string|max:255',
-            'amount'      => 'required|integer|min:0',
-        ]);
-
-        $maxSort = $cost->costDetails()->max('sort_order') ?? 0;
-
-        $cost->costDetails()->create([...$data, 'sort_order' => $maxSort + 1]);
-
-        return back()->with('success', 'Item biaya berhasil ditambahkan.');
-    }
-
-    public function updateDetail(Request $request, MonthlyCost $cost, CostDetail $detail)
-    {
-        abort_unless($request->user()->canAccessBranch($cost->branch), 403);
-        abort_unless($cost->isDraft(), 422, 'Laporan sudah disubmit.');
-
-        $data = $request->validate([
-            'date'        => 'required|date',
-            'category'    => 'required|string',
-            'description' => 'nullable|string|max:255',
-            'amount'      => 'required|integer|min:0',
-        ]);
-
-        $detail->update($data);
-
-        return back()->with('success', 'Item biaya berhasil diperbarui.');
-    }
-
-    public function destroyDetail(Request $request, MonthlyCost $cost, CostDetail $detail)
-    {
-        abort_unless($request->user()->canAccessBranch($cost->branch), 403);
-        abort_unless($cost->isDraft(), 422, 'Laporan sudah disubmit.');
-
-        $detail->delete();
-
-        return back()->with('success', 'Item biaya berhasil dihapus.');
-    }
-
-    public function bulkDestroyDetail(Request $request, MonthlyCost $cost)
+    public function saveGrid(Request $request, MonthlyCost $cost)
     {
         abort_unless($request->user()->canAccessBranch($cost->branch), 403);
         abort_unless($cost->isDraft(), 422, 'Laporan sudah disubmit.');
 
         $request->validate([
-            'ids'   => 'required|array',
-            'ids.*' => 'string|exists:cost_details,id',
+            'items'               => 'required|array',
+            'items.*.category'    => 'required|string',
+            'items.*.amount'      => 'required|integer|min:0',
+            'items.*.description' => 'nullable|string|max:255',
         ]);
 
-        CostDetail::whereIn('id', $request->ids)
-            ->where('monthly_cost_id', $cost->id)
-            ->delete();
+        foreach ($request->items as $i => $item) {
+            $cost->costDetails()->updateOrCreate(
+                ['category' => $item['category']],
+                [
+                    'amount'      => $item['amount'],
+                    'description' => $item['description'] ?? null,
+                    'sort_order'  => $i + 1,
+                ]
+            );
+        }
 
-        return back()->with('success', count($request->ids) . ' item berhasil dihapus.');
+        $cost->recalculate();
+
+        return back()->with('success', 'Data biaya berhasil disimpan.');
     }
 
     // ── Workflow ─────────────────────────────────────────────────────────────
