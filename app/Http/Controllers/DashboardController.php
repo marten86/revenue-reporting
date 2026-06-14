@@ -137,9 +137,12 @@ class DashboardController extends Controller
 
         $report = $branch->reportForMonth($periodMonth);
         $target = $branch->targetForMonth($periodMonth);
+        $cost   = $branch->costForMonth($periodMonth);
 
         $totalRevenue = $report?->total_revenue ?? 0;
         $targetAmount = $target?->target_total ?? 0;
+        $totalCost    = $cost?->total_cost ?? 0;
+        $costRatio    = $totalRevenue > 0 ? round($totalCost / $totalRevenue * 100, 1) : 0;
 
         $recentMonths = MonthlyReport::where('branch_id', $branch->id)
             ->orderByDesc('period_month')
@@ -218,6 +221,10 @@ class DashboardController extends Controller
             'dailyProgress'    => $dailyProgress,
             'topPerformers'    => $topPerformers,
             'availableMonths'  => $availableMonths,
+            'costData'         => [
+                'total_cost'  => $totalCost,
+                'cost_ratio'  => $costRatio,
+            ],
         ]);
     }
 
