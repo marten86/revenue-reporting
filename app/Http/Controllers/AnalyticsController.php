@@ -98,7 +98,6 @@ class AnalyticsController extends Controller
         };
 
         // ── Tambah data cost ke summary ──────────────────────────────────────
-        // Tentukan range tanggal berdasarkan periode
         [$costStart, $costEnd] = $this->getCostDateRange($period, $year, $month, $quarter);
         $totalCost = $this->getTotalCost($costStart, $costEnd, $branchIds);
         $totalRevenue = $data['summary']['total_revenue'];
@@ -107,13 +106,16 @@ class AnalyticsController extends Controller
         $data['summary']['total_cost']  = $totalCost;
         $data['summary']['cost_ratio']  = $costRatio;
 
-        // bySource — khusus untuk branch_head/staff (1 cabang)
+        // bySource — untuk branch_head/staff, ATAU saat AM/SuperAdmin pilih 1 cabang spesifik
         $isBranchLevel = $user->isBranchHead() || $user->isStaff();
+        $singleBranch  = $branchId !== 'all';
         $bySource = [];
-        if ($isBranchLevel && !empty($branchIds)) {
-            [$costStart, $costEnd] = $this->getCostDateRange($period, $year, $month, $quarter);
+        if (($isBranchLevel || $singleBranch) && !empty($branchIds)) {
             $bySource = $this->getBySource($costStart, $costEnd, $branchIds, $channel);
         }
+
+        // showBySource: true jika harus tampilkan chart Top Performer (bukan Perbandingan per Cabang)
+        $showBySource = $isBranchLevel || $singleBranch;
 
         return Inertia::render('Analytics/Index', [
             'branches'       => $branches,
@@ -128,6 +130,7 @@ class AnalyticsController extends Controller
             'channel'        => $channel,
             'isSuperAdmin'   => $user->isSuperAdmin(),
             'isBranchLevel'  => $isBranchLevel,
+            'showBySource'   => $showBySource,
             'summary'        => $data['summary'],
             'chartMain'      => $data['chartMain'],
             'byChannel'      => $data['byChannel'],
@@ -505,7 +508,6 @@ class AnalyticsController extends Controller
         $targetMap = [];
         foreach ($targets as $t) $targetMap[$t->branch_id][(int) $t->m] = (float) $t->target;
 
-        // Query cost per cabang per bulan
         $costRows = DB::table('monthly_costs')
             ->whereIn('branch_id', $branchIds)
             ->whereNull('deleted_at')

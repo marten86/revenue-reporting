@@ -72,7 +72,7 @@ const SummaryCard = ({ title, value, sub, color, icon }) => (
 
 export default function AnalyticsIndex({
     branches, areas, channels, period, year, month, quarter,
-    branchId, areaId, channel, isSuperAdmin, isBranchLevel,
+    branchId, areaId, channel, isSuperAdmin, isBranchLevel, showBySource,
     summary, chartMain, byChannel, byBranch, bySource, tableData
 }) {
     const [localPeriod,  setLocalPeriod]  = useState(period)
@@ -115,6 +115,9 @@ export default function AnalyticsIndex({
         quarterly: '📅 Revenue per Bulan (Kuartal)',
         yearly:    '📅 Trend Revenue Tahunan',
     }[period] ?? '📅 Revenue'
+
+    // Tampilkan Top Performer jika: branch_head/staff, ATAU AM/SuperAdmin pilih 1 cabang tertentu
+    const showTopPerformer = showBySource
 
     return (
         <AppLayout title="Analytics">
@@ -273,10 +276,10 @@ export default function AnalyticsIndex({
                     </div>
                 </div>
 
-                {/* Row 2: Bar Cabang + Capaian */}
+                {/* Row 2: Chart kiri kondisional + Capaian per Cabang */}
                 <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:20,marginBottom:20}}>
                     <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:12,padding:20}}>
-                        {isBranchLevel ? (
+                        {showTopPerformer ? (
                             <>
                                 <h3 style={{margin:'0 0 16px',fontSize:15,fontWeight:600,color:'#374151'}}>🏆 Top Performer per Tim/Sumber</h3>
                                 {(bySource || []).length > 0 ? (
@@ -347,7 +350,7 @@ export default function AnalyticsIndex({
                     </div>
                 </div>
 
-                {/* Tabel Breakdown Tahunan — dengan kolom Cost & Rasio */}
+                {/* Tabel Breakdown Tahunan */}
                 <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:12,padding:20}}>
                     <h3 style={{margin:'0 0 16px',fontSize:15,fontWeight:600,color:'#374151'}}>
                         📋 Tabel Breakdown Bulanan {year}
