@@ -11,22 +11,22 @@ class BranchManagementController extends Controller
 {
     public function index(Request $request)
     {
-    abort_unless($request->user()->canManageAllBranches(), 403);
+        abort_unless($request->user()->canManageAllBranches(), 403);
 
-    $branches = $request->user()->accessibleBranches()
-        ->with('area')
-        ->withCount('users')
-        ->orderBy('name')
-        ->get();
+        $branches = $request->user()->accessibleBranches()
+            ->with('area')
+            ->withCount('users')
+            ->orderBy('name')
+            ->get();
 
-    $areas = $request->user()->isSuperAdmin()
-        ? Area::orderBy('name')->get(['id', 'name'])
-        : Area::where('id', $request->user()->area_id)->get(['id', 'name']);
+        $areas = $request->user()->isSuperAdmin()
+            ? Area::orderBy('name')->get(['id', 'name'])
+            : Area::where('id', $request->user()->area_id)->get(['id', 'name']);
 
-    return Inertia::render('Branches/Index', [
-        'branches' => $branches,
-        'areas'    => $areas,
-    ]);
+        return Inertia::render('Branches/Index', [
+            'branches' => $branches,
+            'areas'    => $areas,
+        ]);
     }
 
     public function store(Request $request)
@@ -55,6 +55,7 @@ class BranchManagementController extends Controller
             'code'     => 'required|string|max:10|unique:branches,code,' . $branch->id,
             'city'     => 'required|string|max:100',
             'province' => 'required|string|max:100',
+            'area_id'  => 'required|uuid|exists:areas,id',
         ]);
 
         $branch->update($data);
