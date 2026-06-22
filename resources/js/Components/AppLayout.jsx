@@ -56,7 +56,7 @@ export default function AppLayout({ title, children }) {
         {
             section: 'Laporan',
             links: [
-                { href: '/reports', label: 'Laporan Revenue', icon: '📈', badge: pendingApprovals },
+                { href: '/reports', label: 'Laporan Revenue', icon: '📋', badge: pendingApprovals },
                 { href: '/costs',   label: 'Laporan Biaya',   icon: '💰', roles: ['super_admin', 'area_manager'] },
             ],
         },

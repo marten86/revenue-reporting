@@ -450,7 +450,23 @@ class AnalyticsController extends Controller
             ->orderBy('total', 'desc')
             ->get();
 
-        return $rows->map(fn($r) => ['branch_id' => $r->branch_id, 'branch_name' => $r->branch_name, 'total' => (int) $r->total])->toArray();
+        // Target per cabang untuk periode terpilih (jumlah bulan dalam range [start, end]).
+        // period_month bertipe date (Y-m-01), jadi BETWEEN range harian sudah mencakup
+        // bulan yang relevan untuk monthly/quarterly/yearly.
+        $targetCol  = $channel === 'all' ? 'target_total' : ($this->channelTargetCols[$channel] ?? 'target_total');
+        $targetRows = DB::table('branch_targets')
+            ->whereIn('branch_id', $branchIds)
+            ->whereBetween('period_month', [$start, $end])
+            ->select('branch_id', DB::raw("SUM($targetCol) as target"))
+            ->groupBy('branch_id')
+            ->pluck('target', 'branch_id');
+
+        return $rows->map(fn($r) => [
+            'branch_id'   => $r->branch_id,
+            'branch_name' => $r->branch_name,
+            'total'       => (int) $r->total,
+            'target'      => (int) ($targetRows[$r->branch_id] ?? 0),
+        ])->toArray();
     }
 
     private function getBySource(string $start, string $end, array $branchIds, string $channel): array

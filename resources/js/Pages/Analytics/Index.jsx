@@ -327,9 +327,8 @@ export default function AnalyticsIndex({
                         {(byBranch || []).length > 0 ? (
                             <div style={{display:'flex',flexDirection:'column',gap:10,marginTop:8}}>
                                 {byBranch.map((b, i) => {
-                                    const target = (tableData||[]).find(r => r.branch === b.branch_name)
-                                    const monthTotal = target ? target.months.reduce((s,m) => s + (m.target||0), 0) : 0
-                                    const pct = monthTotal > 0 ? Math.min(Math.round(b.total / monthTotal * 100), 150) : 0
+                                    const branchTarget = b.target || 0
+                                    const pct = branchTarget > 0 ? Math.round(b.total / branchTarget * 100) : 0
                                     const color = pct >= 100 ? '#16a34a' : pct >= 75 ? '#d97706' : '#dc2626'
                                     return (
                                         <div key={i}>
