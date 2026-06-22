@@ -12,17 +12,17 @@ class BranchTargetController extends Controller
 {
     public function index(Request $request): Response
     {
-    abort_unless($request->user()->canManageAllBranches(), 403);
+        abort_unless($request->user()->canManageAllBranches(), 403);
 
-    $month    = $request->get('month', now()->format('Y-m-01'));
-    $branches = $request->user()->accessibleBranches()->with([
-        'targets' => fn($q) => $q->where('period_month', $month),
-    ])->get();
+        $month    = $request->get('month', now()->format('Y-m-01'));
+        $branches = $request->user()->accessibleBranches()->with([
+            'targets' => fn($q) => $q->where('period_month', $month),
+        ])->get();
 
-    return Inertia::render('Targets/Index', [
-        'branches'     => $branches,
-        'currentMonth' => $month,
-    ]);
+        return Inertia::render('Targets/Index', [
+            'branches'     => $branches,
+            'currentMonth' => $month,
+        ]);
     }
 
     public function store(Request $request)
@@ -30,18 +30,22 @@ class BranchTargetController extends Controller
         abort_unless($request->user()->canManageAllBranches(), 403);
 
         $data = $request->validate([
-            'branch_id'        => 'required|uuid|exists:branches,id',
-            'period_month'     => 'required|date_format:Y-m-d',
-            'target_total'     => 'required|integer|min:0',
+            'branch_id'         => 'required|uuid|exists:branches,id',
+            'period_month'      => 'required|date_format:Y-m-d',
+            'target_total'      => 'required|integer|min:0',
             'target_presentasi' => 'nullable|integer|min:0',
-            'target_gerai'     => 'nullable|integer|min:0',
-            'target_wgts'      => 'nullable|integer|min:0',
-            'target_dfi'       => 'nullable|integer|min:0',
-            'target_dfe'       => 'nullable|integer|min:0',
+            'target_gerai'      => 'nullable|integer|min:0',
+            'target_wgts'       => 'nullable|integer|min:0',
+            'target_dfi'        => 'nullable|integer|min:0',
+            'target_dfe'        => 'nullable|integer|min:0',
             'target_kotak_qris' => 'nullable|integer|min:0',
-            'target_kantor'    => 'nullable|integer|min:0',
-            'notes'            => 'nullable|string|max:500',
+            'target_kantor'     => 'nullable|integer|min:0',
+            'notes'             => 'nullable|string|max:500',
         ]);
+
+        // Pastikan cabang berada dalam wewenang user (area-nya)
+        $branch = Branch::findOrFail($data['branch_id']);
+        abort_unless($request->user()->canAccessBranch($branch), 403);
 
         BranchTarget::updateOrCreate(
             [
@@ -51,13 +55,14 @@ class BranchTargetController extends Controller
             [...$data, 'created_by' => $request->user()->id]
         );
 
-        // Update target_amount di monthly_report jika sudah ada
+        // Update target_amount di monthly_report jika sudah ada & masih draft
         $report = \App\Models\MonthlyReport::where('branch_id', $data['branch_id'])
             ->where('period_month', $data['period_month'])
             ->first();
 
         if ($report && $report->isDraft()) {
             $report->update(['target_amount' => $data['target_total']]);
+            $report->recalculate(); // sinkronkan achievement_pct & gap_amount
         }
 
         return back()->with('success', 'Target berhasil disimpan.');

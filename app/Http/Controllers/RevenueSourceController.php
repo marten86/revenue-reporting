@@ -16,25 +16,34 @@ class RevenueSourceController extends Controller
     public function index(Request $request): Response
     {
         $user = $request->user();
-        
+
         // Ambil cabang yang accessible untuk user
-        $branches = $user->accessibleBranches()->get(['id', 'name', 'code']);
-        
-        // Default: cabang pertama (jika ada), atau user's branch jika tidak admin
-        $selectedBranchId = $request->get('branch_id', $user->branch_id ?? $branches->first()?->id);
-        
-        $sources = RevenueSource::where('branch_id', $selectedBranchId)
-            ->orderBy('channel')
-            ->orderBy('sort_order')
-            ->orderBy('name')
-            ->get()
-            ->groupBy('channel');
+        $branches   = $user->accessibleBranches()->get(['id', 'name', 'code']);
+        $branchIds  = $branches->pluck('id')->toArray();
+
+        // Default: cabang user, atau cabang pertama yang accessible
+        $requested = $request->get('branch_id', $user->branch_id ?? $branches->first()?->id);
+
+        // Pastikan cabang yang diminta berada dalam wewenang user.
+        // Jika tidak, fallback ke cabang pertama yang accessible.
+        $selectedBranchId = in_array($requested, $branchIds, true)
+            ? $requested
+            : ($branches->first()?->id);
+
+        $sources = $selectedBranchId
+            ? RevenueSource::where('branch_id', $selectedBranchId)
+                ->orderBy('channel')
+                ->orderBy('sort_order')
+                ->orderBy('name')
+                ->get()
+                ->groupBy('channel')
+            : collect();
 
         return Inertia::render('RevenueSource/Index', [
-            'branches'     => $branches,
+            'branches'         => $branches,
             'selectedBranchId' => $selectedBranchId,
-            'sources'      => $sources,
-            'channels'     => MonthlyReport::CHANNELS,
+            'sources'          => $sources,
+            'channels'         => MonthlyReport::CHANNELS,
         ]);
     }
 
@@ -64,8 +73,8 @@ class RevenueSourceController extends Controller
         abort_unless($request->user()->canAccessBranch($source->branch), 403);
 
         $data = $request->validate([
-            'name'      => 'required|string|max:100',
-            'personnel' => 'nullable|string|max:500',
+            'name'       => 'required|string|max:100',
+            'personnel'  => 'nullable|string|max:500',
             'sort_order' => 'integer|min:0',
         ]);
 
@@ -75,8 +84,10 @@ class RevenueSourceController extends Controller
     }
 
     // Aktifkan / nonaktifkan (soft toggle, bukan hapus)
-    public function toggleActive(RevenueSource $source)
+    public function toggleActive(Request $request, RevenueSource $source)
     {
+        abort_unless($request->user()->canAccessBranch($source->branch), 403);
+
         $source->update(['is_active' => !$source->is_active]);
 
         $status = $source->is_active ? 'diaktifkan' : 'dinonaktifkan';

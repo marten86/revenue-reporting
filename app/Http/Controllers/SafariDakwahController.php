@@ -8,11 +8,9 @@ use Illuminate\Http\Request;
 
 class SafariDakwahController extends Controller
 {
-    public function store(Request $request, MonthlyReport $report)
+    private function rules(): array
     {
-        abort_unless($request->user()->canAccessBranch($report->branch), 403);
-
-        $data = $request->validate([
+        return [
             'date'        => 'required|date',
             'day_name'    => 'required|string|max:10',
             'time'        => 'nullable|string|max:20',
@@ -22,7 +20,15 @@ class SafariDakwahController extends Controller
             'commitment'  => 'nullable|integer|min:0',
             'realization' => 'nullable|integer|min:0',
             'notes'       => 'nullable|string|max:500',
-        ]);
+        ];
+    }
+
+    public function store(Request $request, MonthlyReport $report)
+    {
+        abort_unless($request->user()->canAccessBranch($report->branch), 403);
+        abort_unless($report->isDraft(), 422, 'Laporan sudah disubmit, tidak bisa diedit.');
+
+        $data = $request->validate($this->rules());
 
         SafariDakwahLog::create([
             ...$data,
@@ -38,18 +44,10 @@ class SafariDakwahController extends Controller
     public function update(Request $request, MonthlyReport $report, SafariDakwahLog $log)
     {
         abort_unless($request->user()->canAccessBranch($report->branch), 403);
+        abort_unless($report->isDraft(), 422, 'Laporan sudah disubmit, tidak bisa diedit.');
+        abort_unless($log->monthly_report_id === $report->id, 404);
 
-        $data = $request->validate([
-            'date'        => 'required|date',
-            'day_name'    => 'required|string|max:10',
-            'time'        => 'nullable|string|max:20',
-            'location'    => 'nullable|string|max:200',
-            'speaker'     => 'nullable|string|max:200',
-            'target'      => 'nullable|integer|min:0',
-            'commitment'  => 'nullable|integer|min:0',
-            'realization' => 'nullable|integer|min:0',
-            'notes'       => 'nullable|string|max:500',
-        ]);
+        $data = $request->validate($this->rules());
 
         $log->update($data);
 
@@ -59,7 +57,11 @@ class SafariDakwahController extends Controller
     public function destroy(Request $request, MonthlyReport $report, SafariDakwahLog $log)
     {
         abort_unless($request->user()->canAccessBranch($report->branch), 403);
+        abort_unless($report->isDraft(), 422, 'Laporan sudah disubmit, tidak bisa diedit.');
+        abort_unless($log->monthly_report_id === $report->id, 404);
+
         $log->delete();
+
         return back()->with('success', 'Data dihapus.');
     }
 }
