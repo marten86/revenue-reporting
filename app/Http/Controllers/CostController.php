@@ -23,7 +23,6 @@ class CostController extends Controller
         $costs = MonthlyCost::with(['branch.area'])
             ->withCount('costDetails')
             ->withCount(['costDetails as filled_details_count' => fn($q) => $q->where('amount', '>', 0)])
-
             ->whereIn('branch_id', $branchIds)
             ->where('period_month', $month)
             ->orderByRaw("CASE status
@@ -127,12 +126,15 @@ class CostController extends Controller
         // Reload setelah sync
         $cost->load(['costDetails' => fn($q) => $q->orderBy('sort_order')]);
 
+        // Hak approve/revise: Super Admin + Area Manager, dan harus dalam wewenang areanya
+        $canManage = $user->canApproveReport() && $user->canAccessBranch($cost->branch);
+
         return Inertia::render('Costs/Show', [
             'cost'       => $cost,
             'categories' => $allCategories,
             'canSubmit'  => ($user->canSubmitReport() || $user->canManageAllBranches()) && $cost->isDraft(),
-            'canApprove' => $user->isAreaManager() && $cost->isSubmitted(),
-            'canRevise'  => $user->isAreaManager() && $cost->isSubmitted(),
+            'canApprove' => $canManage && $cost->isSubmitted(),
+            'canRevise'  => $canManage && $cost->isSubmitted(),
         ]);
     }
 
@@ -180,12 +182,14 @@ class CostController extends Controller
 
     public function approve(Request $request, MonthlyCost $cost)
     {
-        abort_unless($request->user()->isAreaManager(), 403);
+        $user = $request->user();
+        // Super Admin + Area Manager, dan cost harus dalam wewenang areanya
+        abort_unless($user->canApproveReport() && $user->canAccessBranch($cost->branch), 403);
         abort_unless($cost->isSubmitted(), 422, 'Laporan belum disubmit.');
 
         $request->validate(['evaluation' => 'nullable|string|max:2000']);
 
-        $cost->approve($request->user());
+        $cost->approve($user);
 
         if ($request->filled('evaluation')) {
             $cost->update(['evaluation' => $request->evaluation]);
@@ -196,14 +200,16 @@ class CostController extends Controller
 
     public function revise(Request $request, MonthlyCost $cost)
     {
-        abort_unless($request->user()->isAreaManager(), 403);
+        $user = $request->user();
+        // Super Admin + Area Manager, dan cost harus dalam wewenang areanya
+        abort_unless($user->canApproveReport() && $user->canAccessBranch($cost->branch), 403);
         abort_unless($cost->isSubmitted(), 422, 'Hanya laporan yang sudah disubmit yang bisa direvisi.');
 
         $request->validate([
             'revision_notes' => 'required|string|max:2000',
         ]);
 
-        $cost->revise($request->user(), $request->revision_notes);
+        $cost->revise($user, $request->revision_notes);
 
         return back()->with('success', 'Laporan dikembalikan untuk revisi.');
     }

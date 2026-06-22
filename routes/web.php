@@ -5,7 +5,6 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RevenueDetailController;
 use App\Http\Controllers\SafariDakwahController;
-use App\Http\Controllers\ExportController;
 use App\Http\Controllers\BranchTargetController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\RevenueSourceController;
@@ -16,7 +15,7 @@ use App\Http\Controllers\CostController;
 
 // Auth
 Route::get('/login', [AuthController::class, 'showLogin'])->name('login')->middleware('guest');
-Route::post('/login', [AuthController::class, 'login'])->middleware('guest');
+Route::post('/login', [AuthController::class, 'login'])->middleware(['guest', 'throttle:6,1']);
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout')->middleware('auth');
 
 // Protected
@@ -51,15 +50,15 @@ Route::middleware(['auth'])->group(function () {
 
     // Analytics
     Route::get('/analytics', [App\Http\Controllers\AnalyticsController::class, 'index'])->name('analytics.index');
-    
+
     // Revenue Detail (menggantikan Daily Revenue & Team Revenue)
     Route::post('/reports/{report}/details/bulk', [RevenueDetailController::class, 'bulkUpsert'])->name('details.bulk');
     Route::post('/reports/{report}/details', [RevenueDetailController::class, 'store'])->name('details.store');
     Route::put('/reports/{report}/details/{detail}', [RevenueDetailController::class, 'update'])->name('details.update');
     Route::delete('/reports/{report}/details/bulk', [RevenueDetailController::class, 'bulkDestroy'])
-    ->name('details.bulkDestroy');
+        ->name('details.bulkDestroy');
     Route::delete('/reports/{report}/details/{detail}', [RevenueDetailController::class, 'destroy'])
-    ->name('details.destroy');
+        ->name('details.destroy');
 
     // Revenue Sources (master data tim/karyawan per cabang)
     Route::post('/branches/{branch}/sources', [RevenueSourceController::class, 'store'])->name('sources.store');
@@ -79,7 +78,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/targets', [BranchTargetController::class, 'store'])
         ->name('targets.store')
         ->middleware('role:super_admin,area_manager');
-        
+
     // Manajemen Cabang
     Route::get('/branches', [BranchManagementController::class, 'index'])->name('branches.index')->middleware('role:super_admin,area_manager');
     Route::post('/branches', [BranchManagementController::class, 'store'])->name('branches.store')->middleware('role:super_admin,area_manager');
@@ -93,30 +92,32 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/users/{user}', [UserManagementController::class, 'update'])->name('users.update')->middleware('role:super_admin,area_manager');
     Route::patch('/users/{user}/password', [UserManagementController::class, 'resetPassword'])->name('users.password')->middleware('role:super_admin,area_manager');
     Route::delete('/users/{user}', [UserManagementController::class, 'destroy'])->name('users.destroy')->middleware('role:super_admin,area_manager');
-    
+
     // Manajemen Revenue Sources (Tim/Karyawan/Relawan)
     Route::get('/revenue-sources', [RevenueSourceController::class, 'index'])
-    ->name('sources.index')
-    ->middleware('role:super_admin,area_manager');
+        ->name('sources.index')
+        ->middleware('role:super_admin,area_manager');
 
-    Route::prefix('areas')->name('areas.')->group(function () {
-    Route::get('/',                            [AreaManagementController::class, 'index'])->name('index');
-    Route::post('/',                           [AreaManagementController::class, 'store'])->name('store');
-    Route::put('/{area}',                      [AreaManagementController::class, 'update'])->name('update');
-    Route::patch('/{area}/toggle',             [AreaManagementController::class, 'toggle'])->name('toggle');
-    Route::delete('/{area}',                   [AreaManagementController::class, 'destroy'])->name('destroy');
-    Route::post('/{area}/branches',            [AreaManagementController::class, 'assignBranches'])->name('assignBranches');
-    Route::delete('/{area}/branches/{branch}', [AreaManagementController::class, 'unassignBranch'])->name('unassignBranch');
+    Route::prefix('areas')->name('areas.')->middleware('role:super_admin')->group(function () {
+        Route::get('/',                            [AreaManagementController::class, 'index'])->name('index');
+        Route::post('/',                           [AreaManagementController::class, 'store'])->name('store');
+        Route::put('/{area}',                      [AreaManagementController::class, 'update'])->name('update');
+        Route::patch('/{area}/toggle',             [AreaManagementController::class, 'toggle'])->name('toggle');
+        Route::delete('/{area}',                   [AreaManagementController::class, 'destroy'])->name('destroy');
+        Route::post('/{area}/branches',            [AreaManagementController::class, 'assignBranches'])->name('assignBranches');
+        Route::delete('/{area}/branches/{branch}', [AreaManagementController::class, 'unassignBranch'])->name('unassignBranch');
     });
 
-   // ── Laporan Biaya ────────────────────────────────────────────────────────────
-    Route::get('/costs',                   [CostController::class, 'index'])->name('costs.index');
-    Route::get('/costs/create',            [CostController::class, 'create'])->name('costs.create');
-    Route::post('/costs',                  [CostController::class, 'store'])->name('costs.store');
-    Route::get('/costs/{cost}',            [CostController::class, 'show'])->name('costs.show');
-    Route::post('/costs/{cost}/grid',      [CostController::class, 'saveGrid'])->name('costs.grid');
-    Route::patch('/costs/{cost}/submit',   [CostController::class, 'submit'])->name('costs.submit');
-    Route::patch('/costs/{cost}/approve',  [CostController::class, 'approve'])->name('costs.approve');
-    Route::patch('/costs/{cost}/revise',   [CostController::class, 'revise'])->name('costs.revise');
+    // ── Laporan Biaya ────────────────────────────────────────────────────────
+    Route::middleware('role:super_admin,area_manager')->group(function () {
+        Route::get('/costs',                   [CostController::class, 'index'])->name('costs.index');
+        Route::get('/costs/create',            [CostController::class, 'create'])->name('costs.create');
+        Route::post('/costs',                  [CostController::class, 'store'])->name('costs.store');
+        Route::get('/costs/{cost}',            [CostController::class, 'show'])->name('costs.show');
+        Route::post('/costs/{cost}/grid',      [CostController::class, 'saveGrid'])->name('costs.grid');
+        Route::patch('/costs/{cost}/submit',   [CostController::class, 'submit'])->name('costs.submit');
+        Route::patch('/costs/{cost}/approve',  [CostController::class, 'approve'])->name('costs.approve');
+        Route::patch('/costs/{cost}/revise',   [CostController::class, 'revise'])->name('costs.revise');
+    });
 
 });

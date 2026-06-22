@@ -15,24 +15,24 @@ class ReportController extends Controller
 {
     public function index(Request $request): Response
     {
-    $user  = $request->user();
-    $month = $request->get('month', now()->format('Y-m-01'));
+        $user  = $request->user();
+        $month = $request->get('month', now()->format('Y-m-01'));
 
-    $branchIds = $user->accessibleBranches()->pluck('id');
+        $branchIds = $user->accessibleBranches()->pluck('id');
 
-    $reports = MonthlyReport::with(['branch.area'])
-        ->whereIn('branch_id', $branchIds)
-        ->where('period_month', $month)
-        ->orderByRaw("CASE status
-            WHEN 'submitted' THEN 1
-            WHEN 'approved'  THEN 2
-            WHEN 'draft'     THEN 3
-            ELSE 4 END")
-        ->get();
+        $reports = MonthlyReport::with(['branch.area'])
+            ->whereIn('branch_id', $branchIds)
+            ->where('period_month', $month)
+            ->orderByRaw("CASE status
+                WHEN 'submitted' THEN 1
+                WHEN 'approved'  THEN 2
+                WHEN 'draft'     THEN 3
+                ELSE 4 END")
+            ->get();
 
-    return Inertia::render('Reports/Index', [
-        'reports'      => $reports,
-        'currentMonth' => $month,
+        return Inertia::render('Reports/Index', [
+            'reports'      => $reports,
+            'currentMonth' => $month,
         ]);
     }
 
@@ -122,6 +122,11 @@ class ReportController extends Controller
             ->orderBy('speaker')
             ->pluck('speaker');
 
+        // Hak approve/revise: Super Admin + Area Manager, dan harus dalam wewenang areanya.
+        // (show() sudah guard canAccessBranch di atas, tapi tetap eksplisit untuk kejelasan.)
+        $canManage = $request->user()->canApproveReport()
+            && $request->user()->canAccessBranch($report->branch);
+
         return Inertia::render('Reports/Show', [
             'report'          => $report,
             'weeklyBreakdown' => $weeklyBreakdown,
@@ -130,8 +135,8 @@ class ReportController extends Controller
             'sources'         => $sources,
             'rekapPerTim'     => $this->buildRekapPerTim($report),
             'canSubmit'       => ($request->user()->canSubmitReport() || $request->user()->canManageAllBranches()) && $report->isDraft(),
-            'canApprove'      => $request->user()->canApproveReport() && $report->isSubmitted(),
-            'canRevise'       => $request->user()->canApproveReport() && $report->isSubmitted(),
+            'canApprove'      => $canManage && $report->isSubmitted(),
+            'canRevise'       => $canManage && $report->isSubmitted(),
             'narasumberList'  => $narasumberList,
         ]);
     }
@@ -221,7 +226,11 @@ class ReportController extends Controller
 
     public function approve(Request $request, MonthlyReport $report)
     {
-        abort_unless($request->user()->canApproveReport(), 403);
+        // Super Admin + Area Manager, dan laporan harus dalam wewenang areanya
+        abort_unless(
+            $request->user()->canApproveReport() && $request->user()->canAccessBranch($report->branch),
+            403
+        );
         abort_unless($report->isSubmitted(), 422, 'Laporan belum disubmit.');
 
         $request->validate(['evaluation' => 'nullable|string|max:2000']);
@@ -238,7 +247,11 @@ class ReportController extends Controller
 
     public function revise(Request $request, MonthlyReport $report)
     {
-        abort_unless($request->user()->canApproveReport(), 403);
+        // Super Admin + Area Manager, dan laporan harus dalam wewenang areanya
+        abort_unless(
+            $request->user()->canApproveReport() && $request->user()->canAccessBranch($report->branch),
+            403
+        );
         abort_unless($report->isSubmitted(), 422, 'Hanya laporan yang sudah disubmit yang bisa direvisi.');
 
         $request->validate([

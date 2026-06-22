@@ -70,22 +70,27 @@ class RevenueDetailController extends Controller
         return back()->with('success', 'Data revenue berhasil dihapus.');
     }
 
+    // ── Bulk delete (hapus beberapa entri sekaligus) ────────
+
     public function bulkDestroy(Request $request, MonthlyReport $report)
     {
-    $validated = $request->validate([
-        'ids'   => 'required|array|min:1',
-        'ids.*' => 'string|exists:revenue_details,id',  // ← string, bukan integer
-    ]);
+        abort_unless($request->user()->canAccessBranch($report->branch), 403);
+        abort_unless($report->isDraft(), 422, 'Laporan sudah disubmit, tidak bisa diedit.');
 
-    $deleted = RevenueDetail::whereIn('id', $validated['ids'])
-        ->where('monthly_report_id', $report->id)
-        ->delete();
+        $validated = $request->validate([
+            'ids'   => 'required|array|min:1',
+            'ids.*' => 'string|exists:revenue_details,id',  // ← string, bukan integer (UUID)
+        ]);
 
-    $report->recalculate();
+        $deleted = RevenueDetail::whereIn('id', $validated['ids'])
+            ->where('monthly_report_id', $report->id)
+            ->delete();
 
-    return back()->with('success', "{$deleted} entri berhasil dihapus.");
+        $report->recalculate();
+
+        return back()->with('success', "{$deleted} entri berhasil dihapus.");
     }
-    
+
     // ── Bulk upsert (isi sepekan sekaligus) ─────────────────
     //
     // Dipakai saat user mengisi beberapa hari sekaligus.
