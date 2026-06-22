@@ -13,24 +13,37 @@ use Carbon\Carbon;
 
 class AnalyticsController extends Controller
 {
+    // Key = nilai kanal canonical (sama dengan MonthlyReport::CHANNELS & kolom daily_revenues)
     private array $channelColumns = [
-        'Presentasi'   => 'presentasi',
-        'WGTS'         => 'wgts',
-        'Gerai'        => 'gerai',
-        'DFI (AR)'     => 'dfi',
-        'DFE (AE)'     => 'dfe',
-        'Kotak & QRIS' => 'kotak_qris',
-        'Kantor'       => 'kantor',
+        'presentasi' => 'presentasi',
+        'wgts'       => 'wgts',
+        'gerai'      => 'gerai',
+        'dfi'        => 'dfi',
+        'dfe'        => 'dfe',
+        'kotak_qris' => 'kotak_qris',
+        'kantor'     => 'kantor',
     ];
 
+    // Key = nilai kanal canonical, value = kolom target di branch_targets
     private array $channelTargetCols = [
-        'Presentasi'   => 'target_presentasi',
-        'WGTS'         => 'target_wgts',
-        'Gerai'        => 'target_gerai',
-        'DFI (AR)'     => 'target_dfi',
-        'DFE (AE)'     => 'target_dfe',
-        'Kotak & QRIS' => 'target_kotak_qris',
-        'Kantor'       => 'target_kantor',
+        'presentasi' => 'target_presentasi',
+        'wgts'       => 'target_wgts',
+        'gerai'      => 'target_gerai',
+        'dfi'        => 'target_dfi',
+        'dfe'        => 'target_dfe',
+        'kotak_qris' => 'target_kotak_qris',
+        'kantor'     => 'target_kantor',
+    ];
+
+    // Key = nilai kanal canonical, value = label tampilan (untuk Pie & warna chart)
+    private array $channelLabels = [
+        'presentasi' => 'Presentasi',
+        'wgts'       => 'WGTS',
+        'gerai'      => 'Gerai',
+        'dfi'        => 'DFI (AR)',
+        'dfe'        => 'DFE (AE)',
+        'kotak_qris' => 'Kotak & QRIS',
+        'kantor'     => 'Kantor',
     ];
 
     private array $monthNames = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
@@ -412,7 +425,7 @@ class AnalyticsController extends Controller
     private function getByChannel(string $start, string $end, array $branchIds): array
     {
         $cases = [];
-        foreach ($this->channelColumns as $label => $col) {
+        foreach ($this->channelColumns as $key => $col) {
             $cases[] = "SUM(daily_revenues.$col) as \"$col\"";
         }
 
@@ -427,9 +440,11 @@ class AnalyticsController extends Controller
         if (!$row) return [];
 
         $results = [];
-        foreach ($this->channelColumns as $label => $col) {
+        foreach ($this->channelColumns as $key => $col) {
             $total = (int) ($row->$col ?? 0);
-            if ($total > 0) $results[] = ['channel' => $label, 'total' => $total];
+            if ($total > 0) {
+                $results[] = ['channel' => $this->channelLabels[$key] ?? $key, 'total' => $total];
+            }
         }
 
         usort($results, fn($a, $b) => $b['total'] - $a['total']);
@@ -471,8 +486,6 @@ class AnalyticsController extends Controller
 
     private function getBySource(string $start, string $end, array $branchIds, string $channel): array
     {
-        $col = $this->revenueCol($channel);
-
         $rows = DB::table('revenue_details')
             ->join('monthly_reports', 'revenue_details.monthly_report_id', '=', 'monthly_reports.id')
             ->whereIn('monthly_reports.branch_id', $branchIds)
@@ -492,7 +505,7 @@ class AnalyticsController extends Controller
 
         return $rows->map(fn($r) => [
             'source_label' => $r->source_label,
-            'channel'      => $r->channel,
+            'channel'      => $this->channelLabels[$r->channel] ?? $r->channel,
             'total'        => (int) $r->total,
         ])->toArray();
     }

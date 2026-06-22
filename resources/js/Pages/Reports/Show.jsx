@@ -1102,7 +1102,111 @@ function TabRekapPerTim({ report, isMobile }) {
         </div>
     )
 }
+// ══════════════════════════════════════════════════════════
+// Tab Rekap Per Unit — sumber Presentasi/WGTS yang namanya mengandung "Unit"
+// ══════════════════════════════════════════════════════════
 
+const isUnitSource = (label) => (label ?? '').toLowerCase().includes('unit')
+
+function TabRekapPerUnit({ report, isMobile }) {
+    const UNIT_CHANNELS = CHANNELS.filter(c => c.key === 'presentasi' || c.key === 'wgts')
+    const [selectedChannel, setSelectedChannel] = useState('presentasi')
+    const allDetails = report.revenue_details ?? []
+
+    const rekapData = useMemo(() => {
+        const channelDetails = allDetails.filter(d => d.channel === selectedChannel && isUnitSource(d.source_label))
+        const bySource = {}
+        channelDetails.forEach(detail => {
+            const sourceLabel = detail.source_label ?? 'Tanpa Unit'
+            if (!bySource[sourceLabel]) bySource[sourceLabel] = { source_label: sourceLabel, subtotal: 0, details: {} }
+            if (detail.sub_channel) {
+                if (!bySource[sourceLabel].details[detail.sub_channel]) bySource[sourceLabel].details[detail.sub_channel] = 0
+                bySource[sourceLabel].details[detail.sub_channel] += detail.amount
+            }
+            bySource[sourceLabel].subtotal += detail.amount
+        })
+        const sources = Object.values(bySource).map(s => ({ ...s, details: Object.entries(s.details).map(([sc, amt]) => ({ sub_channel: sc, amount: amt })) }))
+        sources.sort((a, b) => b.subtotal - a.subtotal)
+        return { sources, total: sources.reduce((sum, s) => sum + s.subtotal, 0) }
+    }, [allDetails, selectedChannel])
+
+    const channelUnitTotal = (channelKey) =>
+        allDetails.filter(d => d.channel === channelKey && isUnitSource(d.source_label)).reduce((s, d) => s + (d.amount ?? 0), 0)
+
+    const selectedChannelLabel = CHANNELS.find(c => c.key === selectedChannel)?.label ?? ''
+    const config = CHANNEL_CONFIG[selectedChannel]
+
+    return (
+        <div>
+            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '8px 14px', marginBottom: 14, fontSize: 12, color: '#1e40af' }}>
+                Menampilkan hanya sumber yang namanya mengandung kata <strong>"Unit"</strong> (tim luar kota — safari dakwah &amp; DF). Tim reguler ada di tab <strong>Rekap Per Tim</strong>.
+            </div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+                {UNIT_CHANNELS.map(c => {
+                    const isActive = selectedChannel === c.key
+                    const total = channelUnitTotal(c.key)
+                    return (
+                        <button key={c.key} onClick={() => setSelectedChannel(c.key)}
+                            style={{ ...pillBase, background: isActive ? '#166534' : '#f3f4f6', color: isActive ? '#fff' : '#374151' }}>
+                            {c.label}
+                            {total > 0 && <span style={{ marginLeft: 6, fontSize: 10, opacity: .8, background: isActive ? 'rgba(255,255,255,.2)' : 'rgba(0,0,0,.06)', padding: '1px 6px', borderRadius: 99 }}>{formatRpShort(total)}</span>}
+                        </button>
+                    )
+                })}
+            </div>
+
+            <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, padding: '10px 14px', marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 13, fontWeight: 500 }}>Total Unit — {selectedChannelLabel}</span>
+                <span style={{ fontSize: 16, fontWeight: 600, fontFamily: 'monospace' }}>{formatRp(rekapData.total)}</span>
+            </div>
+
+            <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, overflowX: 'auto' }}>
+                <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb' }}>
+                    <span style={{ fontWeight: 600, fontSize: 13 }}>Rekap {selectedChannelLabel} per Unit</span>
+                    <span style={{ fontSize: 12, color: '#9ca3af', marginLeft: 12 }}>({rekapData.sources.length} unit)</span>
+                </div>
+                {rekapData.sources.length === 0 ? (
+                    <div style={{ padding: 20, textAlign: 'center', color: '#9ca3af', fontSize: 12 }}>Belum ada data unit di {selectedChannelLabel.toLowerCase()}.</div>
+                ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                        <thead>
+                            <tr>
+                                <th style={{ ...thStyle, textAlign: 'left', minWidth: 150 }}>Nama Unit</th>
+                                {config.hasSubChannel && (<><th style={{ ...thStyle, minWidth: 100 }}>Reguler</th><th style={{ ...thStyle, minWidth: 100 }}>Safdak</th><th style={{ ...thStyle, minWidth: 100 }}>DF</th></>)}
+                                <th style={{ ...thStyle, minWidth: 120 }}>Subtotal</th>
+                                <th style={{ ...thStyle, minWidth: 70 }}>%</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {rekapData.sources.map((source, i) => {
+                                const pct = rekapData.total > 0 ? (source.subtotal / rekapData.total * 100).toFixed(1) : '0'
+                                return (
+                                    <tr key={i} className="rev-row" style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                        <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 600 }}>{source.source_label}</td>
+                                        {config.hasSubChannel && (
+                                            <><td style={tdStyle}>{source.details.find(d => d.sub_channel === 'reguler')?.amount ? formatRpShort(source.details.find(d => d.sub_channel === 'reguler').amount) : '—'}</td><td style={tdStyle}>{source.details.find(d => d.sub_channel === 'safdak')?.amount ? formatRpShort(source.details.find(d => d.sub_channel === 'safdak').amount) : '—'}</td><td style={tdStyle}>{source.details.find(d => d.sub_channel === 'df')?.amount ? formatRpShort(source.details.find(d => d.sub_channel === 'df').amount) : '—'}</td></>
+                                        )}
+                                        <td style={{ ...tdStyle, fontWeight: 700 }}>{formatRp(source.subtotal)}</td>
+                                        <td style={{ ...tdStyle, fontSize: 11, color: '#6b7280' }}>{pct}%</td>
+                                    </tr>
+                                )
+                            })}
+                        </tbody>
+                        <tfoot>
+                            <tr style={{ background: '#f0fdf4' }}>
+                                <td style={{ padding: '8px 10px', fontSize: 12, fontWeight: 700, color: '#166534' }}>TOTAL</td>
+                                {config.hasSubChannel && <td colSpan={3} style={{ background: '#f0fdf4' }}></td>}
+                                <td style={{ ...tdStyle, fontWeight: 700, background: '#f0fdf4', color: '#166534' }}>{formatRp(rekapData.total)}</td>
+                                <td style={{ ...tdStyle, fontWeight: 700, background: '#f0fdf4', color: '#166534' }}>100%</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                )}
+            </div>
+        </div>
+    )
+}
 // ══════════════════════════════════════════════════════════
 // Halaman utama
 // ══════════════════════════════════════════════════════════
@@ -1272,6 +1376,7 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
                     { key: 'rincian', label: 'Rincian Revenue' },
                     { key: 'rekap',   label: 'Rekap per Kanal' },
                     { key: 'tim',     label: 'Rekap Per Tim' },
+                    { key: 'unit',    label: 'Rekap Per Unit' },
                     { key: 'safari',  label: 'Safari Dakwah' },
                 ].map(t => (
                     <button key={t.key} onClick={() => setTab(t.key)}
@@ -1284,6 +1389,7 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
             {tab === 'rincian' && <TabRincian report={report} canEdit={canEdit} sources={sources} isMobile={isMobile} />}
             {tab === 'rekap' && <TabRekap report={report} weeklyBreakdown={weeklyBreakdown} isMobile={isMobile} />}
             {tab === 'tim' && <TabRekapPerTim report={report} isMobile={isMobile} />}
+            {tab === 'unit' && <TabRekapPerUnit report={report} isMobile={isMobile} />}
             {tab === 'safari' && <TabSafari report={report} canEdit={canEdit} isMobile={isMobile} narasumberList={narasumberList} />}
 
             {/* ── Audit Log Timeline ── */}
