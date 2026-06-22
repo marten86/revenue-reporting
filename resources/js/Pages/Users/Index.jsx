@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { router, useForm } from '@inertiajs/react'
+import { router, useForm, usePage } from '@inertiajs/react'
 import AppLayout from '../../Components/AppLayout'
 
 const inputStyle = { width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }
@@ -21,6 +21,9 @@ const needsBranch = (role) => ['branch_head', 'staff'].includes(role)
 const needsArea = (role) => ['area_manager'].includes(role)
 
 export default function UserIndex({ users, branches, areas, roles }) {
+    const { auth } = usePage().props
+    const isSuperAdmin = auth?.user?.role === 'super_admin'
+
     const [editId, setEditId] = useState(null)
     const [editData, setEditData] = useState({})
     const [resetId, setResetId] = useState(null)
@@ -70,6 +73,9 @@ export default function UserIndex({ users, branches, areas, roles }) {
         return <span style={{color:'#9ca3af'}}>—</span>
     }
 
+    // AM tidak boleh kelola akun Super Admin
+    const canManageUser = (u) => isSuperAdmin || u.role !== 'super_admin'
+
     return (
         <AppLayout title="Manajemen User">
             <style>{`
@@ -99,6 +105,7 @@ export default function UserIndex({ users, branches, areas, roles }) {
                         {users.map(u => {
                             const isEdit = editId === u.id
                             const rc = roleColors[u.role] ?? roleColors.staff
+                            const manageable = canManageUser(u)
                             return (
                                 <tr key={u.id} className="usr-row">
                                     {/* Nama */}
@@ -180,13 +187,15 @@ export default function UserIndex({ users, branches, areas, roles }) {
                                                 <button onClick={saveEdit} style={{background: '#166534', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: 12}}>✓</button>
                                                 <button onClick={() => setEditId(null)} style={{background: '#f3f4f6', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: 12}}>✕</button>
                                             </div>
-                                        ) : (
+                                        ) : manageable ? (
                                             <div style={{display: 'flex', gap: 8, flexWrap: 'wrap'}}>
                                                 <button onClick={() => startEdit(u)} style={{fontSize: 12, color: '#1d4ed8', background: 'none', border: 'none', cursor: 'pointer'}}>Edit</button>
                                                 <button onClick={() => { setResetId(u.id); setNewPassword('') }} style={{fontSize: 12, color: '#d97706', background: 'none', border: 'none', cursor: 'pointer'}}>Reset PW</button>
                                                 <button onClick={() => { if (confirm(`Hapus user ${u.name}?`)) router.delete(`/users/${u.id}`, {preserveScroll: true}) }}
                                                     style={{fontSize: 12, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer'}}>Hapus</button>
                                             </div>
+                                        ) : (
+                                            <span style={{fontSize: 11, color: '#d1d5db'}}>🔒 Terkunci</span>
                                         )}
                                     </td>
                                 </tr>

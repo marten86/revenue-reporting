@@ -35,28 +35,39 @@ class UserManagementController extends Controller
             ? Area::where('is_active', true)->orderBy('name')->get(['id', 'name'])
             : Area::where('id', $authUser->area_id)->get(['id', 'name']);
 
+        // Daftar role yang boleh dibuat — Super Admin hanya untuk Super Admin
+        $roles = [
+            ['value' => 'area_manager', 'label' => 'Area Manager'],
+            ['value' => 'branch_head',  'label' => 'Kepala Cabang'],
+            ['value' => 'staff',        'label' => 'Staff'],
+        ];
+        if ($authUser->isSuperAdmin()) {
+            array_unshift($roles, ['value' => 'super_admin', 'label' => 'Super Admin']);
+        }
+
         return Inertia::render('Users/Index', [
             'users'    => $users,
             'branches' => $branches,
             'areas'    => $areas,
-            'roles'    => [
-                ['value' => 'super_admin',  'label' => 'Super Admin'],
-                ['value' => 'area_manager', 'label' => 'Area Manager'],
-                ['value' => 'branch_head',  'label' => 'Kepala Cabang'],
-                ['value' => 'staff',        'label' => 'Staff'],
-            ],
+            'roles'    => $roles,
         ]);
     }
 
     public function store(Request $request)
     {
-        abort_unless($request->user()->canManageAllBranches(), 403);
+        $authUser = $request->user();
+        abort_unless($authUser->canManageAllBranches(), 403);
+
+        // Role yang diizinkan tergantung siapa yang login
+        $allowedRoles = $authUser->isSuperAdmin()
+            ? ['super_admin', 'area_manager', 'branch_head', 'staff']
+            : ['area_manager', 'branch_head', 'staff'];
 
         $data = $request->validate([
             'name'      => 'required|string|max:100',
             'email'     => 'required|email|unique:users,email',
             'password'  => 'required|string|min:6',
-            'role'      => ['required', Rule::in(['super_admin', 'area_manager', 'branch_head', 'staff'])],
+            'role'      => ['required', Rule::in($allowedRoles)],
             'branch_id' => 'nullable|uuid|exists:branches,id',
             'area_id'   => 'nullable|uuid|exists:areas,id',
             'phone'     => 'nullable|string|max:20',
@@ -69,7 +80,7 @@ class UserManagementController extends Controller
         } elseif ($data['role'] === 'super_admin') {
             $areaId = null;
         } else {
-            $areaId = $request->user()->area_id;
+            $areaId = $authUser->area_id;
         }
 
         User::create([
@@ -87,12 +98,21 @@ class UserManagementController extends Controller
 
     public function update(Request $request, User $user)
     {
-        abort_unless($request->user()->canManageAllBranches(), 403);
+        $authUser = $request->user();
+        abort_unless($authUser->canManageAllBranches(), 403);
+
+        // AM tidak boleh mengelola akun Super Admin yang sudah ada
+        abort_if(!$authUser->isSuperAdmin() && $user->role === 'super_admin', 403, 'Tidak berwenang mengelola akun Super Admin.');
+
+        // Role yang diizinkan tergantung siapa yang login
+        $allowedRoles = $authUser->isSuperAdmin()
+            ? ['super_admin', 'area_manager', 'branch_head', 'staff']
+            : ['area_manager', 'branch_head', 'staff'];
 
         $data = $request->validate([
             'name'      => 'required|string|max:100',
             'email'     => ['required', 'email', Rule::unique('users')->ignore($user->id)],
-            'role'      => ['required', Rule::in(['super_admin', 'area_manager', 'branch_head', 'staff'])],
+            'role'      => ['required', Rule::in($allowedRoles)],
             'branch_id' => 'nullable|uuid|exists:branches,id',
             'area_id'   => 'nullable|uuid|exists:areas,id',
             'phone'     => 'nullable|string|max:20',
@@ -122,7 +142,11 @@ class UserManagementController extends Controller
 
     public function resetPassword(Request $request, User $user)
     {
-        abort_unless($request->user()->canManageAllBranches(), 403);
+        $authUser = $request->user();
+        abort_unless($authUser->canManageAllBranches(), 403);
+
+        // AM tidak boleh reset password akun Super Admin
+        abort_if(!$authUser->isSuperAdmin() && $user->role === 'super_admin', 403, 'Tidak berwenang mengelola akun Super Admin.');
 
         $data = $request->validate([
             'password' => 'required|string|min:6',
@@ -135,8 +159,12 @@ class UserManagementController extends Controller
 
     public function destroy(Request $request, User $user)
     {
-        abort_unless($request->user()->canManageAllBranches(), 403);
-        abort_if($user->id === $request->user()->id, 422, 'Tidak bisa menghapus akun sendiri.');
+        $authUser = $request->user();
+        abort_unless($authUser->canManageAllBranches(), 403);
+        abort_if($user->id === $authUser->id, 422, 'Tidak bisa menghapus akun sendiri.');
+
+        // AM tidak boleh menghapus akun Super Admin
+        abort_if(!$authUser->isSuperAdmin() && $user->role === 'super_admin', 403, 'Tidak berwenang mengelola akun Super Admin.');
 
         $user->delete();
 
