@@ -22,7 +22,9 @@ const PERIOD_OPTIONS = [
     { value: 'weekly',    label: 'Mingguan' },
     { value: 'monthly',   label: 'Bulanan' },
     { value: 'quarterly', label: 'Kuartalan' },
+    { value: 'semester',  label: 'Semester' },
     { value: 'yearly',    label: 'Tahunan' },
+
 ]
 
 const MONTH_NAMES = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember']
@@ -71,7 +73,7 @@ const SummaryCard = ({ title, value, sub, color, icon }) => (
 )
 
 export default function AnalyticsIndex({
-    branches, areas, channels, period, year, month, quarter,
+    branches, areas, channels, period, year, month, quarter, semester,
     branchId, areaId, channel, isSuperAdmin, isBranchLevel, showBySource,
     summary, chartMain, byChannel, byBranch, bySource, tableData
 }) {
@@ -79,6 +81,7 @@ export default function AnalyticsIndex({
     const [localYear,    setLocalYear]    = useState(year)
     const [localMonth,   setLocalMonth]   = useState(month)
     const [localQuarter, setLocalQuarter] = useState(quarter)
+    const [localSemester, setLocalSemester] = useState(semester ?? 1)
     const [localBranch,  setLocalBranch]  = useState(branchId)
     const [localAreaId,  setLocalAreaId]  = useState(areaId ?? 'all')
     const [localChannel, setLocalChannel] = useState(channel)
@@ -89,12 +92,12 @@ export default function AnalyticsIndex({
             year:      localYear,
             month:     localMonth,
             quarter:   localQuarter,
+            semester:  localSemester,
             branch_id: localBranch,
             area_id:   localAreaId,
             channel:   localChannel,
         }, { preserveState: false })
     }
-
     const yearOptions = []
     for (let y = 2024; y <= new Date().getFullYear() + 1; y++) yearOptions.push(y)
 
@@ -113,6 +116,7 @@ export default function AnalyticsIndex({
         weekly:    '📅 Revenue Minggu Ini per Hari',
         monthly:   '📅 Revenue Harian Bulan Ini',
         quarterly: '📅 Revenue per Bulan (Kuartal)',
+        semester:  '📅 Revenue per Bulan (Semester)',
         yearly:    '📅 Trend Revenue Tahunan',
     }[period] ?? '📅 Revenue'
 
@@ -170,6 +174,16 @@ export default function AnalyticsIndex({
                                 <option value={2}>Q2 (Apr–Jun)</option>
                                 <option value={3}>Q3 (Jul–Sep)</option>
                                 <option value={4}>Q4 (Okt–Des)</option>
+                            </select>
+                        </div>
+                    )}
+                    {localPeriod === 'semester' && (
+                        <div>
+                            <label style={{fontSize:11,color:'#6b7280',display:'block',marginBottom:4}}>Semester</label>
+                            <select value={localSemester} onChange={e => setLocalSemester(Number(e.target.value))}
+                                style={{border:'1px solid #d1d5db',padding:'8px 12px',borderRadius:8,fontSize:14}}>
+                                <option value={1}>Semester 1 (Jan–Jun)</option>
+                                <option value={2}>Semester 2 (Jul–Des)</option>
                             </select>
                         </div>
                     )}

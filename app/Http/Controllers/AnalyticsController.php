@@ -56,6 +56,7 @@ class AnalyticsController extends Controller
         $year     = (int) $request->get('year', now()->year);
         $month    = (int) $request->get('month', now()->month);
         $quarter  = (int) $request->get('quarter', (int) ceil(now()->month / 3));
+        $semester = (int) $request->get('semester', (int) ceil(now()->month / 6));
         $branchId = $request->get('branch_id', 'all');
         $areaId   = $request->get('area_id', 'all');
         $channel  = $request->get('channel', 'all');
@@ -96,6 +97,7 @@ class AnalyticsController extends Controller
                 'year'         => $year,
                 'month'        => $month,
                 'quarter'      => $quarter,
+                'semester'     => $semester,
                 'branchId'     => $branchId,
                 'areaId'       => $areaId,
                 'channel'      => $channel,
@@ -106,12 +108,13 @@ class AnalyticsController extends Controller
         $data = match($period) {
             'weekly'    => $this->getWeeklyData($year, $month, $branchIds, $channel),
             'quarterly' => $this->getQuarterlyData($year, $quarter, $branchIds, $channel),
+            'semester'  => $this->getSemesterData($year, $semester, $branchIds, $channel),
             'yearly'    => $this->getYearlyData($year, $branchIds, $channel),
             default     => $this->getMonthlyData($year, $month, $branchIds, $channel),
         };
 
         // ── Tambah data cost ke summary ──────────────────────────────────────
-        [$costStart, $costEnd] = $this->getCostDateRange($period, $year, $month, $quarter);
+        [$costStart, $costEnd] = $this->getCostDateRange($period, $year, $month, $quarter, $semester);
         $totalCost = $this->getTotalCost($costStart, $costEnd, $branchIds);
         $totalRevenue = $data['summary']['total_revenue'];
         $costRatio = $totalRevenue > 0 ? round($totalCost / $totalRevenue * 100, 1) : 0;
@@ -138,6 +141,7 @@ class AnalyticsController extends Controller
             'year'           => $year,
             'month'          => $month,
             'quarter'        => $quarter,
+            'semester'       => $semester,
             'branchId'       => $branchId,
             'areaId'         => $areaId,
             'channel'        => $channel,
@@ -154,7 +158,7 @@ class AnalyticsController extends Controller
     }
 
     // ── Helper: date range untuk query cost per periode ──────────────────────
-    private function getCostDateRange(string $period, int $year, int $month, int $quarter): array
+    private function getCostDateRange(string $period, int $year, int $month, int $quarter, int $semester): array
     {
         return match($period) {
             'weekly', 'monthly' => [
@@ -164,6 +168,10 @@ class AnalyticsController extends Controller
             'quarterly' => [
                 sprintf('%04d-%02d-01', $year, ($quarter - 1) * 3 + 1),
                 Carbon::create($year, ($quarter - 1) * 3 + 3, 1)->endOfMonth()->format('Y-m-d'),
+            ],
+            'semester' => [
+                sprintf('%04d-%02d-01', $year, $semester === 1 ? 1 : 7),
+                Carbon::create($year, $semester === 1 ? 6 : 12, 1)->endOfMonth()->format('Y-m-d'),
             ],
             'yearly' => [
                 "$year-01-01",
@@ -304,6 +312,62 @@ class AnalyticsController extends Controller
         $prevMonths  = [($prevQuarter - 1) * 3 + 1, ($prevQuarter - 1) * 3 + 2, ($prevQuarter - 1) * 3 + 3];
         $prevStart   = Carbon::create($prevYear, $prevMonths[0], 1)->startOfMonth()->toDateString();
         $prevEnd     = Carbon::create($prevYear, $prevMonths[2], 1)->endOfMonth()->toDateString();
+
+        $prevActual = (float) DB::table('daily_revenues')
+            ->join('monthly_reports', 'daily_revenues.monthly_report_id', '=', 'monthly_reports.id')
+            ->whereIn('monthly_reports.branch_id', $branchIds)
+            ->whereNull('monthly_reports.deleted_at')
+            ->whereBetween('daily_revenues.date', [$prevStart, $prevEnd])
+            ->sum("daily_revenues.$col");
+
+        $growth = $prevActual > 0 ? round(($actualTotal - $prevActual) / $prevActual * 100, 1) : null;
+        $pct    = $targetTotal > 0 ? round($actualTotal / $targetTotal * 100, 1) : 0;
+
+        return [
+            'summary'   => ['total_revenue' => (int) $actualTotal, 'target' => (int) $targetTotal, 'achievement' => $pct, 'growth' => $growth],
+            'chartMain' => $chartMain,
+            'byChannel' => $this->getByChannel($start, $end, $branchIds),
+            'byBranch'  => $this->getByBranch($start, $end, $branchIds, $channel),
+            'tableData' => $this->getYearlyTable($year, $branchIds, $channel),
+        ];
+    }
+
+    // ─── SEMESTER ────────────────────────────────────────────────────────────
+    // Semester 1 = Jan–Jun, Semester 2 = Jul–Des. Target & biaya menyesuaikan
+    // rentang 6 bulan (target dijumlah per bulan, biaya via getCostDateRange).
+    private function getSemesterData(int $year, int $semester, array $branchIds, string $channel): array
+    {
+        $months = $semester === 1 ? [1, 2, 3, 4, 5, 6] : [7, 8, 9, 10, 11, 12];
+        $start  = Carbon::create($year, $months[0], 1)->startOfMonth()->toDateString();
+        $end    = Carbon::create($year, $months[5], 1)->endOfMonth()->toDateString();
+        $col    = $this->revenueCol($channel);
+
+        $rows = DB::table('daily_revenues')
+            ->join('monthly_reports', 'daily_revenues.monthly_report_id', '=', 'monthly_reports.id')
+            ->whereIn('monthly_reports.branch_id', $branchIds)
+            ->whereNull('monthly_reports.deleted_at')
+            ->whereBetween('daily_revenues.date', [$start, $end])
+            ->select(DB::raw("TO_CHAR(daily_revenues.date, 'YYYY-MM') as ym"), DB::raw("SUM(daily_revenues.$col) as total"))
+            ->groupBy('ym')->orderBy('ym')->get()->keyBy('ym');
+
+        $chartMain = []; $actualTotal = 0; $targetTotal = 0;
+
+        foreach ($months as $m) {
+            $ym     = sprintf('%04d-%02d', $year, $m);
+            $found  = $rows->get($ym);
+            $actual = $found ? (int) $found->total : 0;
+            $target = $this->getTargetTotal($year, $m, $branchIds, $channel);
+            $chartMain[] = ['label' => $this->monthNames[$m - 1], 'actual' => $actual, 'target' => (int) $target];
+            $actualTotal += $actual;
+            $targetTotal += $target;
+        }
+
+        // Semester sebelumnya: S1 → S2 tahun lalu; S2 → S1 tahun ini
+        $prevSemester = $semester === 1 ? 2 : 1;
+        $prevYear     = $semester === 1 ? $year - 1 : $year;
+        $prevMonths   = $prevSemester === 1 ? [1, 6] : [7, 12];
+        $prevStart    = Carbon::create($prevYear, $prevMonths[0], 1)->startOfMonth()->toDateString();
+        $prevEnd      = Carbon::create($prevYear, $prevMonths[1], 1)->endOfMonth()->toDateString();
 
         $prevActual = (float) DB::table('daily_revenues')
             ->join('monthly_reports', 'daily_revenues.monthly_report_id', '=', 'monthly_reports.id')
@@ -467,7 +531,7 @@ class AnalyticsController extends Controller
 
         // Target per cabang untuk periode terpilih (jumlah bulan dalam range [start, end]).
         // period_month bertipe date (Y-m-01), jadi BETWEEN range harian sudah mencakup
-        // bulan yang relevan untuk monthly/quarterly/yearly.
+        // bulan yang relevan untuk monthly/quarterly/semester/yearly.
         $targetCol  = $channel === 'all' ? 'target_total' : ($this->channelTargetCols[$channel] ?? 'target_total');
         $targetRows = DB::table('branch_targets')
             ->whereIn('branch_id', $branchIds)
