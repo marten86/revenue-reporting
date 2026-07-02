@@ -23,7 +23,7 @@ Route::middleware(['auth'])->group(function () {
 
     // Redirect root
     Route::get('/', function () {
-        return auth()->user()->canManageAllBranches()
+        return auth()->user()->usesAreaDashboard()   // ⬅ CHANGED: was canManageAllBranches() — kini viewer & admin_nasional ikut ke dashboard nasional
             ? redirect()->route('area.dashboard')
             : redirect()->route('branch.dashboard');
     })->name('home');
@@ -31,74 +31,88 @@ Route::middleware(['auth'])->group(function () {
     // Dashboards
     Route::get('/dashboard/area', [DashboardController::class, 'area'])
         ->name('area.dashboard')
-        ->middleware('role:super_admin,area_manager');
+        ->middleware('role:super_admin,area_manager,admin_nasional,viewer');   // ⬅ CHANGED: +admin_nasional,viewer
 
     Route::get('/dashboard/branch', [DashboardController::class, 'branch'])
         ->name('branch.dashboard');
 
     // Reports — statis dulu sebelum {report}
-    Route::get('/reports/create', [ReportController::class, 'create'])->name('reports.create');
-    Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
-    Route::post('/reports', [ReportController::class, 'store'])->name('reports.store');
-    Route::get('/reports/{report}', [ReportController::class, 'show'])->name('reports.show');
-    Route::patch('/reports/{report}/submit', [ReportController::class, 'submit'])->name('reports.submit');
-    Route::patch('/reports/{report}/approve', [ReportController::class, 'approve'])->name('reports.approve');
-    Route::patch('/reports/{report}/revise', [ReportController::class, 'revise'])->name('reports.revise');
-    Route::patch('/reports/{report}/evaluation', [ReportController::class, 'updateEvaluation'])->name('reports.evaluation');
-    Route::get('/reports/{report}/export/excel', [ReportController::class, 'exportExcel'])->name('reports.export.excel');
-    Route::get('/reports/{report}/export/pdf',   [ReportController::class, 'exportPdf'])->name('reports.export.pdf');
+    Route::get('/reports/create', [ReportController::class, 'create'])->name('reports.create')
+        ->middleware('role:super_admin,area_manager,admin_nasional,branch_head,staff');   // ⬅ NEW: blokir viewer
+    Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');     // read: semua termasuk viewer
+    Route::post('/reports', [ReportController::class, 'store'])->name('reports.store')
+        ->middleware('role:super_admin,area_manager,admin_nasional,branch_head,staff');   // ⬅ NEW: blokir viewer
+    Route::get('/reports/{report}', [ReportController::class, 'show'])->name('reports.show');   // read: semua termasuk viewer
+    Route::patch('/reports/{report}/submit', [ReportController::class, 'submit'])->name('reports.submit')
+        ->middleware('role:super_admin,area_manager,admin_nasional,branch_head,staff');   // ⬅ KOREKSI: semua kecuali viewer
+    Route::patch('/reports/{report}/approve', [ReportController::class, 'approve'])->name('reports.approve')
+        ->middleware('role:super_admin,area_manager');                                    // ⬅ NEW: approve hanya AM/super_admin
+    Route::patch('/reports/{report}/revise', [ReportController::class, 'revise'])->name('reports.revise')
+        ->middleware('role:super_admin,area_manager');                                    // ⬅ NEW: revise hanya AM/super_admin
+    Route::patch('/reports/{report}/evaluation', [ReportController::class, 'updateEvaluation'])->name('reports.evaluation')
+        ->middleware('role:super_admin,area_manager,admin_nasional,branch_head,staff');   // ⬅ KOREKSI: semua kecuali viewer
+    Route::get('/reports/{report}/export/excel', [ReportController::class, 'exportExcel'])->name('reports.export.excel');   // read/export: semua termasuk viewer
+    Route::get('/reports/{report}/export/pdf',   [ReportController::class, 'exportPdf'])->name('reports.export.pdf');       // read/export: semua termasuk viewer
 
     // Analytics
-    Route::get('/analytics', [App\Http\Controllers\AnalyticsController::class, 'index'])->name('analytics.index');
+    Route::get('/analytics', [App\Http\Controllers\AnalyticsController::class, 'index'])->name('analytics.index');   // read: semua termasuk viewer (scope via accessibleBranches)
 
     // Revenue Detail (menggantikan Daily Revenue & Team Revenue)
-    Route::post('/reports/{report}/details/bulk', [RevenueDetailController::class, 'bulkUpsert'])->name('details.bulk');
-    Route::post('/reports/{report}/details', [RevenueDetailController::class, 'store'])->name('details.store');
-    Route::put('/reports/{report}/details/{detail}', [RevenueDetailController::class, 'update'])->name('details.update');
+    Route::post('/reports/{report}/details/bulk', [RevenueDetailController::class, 'bulkUpsert'])->name('details.bulk')
+        ->middleware('role:super_admin,area_manager,admin_nasional,branch_head,staff');   // ⬅ NEW: blokir viewer (bulk UPSERT = simpan grid, admin_nasional boleh)
+    Route::post('/reports/{report}/details', [RevenueDetailController::class, 'store'])->name('details.store')
+        ->middleware('role:super_admin,area_manager,admin_nasional,branch_head,staff');   // ⬅ NEW: blokir viewer
+    Route::put('/reports/{report}/details/{detail}', [RevenueDetailController::class, 'update'])->name('details.update')
+        ->middleware('role:super_admin,area_manager,admin_nasional,branch_head,staff');   // ⬅ NEW: blokir viewer
     Route::delete('/reports/{report}/details/bulk', [RevenueDetailController::class, 'bulkDestroy'])
-        ->name('details.bulkDestroy');
+        ->name('details.bulkDestroy')
+        ->middleware('role:super_admin,area_manager,branch_head,staff');                  // ⬅ NEW: blokir viewer DAN admin_nasional (bulk-delete destruktif)
     Route::delete('/reports/{report}/details/{detail}', [RevenueDetailController::class, 'destroy'])
-        ->name('details.destroy');
+        ->name('details.destroy')
+        ->middleware('role:super_admin,area_manager,admin_nasional,branch_head,staff');   // ⬅ NEW: blokir viewer (hapus 1 baris = editing normal, admin_nasional boleh)
 
-    // Revenue Sources (master data tim/karyawan per cabang)
+    // Revenue Sources (master data tim/karyawan per cabang) — TANPA perubahan; gating viewer/admin_nasional di controller (butuh RevenueSourceController)
     Route::post('/branches/{branch}/sources', [RevenueSourceController::class, 'store'])->name('sources.store');
     Route::put('/sources/{source}', [RevenueSourceController::class, 'update'])->name('sources.update');
     Route::patch('/sources/{source}/toggle', [RevenueSourceController::class, 'toggleActive'])->name('sources.toggle');
     Route::delete('/sources/{source}', [RevenueSourceController::class, 'destroy'])->name('sources.destroy');
 
-    // Safari Dakwah
-    Route::post('/reports/{report}/safari', [SafariDakwahController::class, 'store'])->name('safari.store');
-    Route::put('/reports/{report}/safari/{log}', [SafariDakwahController::class, 'update'])->name('safari.update');
-    Route::delete('/reports/{report}/safari/{log}', [SafariDakwahController::class, 'destroy'])->name('safari.destroy');
+    // Safari Dakwah — bagian data laporan → admin_nasional boleh, viewer tidak
+    Route::post('/reports/{report}/safari', [SafariDakwahController::class, 'store'])->name('safari.store')
+        ->middleware('role:super_admin,area_manager,admin_nasional,branch_head,staff');   // ⬅ NEW: blokir viewer
+    Route::put('/reports/{report}/safari/{log}', [SafariDakwahController::class, 'update'])->name('safari.update')
+        ->middleware('role:super_admin,area_manager,admin_nasional,branch_head,staff');   // ⬅ NEW: blokir viewer
+    Route::delete('/reports/{report}/safari/{log}', [SafariDakwahController::class, 'destroy'])->name('safari.destroy')
+        ->middleware('role:super_admin,area_manager,admin_nasional,branch_head,staff');   // ⬅ NEW: blokir viewer
 
     // Target Cabang
     Route::get('/targets', [BranchTargetController::class, 'index'])
         ->name('targets.index')
-        ->middleware('role:super_admin,area_manager');
+        ->middleware('role:super_admin,area_manager,admin_nasional');                     // ⬅ CHANGED: +admin_nasional
     Route::post('/targets', [BranchTargetController::class, 'store'])
         ->name('targets.store')
-        ->middleware('role:super_admin,area_manager');
+        ->middleware('role:super_admin,area_manager,admin_nasional');                     // ⬅ CHANGED: +admin_nasional
 
-    // Manajemen Cabang
+    // Manajemen Cabang — TANPA perubahan (admin_nasional & viewer sengaja DIKECUALIKAN)
     Route::get('/branches', [BranchManagementController::class, 'index'])->name('branches.index')->middleware('role:super_admin,area_manager');
     Route::post('/branches', [BranchManagementController::class, 'store'])->name('branches.store')->middleware('role:super_admin,area_manager');
     Route::put('/branches/{branch}', [BranchManagementController::class, 'update'])->name('branches.update')->middleware('role:super_admin,area_manager');
     Route::patch('/branches/{branch}/toggle', [BranchManagementController::class, 'toggleActive'])->name('branches.toggle')->middleware('role:super_admin,area_manager');
     Route::delete('/branches/{branch}', [BranchManagementController::class, 'destroy'])->name('branches.destroy')->middleware('role:super_admin,area_manager');
 
-    // Manajemen User
+    // Manajemen User — TANPA perubahan (admin_nasional & viewer sengaja DIKECUALIKAN)
     Route::get('/users', [UserManagementController::class, 'index'])->name('users.index')->middleware('role:super_admin,area_manager');
     Route::post('/users', [UserManagementController::class, 'store'])->name('users.store')->middleware('role:super_admin,area_manager');
     Route::put('/users/{user}', [UserManagementController::class, 'update'])->name('users.update')->middleware('role:super_admin,area_manager');
     Route::patch('/users/{user}/password', [UserManagementController::class, 'resetPassword'])->name('users.password')->middleware('role:super_admin,area_manager');
     Route::delete('/users/{user}', [UserManagementController::class, 'destroy'])->name('users.destroy')->middleware('role:super_admin,area_manager');
 
-    // Manajemen Revenue Sources (Tim/Karyawan/Relawan)
+    // Manajemen Revenue Sources — TANPA perubahan (keputusan admin_nasional masih pending)
     Route::get('/revenue-sources', [RevenueSourceController::class, 'index'])
         ->name('sources.index')
         ->middleware('role:super_admin,area_manager');
 
-    Route::prefix('areas')->name('areas.')->middleware('role:super_admin')->group(function () {
+    Route::prefix('areas')->name('areas.')->middleware('role:super_admin')->group(function () {   // TANPA perubahan
         Route::get('/',                            [AreaManagementController::class, 'index'])->name('index');
         Route::post('/',                           [AreaManagementController::class, 'store'])->name('store');
         Route::put('/{area}',                      [AreaManagementController::class, 'update'])->name('update');
@@ -109,15 +123,27 @@ Route::middleware(['auth'])->group(function () {
     });
 
     // ── Laporan Biaya ────────────────────────────────────────────────────────
-    Route::middleware('role:super_admin,area_manager')->group(function () {
-        Route::get('/costs',                   [CostController::class, 'index'])->name('costs.index');
-        Route::get('/costs/create',            [CostController::class, 'create'])->name('costs.create');
-        Route::post('/costs',                  [CostController::class, 'store'])->name('costs.store');
-        Route::get('/costs/{cost}',            [CostController::class, 'show'])->name('costs.show');
-        Route::post('/costs/{cost}/grid',      [CostController::class, 'saveGrid'])->name('costs.grid');
-        Route::patch('/costs/{cost}/submit',   [CostController::class, 'submit'])->name('costs.submit');
-        Route::patch('/costs/{cost}/approve',  [CostController::class, 'approve'])->name('costs.approve');
-        Route::patch('/costs/{cost}/revise',   [CostController::class, 'revise'])->name('costs.revise');
+    // Static 'create' didaftarkan sebelum '{cost}' agar tak tertangkap sebagai {cost}='create'
+    Route::get('/costs/create', [CostController::class, 'create'])
+        ->name('costs.create')->middleware('role:super_admin,area_manager,admin_nasional');   // ⬅ input (viewer TIDAK)
+
+    // Baca — viewer & admin_nasional ikut
+    Route::middleware('role:super_admin,area_manager,admin_nasional,viewer')->group(function () {   // ⬅
+        Route::get('/costs',        [CostController::class, 'index'])->name('costs.index');
+        Route::get('/costs/{cost}', [CostController::class, 'show'])->name('costs.show');
+    });
+
+    // Input — admin_nasional ikut, viewer TIDAK
+    Route::middleware('role:super_admin,area_manager,admin_nasional')->group(function () {   // ⬅
+        Route::post('/costs',                [CostController::class, 'store'])->name('costs.store');
+        Route::post('/costs/{cost}/grid',    [CostController::class, 'saveGrid'])->name('costs.grid');
+        Route::patch('/costs/{cost}/submit', [CostController::class, 'submit'])->name('costs.submit');
+    });
+
+    // Approve/revise — tetap AM + super_admin (admin_nasional & viewer dikecualikan)
+    Route::middleware('role:super_admin,area_manager')->group(function () {   // ⬅
+        Route::patch('/costs/{cost}/approve', [CostController::class, 'approve'])->name('costs.approve');
+        Route::patch('/costs/{cost}/revise',  [CostController::class, 'revise'])->name('costs.revise');
     });
 
 });

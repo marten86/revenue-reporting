@@ -48,23 +48,29 @@ export default function AppLayout({ title, children }) {
         {
             section: 'Overview',
             links: [
+                // Analytics: semua role (termasuk viewer & admin_nasional) — read-only aman
                 { href: '/analytics',        label: 'Analytics',        icon: '📈' },
-                { href: '/dashboard/area',   label: 'Dashboard Area',   icon: '📊', roles: ['super_admin', 'area_manager'] },
+                // Dashboard Area: +admin_nasional, +viewer (mereka pakai dashboard nasional)
+                { href: '/dashboard/area',   label: 'Dashboard Area',   icon: '📊', roles: ['super_admin', 'area_manager', 'admin_nasional', 'viewer'] }, // ⬅
                 { href: '/dashboard/branch', label: 'Dashboard Cabang', icon: '🏢', roles: ['branch_head', 'staff'] },
             ],
         },
         {
             section: 'Laporan',
             links: [
+                // Laporan Revenue: semua boleh lihat (viewer read-only)
                 { href: '/reports', label: 'Laporan Revenue', icon: '📋', badge: pendingApprovals },
-                { href: '/costs',   label: 'Laporan Biaya',   icon: '💰', roles: ['super_admin', 'area_manager'] },
+                // Laporan Biaya: +admin_nasional (input), +viewer (lihat) — sesuai keputusan cost
+                { href: '/costs',   label: 'Laporan Biaya',   icon: '💰', roles: ['super_admin', 'area_manager', 'admin_nasional', 'viewer'] }, // ⬅
             ],
         },
         {
             section: 'Konfigurasi',
             links: [
+                // Semua menu konfigurasi: TETAP super_admin + area_manager saja.
+                // admin_nasional & viewer sengaja dikecualikan (tak boleh kelola user/cabang/area/target/sumber).
                 { href: '/areas',            label: 'Kelola Area',      icon: '🗺️', roles: ['super_admin'] },
-                { href: '/targets',          label: 'Target Cabang',    icon: '🎯', roles: ['super_admin', 'area_manager'] },
+                { href: '/targets',          label: 'Target Cabang',    icon: '🎯', roles: ['super_admin', 'area_manager', 'admin_nasional'] }, // ⬅ admin_nasional boleh set target
                 { href: '/branches',         label: 'Kelola Cabang',    icon: '🏢', roles: ['super_admin', 'area_manager'] },
                 { href: '/revenue-sources',  label: 'Kelola Sumber',    icon: '👥', roles: ['super_admin', 'area_manager'] },
                 { href: '/users',            label: 'Kelola User',      icon: '👤', roles: ['super_admin', 'area_manager'] },
@@ -75,12 +81,13 @@ export default function AppLayout({ title, children }) {
     const isActive = (href) => path === href || (href !== '/' && path.startsWith(href + '/'))
 
     const roleLabels = {
-        super_admin:  'Super Admin',
-        area_manager: 'Area Manager',
-        branch_head:  'Kepala Cabang',
-        staff:        'Staff',
+        super_admin:    'Super Admin',
+        admin_nasional: 'Admin Nasional', // ⬅
+        area_manager:   'Area Manager',
+        branch_head:    'Kepala Cabang',
+        staff:          'Staff',
+        viewer:         'Viewer',          // ⬅
     }
-
     // Desktop: 64px collapsed, 260px expanded
     // Mobile: selalu 260px (slide in/out)
     const SIDEBAR_FULL = 260
@@ -158,7 +165,7 @@ export default function AppLayout({ title, children }) {
                             <div style={{ overflow: 'hidden', flex: 1 }}>
                                 <div style={{ color: '#fff', fontWeight: 600, fontSize: 15, whiteSpace: 'nowrap' }}>One BWA</div>
                                 <div style={{ color: '#4ade80', fontSize: 11, letterSpacing: '.08em', fontWeight: 500 }}>
-                                    {user?.role === 'super_admin' ? 'NASIONAL' : (user?.area_name ?? 'INDOTIM')}
+                                    {['super_admin', 'admin_nasional', 'viewer'].includes(user?.role) ? 'NASIONAL' : (user?.area_name ?? 'INDOTIM')}
                                 </div>
                             </div>
                             {/* Close (mobile) atau Toggle (desktop) */}

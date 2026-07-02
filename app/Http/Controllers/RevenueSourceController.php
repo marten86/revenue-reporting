@@ -21,7 +21,8 @@ class RevenueSourceController extends Controller
         $branches   = $user->accessibleBranches()->get(['id', 'name', 'code']);
         $branchIds  = $branches->pluck('id')->toArray();
 
-        // Default: cabang user, atau cabang pertama yang accessible
+        // Default: cabang user, atau cabang pertama yang accessible.
+        // Untuk user nasional (branch_id NULL) otomatis pakai cabang pertama — aman.
         $requested = $request->get('branch_id', $user->branch_id ?? $branches->first()?->id);
 
         // Pastikan cabang yang diminta berada dalam wewenang user.
@@ -50,6 +51,7 @@ class RevenueSourceController extends Controller
     // Tambah sumber baru (dari form laporan atau halaman master data)
     public function store(Request $request, Branch $branch)
     {
+        abort_unless($request->user()->canInputData(), 403); // ⬅ NEW: blokir viewer (admin_nasional lolos)
         abort_unless($request->user()->canAccessBranch($branch), 403);
 
         $data = $request->validate([
@@ -70,6 +72,7 @@ class RevenueSourceController extends Controller
     // Update nama / personil
     public function update(Request $request, RevenueSource $source)
     {
+        abort_unless($request->user()->canInputData(), 403); // ⬅ NEW: blokir viewer
         abort_unless($request->user()->canAccessBranch($source->branch), 403);
 
         $data = $request->validate([
@@ -86,6 +89,7 @@ class RevenueSourceController extends Controller
     // Aktifkan / nonaktifkan (soft toggle, bukan hapus)
     public function toggleActive(Request $request, RevenueSource $source)
     {
+        abort_unless($request->user()->canInputData(), 403); // ⬅ NEW: blokir viewer
         abort_unless($request->user()->canAccessBranch($source->branch), 403);
 
         $source->update(['is_active' => !$source->is_active]);
@@ -97,6 +101,7 @@ class RevenueSourceController extends Controller
     // Hapus permanen (hanya jika belum pernah dipakai)
     public function destroy(Request $request, RevenueSource $source)
     {
+        abort_unless($request->user()->canInputData(), 403); // ⬅ NEW: blokir viewer
         abort_unless($request->user()->canAccessBranch($source->branch), 403);
         $source->delete();
 

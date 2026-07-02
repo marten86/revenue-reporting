@@ -28,6 +28,7 @@ class RevenueDetailController extends Controller
 
     public function store(Request $request, MonthlyReport $report)
     {
+        abort_unless($request->user()->canInputData(), 403); // ⬅ NEW: blokir viewer (admin_nasional lolos)
         abort_unless($request->user()->canAccessBranch($report->branch), 403);
         abort_unless($report->isDraft(), 422, 'Laporan sudah disubmit, tidak bisa diedit.');
 
@@ -47,6 +48,7 @@ class RevenueDetailController extends Controller
 
     public function update(Request $request, MonthlyReport $report, RevenueDetail $detail)
     {
+        abort_unless($request->user()->canInputData(), 403); // ⬅ NEW: blokir viewer
         abort_unless($request->user()->canAccessBranch($report->branch), 403);
         abort_unless($report->isDraft(), 422, 'Laporan sudah disubmit, tidak bisa diedit.');
         abort_unless($detail->monthly_report_id === $report->id, 404);
@@ -61,6 +63,7 @@ class RevenueDetailController extends Controller
 
     public function destroy(Request $request, MonthlyReport $report, RevenueDetail $detail)
     {
+        abort_unless($request->user()->canInputData(), 403); // ⬅ NEW: blokir viewer (hapus 1 baris = editing normal, admin_nasional boleh)
         abort_unless($request->user()->canAccessBranch($report->branch), 403);
         abort_unless($report->isDraft(), 422, 'Laporan sudah disubmit, tidak bisa diedit.');
         abort_unless($detail->monthly_report_id === $report->id, 404);
@@ -74,6 +77,8 @@ class RevenueDetailController extends Controller
 
     public function bulkDestroy(Request $request, MonthlyReport $report)
     {
+        // ⬅ NEW: aksi DESTRUKTIF — blokir viewer DAN admin_nasional (sesuai keputusan: admin_nasional tak boleh bulk-delete).
+        abort_if($request->user()->isViewer() || $request->user()->isAdminNasional(), 403);
         abort_unless($request->user()->canAccessBranch($report->branch), 403);
         abort_unless($report->isDraft(), 422, 'Laporan sudah disubmit, tidak bisa diedit.');
 
@@ -99,6 +104,7 @@ class RevenueDetailController extends Controller
 
     public function bulkUpsert(Request $request, MonthlyReport $report)
     {
+        abort_unless($request->user()->canInputData(), 403); // ⬅ NEW: blokir viewer (UPSERT = simpan grid, admin_nasional boleh)
         abort_unless($request->user()->canAccessBranch($report->branch), 403);
         abort_unless($report->isDraft(), 422, 'Laporan sudah disubmit, tidak bisa diedit.');
 

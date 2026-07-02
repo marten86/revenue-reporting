@@ -35,6 +35,7 @@ class CostController extends Controller
         return Inertia::render('Costs/Index', [
             'costs'        => $costs,
             'currentMonth' => $month,
+            'isReadOnly'   => $user->isReadOnly(), // ⬅ NEW: frontend sembunyikan tombol "Buat Laporan Biaya" utk viewer
         ]);
     }
 
@@ -42,6 +43,8 @@ class CostController extends Controller
 
     public function create(Request $request): Response
     {
+        abort_unless($request->user()->canInputData(), 403); // ⬅ NEW: blokir viewer (admin_nasional lolos)
+
         $user     = $request->user();
         $branches = $user->accessibleBranches()->get(['id', 'name', 'code']);
 
@@ -54,6 +57,8 @@ class CostController extends Controller
 
     public function store(Request $request)
     {
+        abort_unless($request->user()->canInputData(), 403); // ⬅ NEW: blokir viewer
+
         $data = $request->validate([
             'branch_id'    => 'required|uuid|exists:branches,id',
             'period_month' => 'required|date_format:Y-m-d',
@@ -132,9 +137,11 @@ class CostController extends Controller
         return Inertia::render('Costs/Show', [
             'cost'       => $cost,
             'categories' => $allCategories,
+            // viewer: canSubmit=false (canSubmitReport & canManageAllBranches keduanya false). admin_nasional: canSubmitReport=true.
             'canSubmit'  => ($user->canSubmitReport() || $user->canManageAllBranches()) && $cost->isDraft(),
             'canApprove' => $canManage && $cost->isSubmitted(),
             'canRevise'  => $canManage && $cost->isSubmitted(),
+            'isReadOnly' => $user->isReadOnly(), // ⬅ NEW: frontend sembunyikan grid input biaya utk viewer
         ]);
     }
 
@@ -142,6 +149,7 @@ class CostController extends Controller
 
     public function saveGrid(Request $request, MonthlyCost $cost)
     {
+        abort_unless($request->user()->canInputData(), 403); // ⬅ NEW: blokir viewer
         abort_unless($request->user()->canAccessBranch($cost->branch), 403);
         abort_unless($cost->isDraft(), 422, 'Laporan sudah disubmit.');
 
@@ -172,6 +180,11 @@ class CostController extends Controller
 
     public function submit(Request $request, MonthlyCost $cost)
     {
+        // ⬅ NEW: penjaga peran eksplisit — semua kecuali viewer (mirror flag canSubmit)
+        abort_unless(
+            $request->user()->canSubmitReport() || $request->user()->canManageAllBranches(),
+            403
+        );
         abort_unless($request->user()->canAccessBranch($cost->branch), 403);
         abort_unless($cost->isDraft(), 422, 'Laporan sudah disubmit.');
 
@@ -183,7 +196,8 @@ class CostController extends Controller
     public function approve(Request $request, MonthlyCost $cost)
     {
         $user = $request->user();
-        // Super Admin + Area Manager, dan cost harus dalam wewenang areanya
+        // Super Admin + Area Manager, dan cost harus dalam wewenang areanya.
+        // canApproveReport() tetap {super_admin, area_manager} → admin_nasional & viewer tertolak.
         abort_unless($user->canApproveReport() && $user->canAccessBranch($cost->branch), 403);
         abort_unless($cost->isSubmitted(), 422, 'Laporan belum disubmit.');
 

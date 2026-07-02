@@ -25,6 +25,7 @@ class SafariDakwahController extends Controller
 
     public function store(Request $request, MonthlyReport $report)
     {
+        abort_unless($request->user()->canInputData(), 403); // ⬅ NEW: blokir viewer (admin_nasional lolos)
         abort_unless($request->user()->canAccessBranch($report->branch), 403);
         abort_unless($report->isDraft(), 422, 'Laporan sudah disubmit, tidak bisa diedit.');
 
@@ -43,6 +44,7 @@ class SafariDakwahController extends Controller
 
     public function update(Request $request, MonthlyReport $report, SafariDakwahLog $log)
     {
+        abort_unless($request->user()->canInputData(), 403); // ⬅ NEW: blokir viewer
         abort_unless($request->user()->canAccessBranch($report->branch), 403);
         abort_unless($report->isDraft(), 422, 'Laporan sudah disubmit, tidak bisa diedit.');
         abort_unless($log->monthly_report_id === $report->id, 404);
@@ -56,6 +58,7 @@ class SafariDakwahController extends Controller
 
     public function destroy(Request $request, MonthlyReport $report, SafariDakwahLog $log)
     {
+        abort_unless($request->user()->canInputData(), 403); // ⬅ NEW: blokir viewer
         abort_unless($request->user()->canAccessBranch($report->branch), 403);
         abort_unless($report->isDraft(), 422, 'Laporan sudah disubmit, tidak bisa diedit.');
         abort_unless($log->monthly_report_id === $report->id, 404);

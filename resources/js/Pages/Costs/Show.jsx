@@ -22,7 +22,7 @@ const StatusBadge = ({ status }) => {
     return <span style={{ background: s.bg, color: s.color, padding: '3px 10px', borderRadius: 99, fontSize: 12, fontWeight: 500 }}>{s.label}</span>
 }
 
-export default function CostsShow({ cost, categories, canSubmit, canApprove, canRevise }) {
+export default function CostsShow({ cost, categories, canSubmit, canApprove, canRevise, isReadOnly = false }) { // ⬅ +isReadOnly
     const [activeTab, setActiveTab]         = useState('grid')
     const [saving, setSaving]               = useState(false)
     const [showApproveModal, setShowApproveModal] = useState(false)
@@ -31,7 +31,9 @@ export default function CostsShow({ cost, categories, canSubmit, canApprove, can
     const [reviseNote, setReviseNote]       = useState('')
 
     const periodLabel = new Date(cost.period_month + 'T00:00:00').toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
-    const isDraft = cost.status === 'draft'
+    // isDraft mengontrol input grid + tombol Simpan/Reset.
+    // Viewer: paksa non-edit walau status draft (server juga menolak, ini kerapian UI).
+    const isDraft = cost.status === 'draft' && !isReadOnly // ⬅
 
     // Inisialisasi grid dari cost_details yang sudah ada
     const initialGrid = () => {

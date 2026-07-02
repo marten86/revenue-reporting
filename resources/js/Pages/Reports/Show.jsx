@@ -1211,7 +1211,7 @@ function TabRekapPerUnit({ report, isMobile }) {
 // Halaman utama
 // ══════════════════════════════════════════════════════════
 
-export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit, canApprove, canRevise, narasumberList = [] }) {
+export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit, canApprove, canRevise, isReadOnly = false, narasumberList = [] }) { // ⬅ +isReadOnly
     const [tab, setTab] = useState('rincian')
     const [showApproveModal, setShowApproveModal] = useState(false)
     const [approveNote, setApproveNote] = useState('')

@@ -12,7 +12,7 @@ class BranchTargetController extends Controller
 {
     public function index(Request $request): Response
     {
-        abort_unless($request->user()->canManageAllBranches(), 403);
+        abort_unless($request->user()->canManageTargets(), 403); // ⬅ CHANGED: was canManageAllBranches() — kini +admin_nasional
 
         $month    = $request->get('month', now()->format('Y-m-01'));
         $branches = $request->user()->accessibleBranches()->with([
@@ -27,7 +27,7 @@ class BranchTargetController extends Controller
 
     public function store(Request $request)
     {
-        abort_unless($request->user()->canManageAllBranches(), 403);
+        abort_unless($request->user()->canManageTargets(), 403); // ⬅ CHANGED: was canManageAllBranches() — kini +admin_nasional
 
         $data = $request->validate([
             'branch_id'         => 'required|uuid|exists:branches,id',
@@ -43,7 +43,8 @@ class BranchTargetController extends Controller
             'notes'             => 'nullable|string|max:500',
         ]);
 
-        // Pastikan cabang berada dalam wewenang user (area-nya)
+        // Pastikan cabang berada dalam wewenang user (area-nya).
+        // Untuk admin_nasional, canAccessBranch() = true untuk semua cabang (seesAllBranches).
         $branch = Branch::findOrFail($data['branch_id']);
         abort_unless($request->user()->canAccessBranch($branch), 403);
 

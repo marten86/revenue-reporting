@@ -7,16 +7,21 @@ const thStyle = { padding: '10px 12px', fontSize: 11, fontWeight: 500, color: '#
 const tdStyle = { padding: '10px 12px', fontSize: 13, borderBottom: '1px solid #f3f4f6' }
 
 const roleLabels = {
-    super_admin: 'Super Admin', area_manager: 'Area Manager',
-    branch_head: 'Kepala Cabang', staff: 'Staff',
+    super_admin: 'Super Admin', admin_nasional: 'Admin Nasional', area_manager: 'Area Manager',
+    branch_head: 'Kepala Cabang', staff: 'Staff', viewer: 'Viewer',
 }
 const roleColors = {
-    super_admin: { bg: '#fef3c7', color: '#d97706' },
-    area_manager: { bg: '#dbeafe', color: '#1d4ed8' },
-    branch_head: { bg: '#dcfce7', color: '#166534' },
-    staff: { bg: '#f3f4f6', color: '#6b7280' },
+    super_admin:    { bg: '#fef3c7', color: '#d97706' },
+    admin_nasional: { bg: '#ede9fe', color: '#7c3aed' }, // ungu — tingkat nasional
+    area_manager:   { bg: '#dbeafe', color: '#1d4ed8' },
+    branch_head:    { bg: '#dcfce7', color: '#166534' },
+    staff:          { bg: '#f3f4f6', color: '#6b7280' },
+    viewer:         { bg: '#e2e8f0', color: '#475569' }, // slate — read-only
 }
 
+// Role nasional: tidak terikat cabang/area, dan hanya super_admin yang boleh mengelolanya.
+const NATIONAL_ROLES = ['super_admin', 'admin_nasional', 'viewer']
+const isNational = (role) => NATIONAL_ROLES.includes(role)
 const needsBranch = (role) => ['branch_head', 'staff'].includes(role)
 const needsArea = (role) => ['area_manager'].includes(role)
 
@@ -70,11 +75,12 @@ export default function UserIndex({ users, branches, areas, roles }) {
     const renderAssignment = (u) => {
         if (needsBranch(u.role)) return u.branch?.name ?? <span style={{color:'#d97706',fontSize:11}}>⚠ Belum ada cabang</span>
         if (needsArea(u.role)) return u.area?.name ?? <span style={{color:'#d97706',fontSize:11}}>⚠ Belum ada area</span>
+        if (isNational(u.role)) return <span style={{color:'#7c3aed',fontSize:11,fontWeight:500}}>Nasional</span>
         return <span style={{color:'#9ca3af'}}>—</span>
     }
 
-    // AM tidak boleh kelola akun Super Admin
-    const canManageUser = (u) => isSuperAdmin || u.role !== 'super_admin'
+    // AM tidak boleh kelola akun nasional (super_admin/admin_nasional/viewer)
+    const canManageUser = (u) => isSuperAdmin || !isNational(u.role)
 
     return (
         <AppLayout title="Manajemen User">
@@ -154,7 +160,7 @@ export default function UserIndex({ users, branches, areas, roles }) {
                                             </select>
                                         ) : (
                                             <span style={{padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 500, background: rc.bg, color: rc.color}}>
-                                                {roleLabels[u.role]}
+                                                {roleLabels[u.role] ?? u.role}
                                             </span>
                                         )}
                                     </td>
@@ -172,6 +178,8 @@ export default function UserIndex({ users, branches, areas, roles }) {
                                                     <option value="">— Pilih Area —</option>
                                                     {areas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                                                 </select>
+                                            ) : isNational(editData.role) ? (
+                                                <span style={{fontSize: 12, color: '#7c3aed'}}>Nasional</span>
                                             ) : (
                                                 <span style={{fontSize: 12, color: '#9ca3af'}}>—</span>
                                             )
@@ -291,7 +299,7 @@ export default function UserIndex({ users, branches, areas, roles }) {
                             ) : (
                                 <>
                                     <label style={{display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 4, color: '#374151'}}>Area / Cabang</label>
-                                    <input disabled value="— Tidak perlu —" style={{...inputStyle, background: '#f9fafb', color: '#9ca3af'}} />
+                                    <input disabled value={isNational(data.role) ? '— Nasional (semua cabang) —' : '— Tidak perlu —'} style={{...inputStyle, background: '#f9fafb', color: '#9ca3af'}} />
                                 </>
                             )}
                         </div>

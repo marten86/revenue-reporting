@@ -38,6 +38,8 @@ class ReportController extends Controller
 
     public function create(Request $request): Response
     {
+        abort_unless($request->user()->canInputData(), 403); // ⬅ blokir viewer (route juga sudah blokir, ini lapis kedua)
+
         $user     = $request->user();
         $branches = $user->accessibleBranches()->get(['id', 'name', 'code']);
 
@@ -48,6 +50,8 @@ class ReportController extends Controller
 
     public function store(Request $request)
     {
+        abort_unless($request->user()->canInputData(), 403); // ⬅ blokir viewer
+
         $data = $request->validate([
             'branch_id'    => 'required|uuid|exists:branches,id',
             'period_month' => 'required|date_format:Y-m-d',
@@ -134,9 +138,11 @@ class ReportController extends Controller
             'subChannels'     => MonthlyReport::SUB_CHANNELS,
             'sources'         => $sources,
             'rekapPerTim'     => $this->buildRekapPerTim($report),
+            // canSubmit: admin_nasional otomatis ikut karena sudah masuk canSubmitReport(); viewer tetap false.
             'canSubmit'       => ($request->user()->canSubmitReport() || $request->user()->canManageAllBranches()) && $report->isDraft(),
             'canApprove'      => $canManage && $report->isSubmitted(),
             'canRevise'       => $canManage && $report->isSubmitted(),
+            'isReadOnly'      => $request->user()->isReadOnly(), // ⬅ NEW: dipakai frontend menyembunyikan grid/tombol input untuk viewer
             'narasumberList'  => $narasumberList,
         ]);
     }
@@ -216,6 +222,11 @@ class ReportController extends Controller
 
     public function submit(Request $request, MonthlyReport $report)
     {
+        // ⬅ NEW: penjaga peran eksplisit — semua kecuali viewer (mirror flag canSubmit di show()).
+        abort_unless(
+            $request->user()->canSubmitReport() || $request->user()->canManageAllBranches(),
+            403
+        );
         abort_unless($request->user()->canAccessBranch($report->branch), 403);
         abort_unless($report->isDraft(), 422, 'Laporan sudah disubmit.');
 
@@ -226,7 +237,8 @@ class ReportController extends Controller
 
     public function approve(Request $request, MonthlyReport $report)
     {
-        // Super Admin + Area Manager, dan laporan harus dalam wewenang areanya
+        // Super Admin + Area Manager, dan laporan harus dalam wewenang areanya.
+        // canApproveReport() TETAP {super_admin, area_manager} → admin_nasional & viewer tertolak. (Sesuai keputusan.)
         abort_unless(
             $request->user()->canApproveReport() && $request->user()->canAccessBranch($report->branch),
             403
@@ -247,7 +259,7 @@ class ReportController extends Controller
 
     public function revise(Request $request, MonthlyReport $report)
     {
-        // Super Admin + Area Manager, dan laporan harus dalam wewenang areanya
+        // Super Admin + Area Manager, dan laporan harus dalam wewenang areanya.
         abort_unless(
             $request->user()->canApproveReport() && $request->user()->canAccessBranch($report->branch),
             403
@@ -265,6 +277,7 @@ class ReportController extends Controller
 
     public function updateEvaluation(Request $request, MonthlyReport $report)
     {
+        abort_unless($request->user()->canInputData(), 403); // ⬅ NEW: blokir viewer (branch_head/staff/AM/super_admin/admin_nasional tetap boleh)
         abort_unless($request->user()->canAccessBranch($report->branch), 403);
         $request->validate(['evaluation' => 'nullable|string|max:2000']);
         $report->update(['evaluation' => $request->evaluation]);
