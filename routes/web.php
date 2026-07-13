@@ -8,6 +8,7 @@ use App\Http\Controllers\SafariDakwahController;
 use App\Http\Controllers\BranchTargetController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\RevenueSourceController;
+use App\Http\Controllers\SpeakerController;
 use App\Http\Controllers\BranchManagementController;
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\AreaManagementController;
@@ -77,6 +78,14 @@ Route::middleware(['auth'])->group(function () {
     Route::patch('/sources/{source}/toggle', [RevenueSourceController::class, 'toggleActive'])->name('sources.toggle');
     Route::delete('/sources/{source}', [RevenueSourceController::class, 'destroy'])->name('sources.destroy');
 
+    // Narasumber (Speaker) — master data Safari Dakwah, per cabang + opsi nasional (branch_id null).
+    // Pola sama dgn Revenue Sources di atas: tanpa role-gate di route, gating halus via canInputData() di controller,
+    // supaya quick-add dari form Safari Dakwah (branch_head/staff) tetap bisa jalan.
+    Route::post('/speakers', [SpeakerController::class, 'store'])->name('speakers.store');                       // ⬅ NEW
+    Route::put('/speakers/{speaker}', [SpeakerController::class, 'update'])->name('speakers.update');            // ⬅ NEW
+    Route::patch('/speakers/{speaker}/toggle', [SpeakerController::class, 'toggleActive'])->name('speakers.toggle'); // ⬅ NEW
+    Route::delete('/speakers/{speaker}', [SpeakerController::class, 'destroy'])->name('speakers.destroy');       // ⬅ NEW
+
     // Safari Dakwah — bagian data laporan → admin_nasional boleh, viewer tidak
     Route::post('/reports/{report}/safari', [SafariDakwahController::class, 'store'])->name('safari.store')
         ->middleware('role:super_admin,area_manager,admin_nasional,branch_head,staff');   // ⬅ NEW: blokir viewer
@@ -111,6 +120,11 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/revenue-sources', [RevenueSourceController::class, 'index'])
         ->name('sources.index')
         ->middleware('role:super_admin,area_manager');
+
+    // Manajemen Narasumber — halaman master data (mirror pola /revenue-sources di atas)
+    Route::get('/speakers', [SpeakerController::class, 'index'])
+        ->name('speakers.index')
+        ->middleware('role:super_admin,area_manager');   // ⬅ NEW — tambahkan 'admin_nasional' di sini kalau mau mereka bisa buka halaman kelola ini juga
 
     Route::prefix('areas')->name('areas.')->middleware('role:super_admin')->group(function () {   // TANPA perubahan
         Route::get('/',                            [AreaManagementController::class, 'index'])->name('index');

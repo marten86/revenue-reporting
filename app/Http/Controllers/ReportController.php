@@ -5,10 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\Branch;
 use App\Models\MonthlyReport;
 use App\Models\RevenueSource;
+use App\Models\Speaker;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use App\Models\SafariDakwahLog;
 
 
 class ReportController extends Controller
@@ -120,11 +120,13 @@ class ReportController extends Controller
             ->get()
             ->groupBy('channel');
 
-        $narasumberList = SafariDakwahLog::distinct()
-            ->whereNotNull('speaker')
-            ->where('speaker', '!=', '')
-            ->orderBy('speaker')
-            ->pluck('speaker');
+        // Narasumber: master data (tabel speakers), ter-scope ke cabang laporan ini
+        // + narasumber nasional (branch_id null, lintas cabang). Menggantikan
+        // pola lama (distinct() lintas-seluruh-cabang dari safari_dakwah_logs).
+        $narasumberList = Speaker::forBranch($report->branch_id)
+            ->active()
+            ->orderBy('name')
+            ->get(['id', 'name', 'branch_id']);
 
         // Hak approve/revise: Super Admin + Area Manager, dan harus dalam wewenang areanya.
         // (show() sudah guard canAccessBranch di atas, tapi tetap eksplisit untuk kejelasan.)

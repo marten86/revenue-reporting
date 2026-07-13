@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { router, useForm } from '@inertiajs/react'
+import { router, useForm, usePage } from '@inertiajs/react'
 import React from 'react'
 import AppLayout from '../../Components/AppLayout'
 
@@ -789,6 +789,46 @@ function TabSafari({ report, canEdit, isMobile, narasumberList = [] }) {
         realization: logs.reduce((s, l) => s + (l.realization ?? 0), 0),
     }
 
+    // ── Narasumber (master data) ──
+    // narasumberList datang dari backend sudah ter-scope: cabang laporan ini + nasional (branch_id null).
+    const [speakers, setSpeakers] = useState(narasumberList)
+    useEffect(() => { setSpeakers(narasumberList) }, [narasumberList])
+
+    const authUser = usePage().props?.auth?.user
+    const canAddNationalSpeaker = ['super_admin', 'area_manager', 'admin_nasional'].includes(authUser?.role)
+
+    const [showNewSpeaker, setShowNewSpeaker] = useState(false)
+    const [newSpeakerName, setNewSpeakerName] = useState('')
+    const [newSpeakerNational, setNewSpeakerNational] = useState(false)
+    const [savingSpeaker, setSavingSpeaker] = useState(false)
+
+    // applyTo: 'form' | 'edit' — narasumber baru langsung dipilihkan ke form yang sedang aktif
+    const handleAddSpeaker = (applyTo) => {
+        const name = newSpeakerName.trim()
+        if (!name) return
+        setSavingSpeaker(true)
+        router.post('/speakers', {
+            name,
+            branch_id: newSpeakerNational ? null : report.branch_id,
+        }, {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: () => {
+                setSpeakers(prev => {
+                    if (prev.some(s => s.name.toLowerCase() === name.toLowerCase())) return prev
+                    return [...prev, { id: `local-${name}`, name, branch_id: newSpeakerNational ? null : report.branch_id }]
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                })
+                if (applyTo === 'form') setFormSpeaker(name)
+                else setEditData(p => ({ ...p, speaker: name }))
+                setNewSpeakerName('')
+                setNewSpeakerNational(false)
+                setShowNewSpeaker(false)
+            },
+            onFinish: () => setSavingSpeaker(false),
+        })
+    }
+
     // ── Inline edit state ──
     const [editId, setEditId] = useState(null)
     const [editData, setEditData] = useState({})
@@ -858,14 +898,24 @@ function TabSafari({ report, canEdit, isMobile, narasumberList = [] }) {
 
     const inputCell = { padding: '4px 6px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 12, boxSizing: 'border-box', width: '100%' }
     const numCell = { ...inputCell, textAlign: 'right', fontFamily: 'monospace' }
+    const speakerSelectStyle = { ...inputCell }
+
+    // Opsi <select> narasumber, dengan fallback untuk nilai lama yang belum ada di master
+    // (mis. sebelum backfill jalan, atau ejaan lama yang belum di-normalisasi).
+    const speakerOptions = (currentValue) => (
+        <>
+            <option value="">— Pilih narasumber —</option>
+            {speakers.map(s => (
+                <option key={s.id} value={s.name}>{s.name}{s.branch_id === null ? ' · Nasional' : ''}</option>
+            ))}
+            {currentValue && !speakers.some(s => s.name === currentValue) && (
+                <option value={currentValue}>{currentValue} (belum di master)</option>
+            )}
+        </>
+    )
 
     return (
         <div>
-            {/* Datalist narasumber */}
-            <datalist id="narasumber-list">
-                {narasumberList.map(n => <option key={n} value={n} />)}
-            </datalist>
-
             <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, overflowX: 'auto', marginBottom: 14 }}>
                 <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontWeight: 600, fontSize: 13 }}>Rekap Revenue Safari Dakwah</span>
@@ -915,9 +965,11 @@ function TabSafari({ report, canEdit, isMobile, narasumberList = [] }) {
                                     </td>
                                     <td style={{ ...tdStyle, textAlign: 'left' }}>
                                         {isEditing ? (
-                                            <input list="narasumber-list" value={editData.speaker} onClick={e => e.stopPropagation()}
+                                            <select value={editData.speaker} onClick={e => e.stopPropagation()}
                                                 onChange={e => setEditData(p => ({ ...p, speaker: e.target.value }))}
-                                                placeholder="Ketik atau pilih..." style={inputCell} />
+                                                style={speakerSelectStyle}>
+                                                {speakerOptions(editData.speaker)}
+                                            </select>
                                         ) : (l.speaker ?? '—')}
                                     </td>
                                     <td style={tdStyle} onClick={e => e.stopPropagation()}>
@@ -986,7 +1038,38 @@ function TabSafari({ report, canEdit, isMobile, narasumberList = [] }) {
                         </div>
                         <div>
                             <label style={{ display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 4, color: '#374151' }}>Narasumber</label>
-                            <input list="narasumber-list" value={formSpeaker} onChange={e => setFormSpeaker(e.target.value)} placeholder="Ketik atau pilih..." style={inputStyle} />
+                            {!showNewSpeaker ? (
+                                <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                                    <select value={formSpeaker} onChange={e => setFormSpeaker(e.target.value)} style={{ ...inputStyle, flex: 1 }}>
+                                        {speakerOptions(formSpeaker)}
+                                    </select>
+                                    <button type="button" onClick={() => setShowNewSpeaker(true)}
+                                        style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 8, background: '#f9fafb', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                                        + Baru
+                                    </button>
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                    <input value={newSpeakerName} onChange={e => setNewSpeakerName(e.target.value)}
+                                        placeholder="Nama narasumber baru" style={inputStyle} autoFocus />
+                                    {canAddNationalSpeaker && (
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#374151' }}>
+                                            <input type="checkbox" checked={newSpeakerNational} onChange={e => setNewSpeakerNational(e.target.checked)} />
+                                            Narasumber nasional (tampil di semua cabang)
+                                        </label>
+                                    )}
+                                    <div style={{ display: 'flex', gap: 6 }}>
+                                        <button type="button" onClick={() => handleAddSpeaker('form')} disabled={savingSpeaker || !newSpeakerName.trim()}
+                                            style={{ ...btnPrimary, padding: '5px 12px', fontSize: 12, opacity: !newSpeakerName.trim() ? .5 : 1 }}>
+                                            {savingSpeaker ? '...' : 'Simpan'}
+                                        </button>
+                                        <button type="button" onClick={() => { setShowNewSpeaker(false); setNewSpeakerName(''); setNewSpeakerNational(false) }}
+                                            style={{ padding: '5px 12px', border: '1px solid #d1d5db', borderRadius: 8, background: '#f9fafb', fontSize: 12, cursor: 'pointer' }}>
+                                            Batal
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
