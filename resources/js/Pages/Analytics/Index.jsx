@@ -43,6 +43,21 @@ const formatRpFull = (v) => 'Rp ' + (v || 0).toLocaleString('id-ID')
 const ratioColor = (r) => r <= 30 ? '#166534' : r <= 50 ? '#d97706' : '#dc2626'
 const ratioLabel = (r) => r <= 30 ? 'Sehat' : r <= 50 ? 'Perhatian' : 'Tinggi'
 
+// Label persentase di dalam cincin donut Pie (hanya tampil bila slice >= 5%)
+const RADIAN = Math.PI / 180
+const renderPieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
+    if (!percent || percent < 0.05) return null
+    const radius = innerRadius + (outerRadius - innerRadius) / 2
+    const x = cx + radius * Math.cos(-midAngle * RADIAN)
+    const y = cy + radius * Math.sin(-midAngle * RADIAN)
+    return (
+        <text x={x} y={y} fill="#fff" fontSize={10} fontWeight={700}
+            textAnchor="middle" dominantBaseline="central">
+            {(percent * 100).toFixed(0)}%
+        </text>
+    )
+}
+
 const CustomTooltip = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null
     return (
@@ -106,6 +121,12 @@ export default function AnalyticsIndex({
     const showGrowth       = period === 'yearly'
     const costRatio        = summary.cost_ratio ?? 0
 
+    // Filter 1 kanal aktif (berdasar prop dari server = filter yang sudah diterapkan)
+    const singleChannel = channel !== 'all'
+
+    // Total revenue semua kanal untuk hitung persentase Pie
+    const channelTotal = (byChannel || []).reduce((s, c) => s + (c.total || 0), 0)
+
     const filteredBranches = (branches || []).filter(b => localAreaId === 'all' || b.area_id === localAreaId)
 
     const selectedAreaLabel = localAreaId === 'all'
@@ -122,6 +143,33 @@ export default function AnalyticsIndex({
 
     // Tampilkan Top Performer jika: branch_head/staff, ATAU AM/SuperAdmin pilih 1 cabang tertentu
     const showTopPerformer = showBySource
+
+    // ===== Tabel Breakdown mengikuti filter periode (frontend-only) =====
+    const [fullYearTable, setFullYearTable] = useState(false)
+    // Rentang index bulan (0-based) berdasar filter yang SUDAH diterapkan (props, bukan local state)
+    const tableRange = (() => {
+        if (fullYearTable) return [0, 11]
+        switch (period) {
+            case 'weekly':
+            case 'monthly':   return [month - 1, month - 1]
+            case 'quarterly': return [(quarter - 1) * 3, quarter * 3 - 1]
+            case 'semester':  return [((semester ?? 1) - 1) * 6, (semester ?? 1) * 6 - 1]
+            default:          return [0, 11]   // yearly
+        }
+    })()
+    const visibleMonthIdx = []
+    for (let i = tableRange[0]; i <= tableRange[1]; i++) visibleMonthIdx.push(i)
+    const isFullYearView = visibleMonthIdx.length === 12
+    const tablePeriodLabel = (() => {
+        if (isFullYearView) return `Bulanan ${year}`
+        switch (period) {
+            case 'weekly':
+            case 'monthly':   return `${MONTH_NAMES[month - 1]} ${year}`
+            case 'quarterly': return `Q${quarter} ${year}`
+            case 'semester':  return `Semester ${semester ?? 1} ${year}`
+            default:          return `Bulanan ${year}`
+        }
+    })()
 
     return (
         <AppLayout title="Analytics">
@@ -233,10 +281,17 @@ export default function AnalyticsIndex({
                     <SummaryCard title="Total Biaya" icon="💸"
                         value={formatRp(summary.total_cost ?? 0)}
                         sub={formatRpFull(summary.total_cost ?? 0)} />
-                    <SummaryCard title="Rasio Biaya" icon="📉"
-                        color={ratioColor(costRatio)}
-                        value={summary.total_revenue > 0 ? `${costRatio}%` : '—'}
-                        sub={summary.total_revenue > 0 ? ratioLabel(costRatio) : 'Belum ada data'} />
+                    {singleChannel ? (
+                        <SummaryCard title="Rasio Biaya" icon="📉"
+                            color="#9ca3af"
+                            value="—"
+                            sub="Hanya untuk Semua Kanal" />
+                    ) : (
+                        <SummaryCard title="Rasio Biaya" icon="📉"
+                            color={ratioColor(costRatio)}
+                            value={summary.total_revenue > 0 ? `${costRatio}%` : '—'}
+                            sub={summary.total_revenue > 0 ? ratioLabel(costRatio) : 'Belum ada data'} />
+                    )}
                     <SummaryCard title="Growth vs Lalu" icon="📈"
                         color={summary.growth !== null ? growthColor : '#6b7280'}
                         value={summary.growth !== null ? `${summary.growth > 0 ? '+' : ''}${summary.growth}%` : '—'}
@@ -264,24 +319,35 @@ export default function AnalyticsIndex({
 
                     <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:12,padding:20}}>
                         <h3 style={{margin:'0 0 16px',fontSize:15,fontWeight:600,color:'#374151'}}>🍩 Komposisi per Kanal</h3>
-                        {(byChannel || []).length > 0 ? (
+                        {singleChannel ? (
+                            <div style={{textAlign:'center',color:'#9ca3af',padding:'70px 16px',fontSize:13,lineHeight:1.6}}>
+                                <div style={{fontSize:28,marginBottom:8}}>🔍</div>
+                                Sedang memfilter 1 kanal: <b style={{color:'#6b7280'}}>{channel}</b>.<br />
+                                Pilih <b style={{color:'#6b7280'}}>Semua Kanal</b> untuk melihat komposisi.
+                            </div>
+                        ) : (byChannel || []).length > 0 ? (
                             <>
                                 <ResponsiveContainer width="100%" height={180}>
                                     <PieChart>
-                                        <Pie data={byChannel} dataKey="total" nameKey="channel" cx="50%" cy="50%" outerRadius={75} innerRadius={35} paddingAngle={3}>
+                                        <Pie data={byChannel} dataKey="total" nameKey="channel" cx="50%" cy="50%" outerRadius={75} innerRadius={35} paddingAngle={3}
+                                            labelLine={false} label={renderPieLabel}>
                                             {byChannel.map((entry, i) => <Cell key={i} fill={CHANNEL_COLORS[entry.channel] || COLORS[i % COLORS.length]} />)}
                                         </Pie>
-                                        <Tooltip formatter={v => formatRpFull(v)} />
+                                        <Tooltip formatter={(v) => `${formatRpFull(v)} (${channelTotal > 0 ? (v / channelTotal * 100).toFixed(1) : 0}%)`} />
                                     </PieChart>
                                 </ResponsiveContainer>
                                 <div style={{display:'flex',flexDirection:'column',gap:5,marginTop:8}}>
-                                    {byChannel.map((c, i) => (
-                                        <div key={i} style={{display:'flex',alignItems:'center',gap:8,fontSize:12}}>
-                                            <div style={{width:10,height:10,borderRadius:'50%',flexShrink:0,background:CHANNEL_COLORS[c.channel]||COLORS[i%COLORS.length]}} />
-                                            <span style={{color:'#374151',flex:1}}>{c.channel}</span>
-                                            <span style={{color:'#6b7280',fontWeight:500}}>{formatRp(c.total)}</span>
-                                        </div>
-                                    ))}
+                                    {byChannel.map((c, i) => {
+                                        const pct = channelTotal > 0 ? (c.total / channelTotal * 100).toFixed(1) : 0
+                                        return (
+                                            <div key={i} style={{display:'flex',alignItems:'center',gap:8,fontSize:12}}>
+                                                <div style={{width:10,height:10,borderRadius:'50%',flexShrink:0,background:CHANNEL_COLORS[c.channel]||COLORS[i%COLORS.length]}} />
+                                                <span style={{color:'#374151',flex:1}}>{c.channel}</span>
+                                                <span style={{color:'#6b7280',fontWeight:500}}>{formatRp(c.total)}</span>
+                                                <span style={{color:'#111827',fontWeight:700,minWidth:44,textAlign:'right'}}>{pct}%</span>
+                                            </div>
+                                        )
+                                    })}
                                 </div>
                             </>
                         ) : (
@@ -365,19 +431,27 @@ export default function AnalyticsIndex({
 
                 {/* Tabel Breakdown Tahunan */}
                 <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:12,padding:20}}>
-                    <h3 style={{margin:'0 0 16px',fontSize:15,fontWeight:600,color:'#374151'}}>
-                        📋 Tabel Breakdown Bulanan {year}
-                        {isSuperAdmin && localAreaId !== 'all' && (
-                            <span style={{marginLeft:8,fontSize:12,color:'#6b7280',fontWeight:400}}>— {selectedAreaLabel}</span>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8,marginBottom:16}}>
+                        <h3 style={{margin:0,fontSize:15,fontWeight:600,color:'#374151'}}>
+                            📋 Tabel Breakdown {tablePeriodLabel}
+                            {isSuperAdmin && localAreaId !== 'all' && (
+                                <span style={{marginLeft:8,fontSize:12,color:'#6b7280',fontWeight:400}}>— {selectedAreaLabel}</span>
+                            )}
+                        </h3>
+                        {(period === 'weekly' || period === 'monthly' || period === 'quarterly' || period === 'semester') && (
+                            <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'#6b7280',cursor:'pointer',userSelect:'none'}}>
+                                <input type="checkbox" checked={fullYearTable} onChange={e => setFullYearTable(e.target.checked)} />
+                                12 bulan penuh
+                            </label>
                         )}
-                    </h3>
+                    </div>
                     <div style={{overflowX:'auto'}}>
                         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                             <thead>
                                 <tr style={{background:'#f9fafb'}}>
                                     <th style={{padding:'8px 12px',textAlign:'left',color:'#6b7280',fontWeight:600,borderBottom:'1px solid #e5e7eb',whiteSpace:'nowrap'}}>Cabang</th>
-                                    {MONTH_SHORT.map(m => (
-                                        <th key={m} style={{padding:'8px 6px',textAlign:'right',color:'#6b7280',fontWeight:600,borderBottom:'1px solid #e5e7eb',minWidth:72}}>{m}</th>
+                                    {visibleMonthIdx.map(mi => (
+                                        <th key={mi} style={{padding:'8px 6px',textAlign:'right',color:'#6b7280',fontWeight:600,borderBottom:'1px solid #e5e7eb',minWidth:72}}>{MONTH_SHORT[mi]}</th>
                                     ))}
                                     <th style={{padding:'8px 12px',textAlign:'right',color:'#6b7280',fontWeight:600,borderBottom:'1px solid #e5e7eb',whiteSpace:'nowrap'}}>Total</th>
                                     <th style={{padding:'8px 12px',textAlign:'right',color:'#6b7280',fontWeight:600,borderBottom:'1px solid #e5e7eb',whiteSpace:'nowrap'}}>Total Biaya</th>
@@ -386,25 +460,30 @@ export default function AnalyticsIndex({
                             </thead>
                             <tbody>
                                 {(tableData || []).map((row, ri) => {
-                                    const totalCost = row.total_cost ?? 0
-                                    const ratio = row.total > 0 ? (totalCost / row.total * 100).toFixed(1) : 0
+                                    // Total per baris dihitung dari bulan yang tampil (mengikuti filter periode)
+                                    const rowTotal  = isFullYearView ? row.total : visibleMonthIdx.reduce((s, mi) => s + (row.months?.[mi]?.actual || 0), 0)
+                                    const totalCost = isFullYearView ? (row.total_cost ?? 0) : visibleMonthIdx.reduce((s, mi) => s + (row.months?.[mi]?.cost || 0), 0)
+                                    const ratio = rowTotal > 0 ? (totalCost / rowTotal * 100).toFixed(1) : 0
                                     return (
                                         <tr key={ri} style={{borderBottom:'1px solid #f3f4f6'}}
                                             onMouseEnter={e => e.currentTarget.style.background='#f9fafb'}
                                             onMouseLeave={e => e.currentTarget.style.background='transparent'}>
                                             <td style={{padding:'8px 12px',fontWeight:600,color:'#374151',whiteSpace:'nowrap'}}>{row.branch}</td>
-                                            {(row.months || []).map((m, mi) => (
-                                                <td key={mi} style={{padding:'6px 6px',textAlign:'right'}}>
-                                                    <div style={{color:m.actual>0?'#111827':'#d1d5db'}}>{formatRp(m.actual)}</div>
-                                                    {m.target > 0 && (
-                                                        <div style={{fontSize:10,color:m.pct>=100?'#16a34a':m.pct>=75?'#d97706':'#dc2626'}}>{m.pct}%</div>
-                                                    )}
-                                                    {m.cost > 0 && (
-                                                        <div style={{fontSize:10,color:'#9ca3af'}}>B:{formatRp(m.cost)}</div>
-                                                    )}
-                                                </td>
-                                            ))}
-                                            <td style={{padding:'8px 12px',textAlign:'right',fontWeight:700,color:'#166534'}}>{formatRp(row.total)}</td>
+                                            {visibleMonthIdx.map(mi => {
+                                                const m = row.months?.[mi] || {}
+                                                return (
+                                                    <td key={mi} style={{padding:'6px 6px',textAlign:'right'}}>
+                                                        <div style={{color:m.actual>0?'#111827':'#d1d5db'}}>{formatRp(m.actual)}</div>
+                                                        {m.target > 0 && (
+                                                            <div style={{fontSize:10,color:m.pct>=100?'#16a34a':m.pct>=75?'#d97706':'#dc2626'}}>{m.pct}%</div>
+                                                        )}
+                                                        {m.cost > 0 && (
+                                                            <div style={{fontSize:10,color:'#9ca3af'}}>B:{formatRp(m.cost)}</div>
+                                                        )}
+                                                    </td>
+                                                )
+                                            })}
+                                            <td style={{padding:'8px 12px',textAlign:'right',fontWeight:700,color:'#166534'}}>{formatRp(rowTotal)}</td>
                                             <td style={{padding:'8px 12px',textAlign:'right',color:'#374151'}}>{totalCost > 0 ? formatRp(totalCost) : <span style={{color:'#d1d5db'}}>—</span>}</td>
                                             <td style={{padding:'8px 12px',textAlign:'right'}}>
                                                 {totalCost > 0 ? (
@@ -421,7 +500,7 @@ export default function AnalyticsIndex({
                                 {/* Baris Total */}
                                 <tr style={{background:'#f0fdf4',fontWeight:700}}>
                                     <td style={{padding:'10px 12px',color:'#166534'}}>TOTAL</td>
-                                    {MONTH_SHORT.map((_, mi) => {
+                                    {visibleMonthIdx.map(mi => {
                                         const tot = (tableData||[]).reduce((s,r) => s+(r.months?.[mi]?.actual||0), 0)
                                         const costTot = (tableData||[]).reduce((s,r) => s+(r.months?.[mi]?.cost||0), 0)
                                         return (
@@ -432,15 +511,15 @@ export default function AnalyticsIndex({
                                         )
                                     })}
                                     <td style={{padding:'10px 12px',textAlign:'right',color:'#166534'}}>
-                                        {formatRp((tableData||[]).reduce((s,r) => s+r.total, 0))}
+                                        {formatRp((tableData||[]).reduce((s,r) => s + (isFullYearView ? r.total : visibleMonthIdx.reduce((ss, mi) => ss + (r.months?.[mi]?.actual || 0), 0)), 0))}
                                     </td>
                                     <td style={{padding:'10px 12px',textAlign:'right',color:'#374151'}}>
-                                        {formatRp((tableData||[]).reduce((s,r) => s+(r.total_cost||0), 0))}
+                                        {formatRp((tableData||[]).reduce((s,r) => s + (isFullYearView ? (r.total_cost||0) : visibleMonthIdx.reduce((ss, mi) => ss + (r.months?.[mi]?.cost || 0), 0)), 0))}
                                     </td>
                                     <td style={{padding:'10px 12px',textAlign:'right'}}>
                                         {(() => {
-                                            const rev  = (tableData||[]).reduce((s,r) => s+r.total, 0)
-                                            const cost = (tableData||[]).reduce((s,r) => s+(r.total_cost||0), 0)
+                                            const rev  = (tableData||[]).reduce((s,r) => s + (isFullYearView ? r.total : visibleMonthIdx.reduce((ss, mi) => ss + (r.months?.[mi]?.actual || 0), 0)), 0)
+                                            const cost = (tableData||[]).reduce((s,r) => s + (isFullYearView ? (r.total_cost||0) : visibleMonthIdx.reduce((ss, mi) => ss + (r.months?.[mi]?.cost || 0), 0)), 0)
                                             const r    = rev > 0 ? (cost/rev*100).toFixed(1) : 0
                                             return rev > 0 ? (
                                                 <span style={{padding:'2px 8px',borderRadius:99,fontSize:11,fontWeight:600,

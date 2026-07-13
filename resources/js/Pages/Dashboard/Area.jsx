@@ -41,6 +41,21 @@ const ratioColor = (ratio) => ratio <= 30 ? '#166534' : ratio <= 50 ? '#d97706' 
 const ratioBg    = (ratio) => ratio <= 30 ? '#dcfce7' : ratio <= 50 ? '#fef3c7' : '#fee2e2'
 const ratioLabel = (ratio) => ratio <= 30 ? 'Sehat' : ratio <= 50 ? 'Perhatian' : 'Tinggi'
 
+// Label persentase di dalam cincin donut Pie (hanya tampil bila slice >= 5%)
+const RADIAN = Math.PI / 180
+const renderPieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
+    if (!percent || percent < 0.05) return null
+    const radius = innerRadius + (outerRadius - innerRadius) / 2
+    const x = cx + radius * Math.cos(-midAngle * RADIAN)
+    const y = cy + radius * Math.sin(-midAngle * RADIAN)
+    return (
+        <text x={x} y={y} fill="#fff" fontSize={10} fontWeight={700}
+            textAnchor="middle" dominantBaseline="central">
+            {(percent * 100).toFixed(0)}%
+        </text>
+    )
+}
+
 const StatusBadge = ({ status }) => {
     const map = {
         draft:     { label: 'Draft',     bg: '#f3f4f6', color: '#6b7280' },
@@ -187,7 +202,7 @@ export default function AreaDashboard({
     const pieData = (channelBreakdown ?? []).map((item, i) => ({
         name: CHANNEL_LABELS[item.channel] ?? item.channel,
         value: item.total,
-        color: PIE_COLORS[i % PIE_COLORS.length],
+        color: CHANNEL_COLORS[item.channel] ?? PIE_COLORS[i % PIE_COLORS.length],
     }))
     const pieTotal = pieData.reduce((s, d) => s + d.value, 0)
 
@@ -383,17 +398,19 @@ export default function AreaDashboard({
                         <div>
                             <ResponsiveContainer width="100%" height={200}>
                                 <PieChart>
-                                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2} dataKey="value">
+                                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2} dataKey="value"
+                                        labelLine={false} label={renderPieLabel}>
                                         {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                                     </Pie>
-                                    <Tooltip formatter={(value) => formatRpShort(value)} />
+                                    <Tooltip formatter={(value) => `${formatRpShort(value)} (${pieTotal > 0 ? (value / pieTotal * 100).toFixed(1) : 0}%)`} />
                                 </PieChart>
                             </ResponsiveContainer>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
                                 {pieData.map((d, i) => (
                                     <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
                                         <div style={{ width: 8, height: 8, borderRadius: 2, background: d.color }} />
                                         <span style={{ color: '#6b7280' }}>{d.name}</span>
+                                        <span style={{ color: '#9ca3af' }}>{formatRpShort(d.value)}</span>
                                         <span style={{ fontWeight: 600, color: '#374151' }}>{pieTotal > 0 ? `${(d.value / pieTotal * 100).toFixed(0)}%` : ''}</span>
                                     </div>
                                 ))}
@@ -523,7 +540,7 @@ export default function AreaDashboard({
                                 ))}
                                 {branches.length === 0 && (
                                     <tr>
-                                        <td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
+                                        <td colSpan={9} style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
                                             Belum ada data cabang untuk periode ini.
                                         </td>
                                     </tr>

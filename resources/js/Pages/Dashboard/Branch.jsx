@@ -41,6 +41,39 @@ const PIE_COLORS = ['#16a34a', '#2563eb', '#9333ea', '#ea580c', '#0891b2', '#d97
 const ratioColor = (r) => r <= 30 ? '#166534' : r <= 50 ? '#d97706' : '#dc2626'
 const ratioLabel = (r) => r <= 30 ? 'Sehat' : r <= 50 ? 'Perhatian' : 'Tinggi'
 
+// Label status laporan dalam Bahasa Indonesia (konsisten dengan Dashboard Area)
+const STATUS_MAP = {
+    draft:     { label: 'Draft',     bg: '#f3f4f6', color: '#6b7280' },
+    submitted: { label: 'Disubmit',  bg: '#dbeafe', color: '#1d4ed8' },
+    approved:  { label: 'Disetujui', bg: '#dcfce7', color: '#166534' },
+    revision:  { label: 'Revisi',    bg: '#fef3c7', color: '#d97706' },
+}
+const statusLabel = (status) => STATUS_MAP[status]?.label ?? status
+
+const StatusBadge = ({ status }) => {
+    const s = STATUS_MAP[status] ?? { label: status, bg: '#f3f4f6', color: '#6b7280' }
+    return (
+        <span style={{ background: s.bg, color: s.color, padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 500 }}>
+            {s.label}
+        </span>
+    )
+}
+
+// Label persentase di dalam cincin donut Pie (hanya tampil bila slice >= 5%)
+const RADIAN = Math.PI / 180
+const renderPieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
+    if (!percent || percent < 0.05) return null
+    const radius = innerRadius + (outerRadius - innerRadius) / 2
+    const x = cx + radius * Math.cos(-midAngle * RADIAN)
+    const y = cy + radius * Math.sin(-midAngle * RADIAN)
+    return (
+        <text x={x} y={y} fill="#fff" fontSize={10} fontWeight={700}
+            textAnchor="middle" dominantBaseline="central">
+            {(percent * 100).toFixed(0)}%
+        </text>
+    )
+}
+
 const CustomTooltip = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null
     return (
@@ -50,7 +83,9 @@ const CustomTooltip = ({ active, payload, label }) => {
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                     <div style={{ width: 8, height: 8, borderRadius: 2, background: entry.color }} />
                     <span style={{ color: '#6b7280' }}>{entry.name}:</span>
-                    <span style={{ fontWeight: 600, fontFamily: 'monospace' }}>{formatRpShort(entry.value)}</span>
+                    <span style={{ fontWeight: 600, fontFamily: 'monospace' }}>
+                        {entry.name === 'Rasio %' ? `${entry.value}%` : formatRpShort(entry.value)}
+                    </span>
                 </div>
             ))}
         </div>
@@ -77,7 +112,7 @@ export default function BranchDashboard({
     const pct          = targetAmt > 0 ? (totalRevenue / targetAmt * 100) : 0
     const totalCost    = costData?.total_cost ?? 0
     const costRatio    = totalRevenue > 0 ? parseFloat((totalCost / totalRevenue * 100).toFixed(1)) : 0
-    const periodLabel  = new Date(currentMonth)
+    const periodLabel  = new Date(currentMonth + 'T00:00:00')
         .toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
 
     const handleMonthChange = (e) => {
@@ -90,7 +125,7 @@ export default function BranchDashboard({
     const pieData = (channelBreakdown ?? []).map((item, i) => ({
         name: CHANNEL_LABELS[item.channel] ?? item.channel,
         value: item.total,
-        color: PIE_COLORS[i % PIE_COLORS.length],
+        color: CHANNEL_COLORS[item.channel] ?? PIE_COLORS[i % PIE_COLORS.length],
     }))
     const pieTotal = pieData.reduce((s, d) => s + d.value, 0)
 
@@ -127,7 +162,7 @@ export default function BranchDashboard({
                             style={{ padding: '7px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, background: '#fff' }}>
                             {availableMonths.map(m => (
                                 <option key={m} value={m}>
-                                    {new Date(m).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}
+                                    {new Date(m + 'T00:00:00').toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}
                                 </option>
                             ))}
                         </select>
@@ -177,7 +212,7 @@ export default function BranchDashboard({
                     },
                     {
                         label: 'Status Laporan', icon: '📋',
-                        value: report ? report.status.charAt(0).toUpperCase() + report.status.slice(1) : 'Belum Ada',
+                        value: report ? statusLabel(report.status) : 'Belum Ada',
                         sub: report ? 'Klik untuk edit' : 'Buat laporan baru',
                     },
                 ].map((m, i) => (
@@ -225,17 +260,19 @@ export default function BranchDashboard({
                         <div>
                             <ResponsiveContainer width="100%" height={200}>
                                 <PieChart>
-                                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2} dataKey="value">
+                                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2} dataKey="value"
+                                        labelLine={false} label={renderPieLabel}>
                                         {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                                     </Pie>
-                                    <Tooltip formatter={(value) => formatRpShort(value)} />
+                                    <Tooltip formatter={(value) => `${formatRpShort(value)} (${pieTotal > 0 ? (value / pieTotal * 100).toFixed(1) : 0}%)`} />
                                 </PieChart>
                             </ResponsiveContainer>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
                                 {pieData.map((d, i) => (
                                     <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
                                         <div style={{ width: 8, height: 8, borderRadius: 2, background: d.color }} />
                                         <span style={{ color: '#6b7280' }}>{d.name}</span>
+                                        <span style={{ color: '#9ca3af' }}>{formatRpShort(d.value)}</span>
                                         <span style={{ fontWeight: 600, color: '#374151' }}>{pieTotal > 0 ? `${(d.value / pieTotal * 100).toFixed(0)}%` : ''}</span>
                                     </div>
                                 ))}
@@ -354,9 +391,7 @@ export default function BranchDashboard({
                                         <td style={{ padding: '10px 14px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12, fontWeight: 500 }}>{formatRpShort(r.total_revenue)}</td>
                                         <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, fontSize: 12, color: p >= 85 ? '#166534' : p >= 60 ? '#d97706' : '#dc2626' }}>{p.toFixed(1)}%</td>
                                         <td style={{ padding: '10px 14px' }}>
-                                            <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 8px', borderRadius: 99, background: r.status === 'approved' ? '#dcfce7' : '#f3f4f6', color: r.status === 'approved' ? '#166534' : '#6b7280', textTransform: 'capitalize' }}>
-                                                {r.status}
-                                            </span>
+                                            <StatusBadge status={r.status} />
                                         </td>
                                         <td style={{ padding: '10px 14px' }}>
                                             <Link href={`/reports/${r.id}`} style={{ fontSize: 12, color: '#166534', textDecoration: 'none', fontWeight: 500 }}>Detail →</Link>
