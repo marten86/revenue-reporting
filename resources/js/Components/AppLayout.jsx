@@ -69,11 +69,12 @@ export default function AppLayout({ title, children }) {
             links: [
                 // Semua menu konfigurasi: TETAP super_admin + area_manager saja.
                 // admin_nasional & viewer sengaja dikecualikan (tak boleh kelola user/cabang/area/target/sumber).
-                { href: '/areas',            label: 'Kelola Area',      icon: '🗺️', roles: ['super_admin'] },
-                { href: '/targets',          label: 'Target Cabang',    icon: '🎯', roles: ['super_admin', 'area_manager', 'admin_nasional'] }, // ⬅ admin_nasional boleh set target
-                { href: '/branches',         label: 'Kelola Cabang',    icon: '🏢', roles: ['super_admin', 'area_manager'] },
-                { href: '/revenue-sources',  label: 'Kelola Sumber',    icon: '👥', roles: ['super_admin', 'area_manager'] },
-                { href: '/users',            label: 'Kelola User',      icon: '👤', roles: ['super_admin', 'area_manager'] },
+                { href: '/areas',            label: 'Kelola Area',       icon: '🗺️', roles: ['super_admin'] },
+                { href: '/targets',          label: 'Target Cabang',     icon: '🎯', roles: ['super_admin', 'area_manager', 'admin_nasional'] }, // ⬅ admin_nasional boleh set target
+                { href: '/branches',         label: 'Kelola Cabang',     icon: '🏢', roles: ['super_admin', 'area_manager'] },
+                { href: '/revenue-sources',  label: 'Kelola Sumber',     icon: '👥', roles: ['super_admin', 'area_manager'] },
+                { href: '/speakers',         label: 'Kelola Narasumber', icon: '🎤', roles: ['super_admin', 'area_manager'] }, // ⬅ NEW: master data narasumber Safari Dakwah (samakan dengan gate route /speakers)
+                { href: '/users',            label: 'Kelola User',       icon: '👤', roles: ['super_admin', 'area_manager'] },
             ],
         },
     ]
