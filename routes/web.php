@@ -13,6 +13,7 @@ use App\Http\Controllers\BranchManagementController;
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\AreaManagementController;
 use App\Http\Controllers\CostController;
+use App\Http\Controllers\SafariCalendarController;
 
 // Auth
 Route::get('/login', [AuthController::class, 'showLogin'])->name('login')->middleware('guest');
@@ -159,5 +160,8 @@ Route::middleware(['auth'])->group(function () {
         Route::patch('/costs/{cost}/approve', [CostController::class, 'approve'])->name('costs.approve');
         Route::patch('/costs/{cost}/revise',  [CostController::class, 'revise'])->name('costs.revise');
     });
+
+    // Safari Kalender
+    Route::get('/safari-kalender', [SafariCalendarController::class, 'index'])->name('safari.calendar');
 
 });
