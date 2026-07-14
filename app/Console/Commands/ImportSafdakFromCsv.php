@@ -202,6 +202,10 @@ class ImportSafdakFromCsv extends Command
             fclose($handle);
             return [];
         }
+        // Buang UTF-8 BOM yang sering menempel di kolom pertama hasil export Notion/Windows
+        if (isset($header[0])) {
+            $header[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string) $header[0]);
+        }
         $header = array_map(fn ($h) => strtolower(trim((string) $h)), $header);
 
         while (($data = fgetcsv($handle)) !== false) {
@@ -230,12 +234,16 @@ class ImportSafdakFromCsv extends Command
         return null;
     }
 
-    /** Notion export bisa "January 5, 2026", "2026-01-05", atau "05/01/2026". */
+    /** Notion export bisa "January 5, 2026", "2026-01-05", "05/01/2026", atau rentang "January 2, 2026 → January 21, 2026". */
     private function parseDate(?string $raw): ?Carbon
     {
         if (! $raw) {
             return null;
         }
+        // Kolom TANGGAL bertipe date range di Notion diekspor dengan simbol panah - ambil tanggal mulai saja
+        $raw = trim(explode('→', $raw)[0]);
+        $raw = trim(explode('->', $raw)[0]);
+
         foreach (['Y-m-d', 'F j, Y', 'd/m/Y', 'm/d/Y', 'd-m-Y'] as $format) {
             try {
                 return Carbon::createFromFormat($format, $raw)->startOfDay();
@@ -283,9 +291,13 @@ class ImportSafdakFromCsv extends Command
         if ($raw === null) {
             return 0;
         }
-        // Buang "Rp", titik/koma ribuan, spasi
-        $clean = preg_replace('/[^\d\-]/', '', $raw);
-        return $clean === '' || $clean === '-' ? 0 : (int) $clean;
+        // Buang "IDR"/"Rp"/pemisah ribuan (koma), TAPI pertahankan titik desimal
+        // supaya "IDR 282,698,000.00" tidak salah jadi 28269800000 (inflasi 100x)
+        $clean = preg_replace('/[^\d.\-]/', '', $raw);
+        if ($clean === '' || $clean === '-' || $clean === '.') {
+            return 0;
+        }
+        return (int) round((float) $clean);
     }
 
     private function toBool(?string $raw): bool
