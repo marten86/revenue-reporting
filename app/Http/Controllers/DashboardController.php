@@ -16,9 +16,9 @@ use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
-    // ══════════════════════════════════════════════════════
+    // -
     // Dashboard Area Manager
-    // ══════════════════════════════════════════════════════
+    // -
 
     public function area(Request $request): Response
     {
@@ -73,13 +73,13 @@ class DashboardController extends Controller
             'reports_total'     => $branches->count(),
         ];
 
-        // ── Super Admin: tambahkan data per area ──
+        // - Super Admin: tambahkan data per area -
         $areaSummary = null;
         if ($user->isSuperAdmin()) {
             $areaSummary = $this->buildAreaSummary($periodMonth);
         }
 
-        // ── Area label untuk header ──
+        // - Area label untuk header -
         $areaLabel = $user->isSuperAdmin()
             ? 'Nasional'
             : ($user->area?->name ?? 'Area');
@@ -115,9 +115,9 @@ class DashboardController extends Controller
         ]);
     }
 
-    // ══════════════════════════════════════════════════════
+    // -
     // Dashboard Branch Head
-    // ══════════════════════════════════════════════════════
+    // -
 
     public function branch(Request $request): Response
     {
@@ -228,9 +228,9 @@ class DashboardController extends Controller
         ]);
     }
 
-    // ══════════════════════════════════════════════════════
+    // -
     // Helper: Area Summary (Super Admin only)
-    // ══════════════════════════════════════════════════════
+    // -
 
     private function buildAreaSummary(string $periodMonth): array
     {
@@ -284,9 +284,9 @@ class DashboardController extends Controller
         })->toArray();
     }
 
-    // ══════════════════════════════════════════════════════
-    // Helper methods — AREA (scoped by branchIds)
-    // ══════════════════════════════════════════════════════
+    // -
+    // Helper methods - AREA (scoped by branchIds)
+    // -
 
     private function buildMonthlyTrend(string $currentMonth, int $months = 6, array $branchIds = []): array
     {
@@ -424,7 +424,7 @@ class DashboardController extends Controller
                 $row[$ch] = (int) ($channels[$ch] ?? 0);
             }
 
-            // Kanal lama — gabungkan ke kotak untuk total (agar data historis tetap terhitung)
+            // Kanal lama - gabungkan ke kotak untuk total (agar data historis tetap terhitung)
             // Ditampilkan terpisah jika frontend butuh, tapi tidak dobel-hitung di total
             $row['kotak_qris_legacy'] = (int) ($channels['kotak_qris'] ?? 0);
 
@@ -439,9 +439,9 @@ class DashboardController extends Controller
         return $result;
     }
 
-    // ══════════════════════════════════════════════════════
-    // Helper methods — BRANCH (1 cabang)
-    // ══════════════════════════════════════════════════════
+    // -
+    // Helper methods - BRANCH (1 cabang)
+    // -
 
     private function buildBranchMonthlyTrend(string $branchId, string $currentMonth, int $months = 6): array
     {

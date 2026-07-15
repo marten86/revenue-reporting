@@ -23,7 +23,7 @@ class AnalyticsController extends Controller
         'dfe'        => 'dfe',
         'kotak'      => 'kotak',       // baru
         'qris'       => 'qris',        // baru
-        'kotak_qris' => 'kotak_qris',  // lama — tetap untuk data historis
+        'kotak_qris' => 'kotak_qris',  // lama - tetap untuk data historis
         'kantor'     => 'kantor',
     ];
 
@@ -35,8 +35,8 @@ class AnalyticsController extends Controller
         'gerai'      => 'target_gerai',
         'dfi'        => 'target_dfi',
         'dfe'        => 'target_dfe',
-        'kotak'      => 'target_total',      // fallback — belum ada target_kotak
-        'qris'       => 'target_total',      // fallback — belum ada target_qris
+        'kotak'      => 'target_total',      // fallback - belum ada target_kotak
+        'qris'       => 'target_total',      // fallback - belum ada target_qris
         'kotak_qris' => 'target_kotak_qris', // lama
         'kantor'     => 'target_kantor',
     ];
@@ -56,7 +56,7 @@ class AnalyticsController extends Controller
 
     private array $monthNames = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
 
-    // ─── ENTRY POINT ─────────────────────────────────────────────────────────
+    // ENTRY POINT
     public function index(Request $request)
     {
         $user     = auth()->user();
@@ -119,9 +119,9 @@ class AnalyticsController extends Controller
             'semester'  => $this->getSemesterData($year, $semester, $branchIds, $channel),
             'yearly'    => $this->getYearlyData($year, $branchIds, $channel),
             default     => $this->getMonthlyData($year, $month, $branchIds, $channel),
-        ];
+        };
 
-        // ── Tambah data cost ke summary ──────────────────────────────────────
+        // Tambah data cost ke summary
         [$costStart, $costEnd] = $this->getCostDateRange($period, $year, $month, $quarter, $semester);
         $totalCost = $this->getTotalCost($costStart, $costEnd, $branchIds);
         $totalRevenue = $data['summary']['total_revenue'];
@@ -130,7 +130,7 @@ class AnalyticsController extends Controller
         $data['summary']['total_cost']  = $totalCost;
         $data['summary']['cost_ratio']  = $costRatio;
 
-        // bySource — untuk branch_head/staff, ATAU saat AM/SuperAdmin pilih 1 cabang spesifik
+        // bySource - untuk branch_head/staff, ATAU saat AM/SuperAdmin pilih 1 cabang spesifik
         $isBranchLevel = $user->isBranchHead() || $user->isStaff();
         $singleBranch  = $branchId !== 'all';
         $bySource = [];
@@ -138,7 +138,7 @@ class AnalyticsController extends Controller
             $bySource = $this->getBySource($costStart, $costEnd, $branchIds, $channel);
         }
 
-        // showBySource: true jika harus tampilkan chart Top Performer (bukan Perbandingan per Cabang)
+        // showBySource: true jika harus tampilkan chart Top Performer
         $showBySource = $isBranchLevel || $singleBranch;
 
         return Inertia::render('Analytics/Index', [
@@ -165,7 +165,7 @@ class AnalyticsController extends Controller
         ]);
     }
 
-    // ── Helper: date range untuk query cost per periode ──────────────────────
+    // Helper: date range untuk query cost per periode
     private function getCostDateRange(string $period, int $year, int $month, int $quarter, int $semester): array
     {
         return match($period) {
@@ -192,7 +192,7 @@ class AnalyticsController extends Controller
         };
     }
 
-    // ── Helper: total cost untuk range & branchIds tertentu ─────────────────
+    // Helper: total cost untuk range dan branchIds tertentu
     private function getTotalCost(string $start, string $end, array $branchIds): int
     {
         return (int) DB::table('monthly_costs')
@@ -202,7 +202,7 @@ class AnalyticsController extends Controller
             ->sum('total_cost');
     }
 
-    // ─── MONTHLY ─────────────────────────────────────────────────────────────
+    // MONTHLY
     private function getMonthlyData(int $year, int $month, array $branchIds, string $channel): array
     {
         $start       = Carbon::create($year, $month, 1)->startOfMonth();
@@ -237,7 +237,7 @@ class AnalyticsController extends Controller
         ];
     }
 
-    // ─── WEEKLY ──────────────────────────────────────────────────────────────
+    // WEEKLY
     private function getWeeklyData(int $year, int $month, array $branchIds, string $channel): array
     {
         $monthStart  = Carbon::create($year, $month, 1)->startOfMonth();
@@ -267,7 +267,7 @@ class AnalyticsController extends Controller
             }
 
             $weeks[] = [
-                'label'  => 'W' . (count($weeks) + 1) . ' (' . $wStart->format('d') . '–' . $wEnd->format('d M') . ')',
+                'label'  => 'W' . (count($weeks) + 1) . ' (' . $wStart->format('d') . '-' . $wEnd->format('d M') . ')',
                 'actual' => $weekActual,
                 'target' => (int) $weekTarget,
             ];
@@ -287,7 +287,7 @@ class AnalyticsController extends Controller
         ];
     }
 
-    // ─── QUARTERLY ───────────────────────────────────────────────────────────
+    // QUARTERLY
     private function getQuarterlyData(int $year, int $quarter, array $branchIds, string $channel): array
     {
         $months = [($quarter - 1) * 3 + 1, ($quarter - 1) * 3 + 2, ($quarter - 1) * 3 + 3];
@@ -340,7 +340,7 @@ class AnalyticsController extends Controller
         ];
     }
 
-    // ─── SEMESTER ────────────────────────────────────────────────────────────
+    // SEMESTER
     private function getSemesterData(int $year, int $semester, array $branchIds, string $channel): array
     {
         $months = $semester === 1 ? [1, 2, 3, 4, 5, 6] : [7, 8, 9, 10, 11, 12];
@@ -393,7 +393,7 @@ class AnalyticsController extends Controller
         ];
     }
 
-    // ─── YEARLY ──────────────────────────────────────────────────────────────
+    // YEARLY
     private function getYearlyData(int $year, array $branchIds, string $channel): array
     {
         $start = "$year-01-01";
@@ -442,7 +442,7 @@ class AnalyticsController extends Controller
         ];
     }
 
-    // ─── HELPERS ─────────────────────────────────────────────────────────────
+    // HELPERS
 
     private function revenueCol(string $channel): string
     {
