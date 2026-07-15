@@ -419,12 +419,20 @@ class DashboardController extends Controller
                 'branch_code' => $report->branch?->code ?? '',
             ];
 
-            foreach (['presentasi', 'gerai', 'wgts', 'dfi', 'dfe', 'kotak_qris', 'kantor'] as $ch) {
+            // Kanal aktif baru (kotak & qris dipisah)
+            foreach (['presentasi', 'gerai', 'wgts', 'dfi', 'dfe', 'kotak', 'qris', 'kantor'] as $ch) {
                 $row[$ch] = (int) ($channels[$ch] ?? 0);
             }
 
-            $row['total'] = array_sum(array_slice($row, 2));
-            $result[]     = $row;
+            // Kanal lama — gabungkan ke kotak untuk total (agar data historis tetap terhitung)
+            // Ditampilkan terpisah jika frontend butuh, tapi tidak dobel-hitung di total
+            $row['kotak_qris_legacy'] = (int) ($channels['kotak_qris'] ?? 0);
+
+            $row['total'] = $row['presentasi'] + $row['gerai'] + $row['wgts']
+                + $row['dfi'] + $row['dfe'] + $row['kotak'] + $row['qris']
+                + $row['kotak_qris_legacy'] + $row['kantor'];
+
+            $result[] = $row;
         }
 
         usort($result, fn($a, $b) => $b['total'] - $a['total']);

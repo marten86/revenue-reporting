@@ -14,24 +14,30 @@ use Carbon\Carbon;
 class AnalyticsController extends Controller
 {
     // Key = nilai kanal canonical (sama dengan MonthlyReport::CHANNELS & kolom daily_revenues)
+    // kotak_qris tetap ada untuk backward compat data historis
     private array $channelColumns = [
         'presentasi' => 'presentasi',
         'wgts'       => 'wgts',
         'gerai'      => 'gerai',
         'dfi'        => 'dfi',
         'dfe'        => 'dfe',
-        'kotak_qris' => 'kotak_qris',
+        'kotak'      => 'kotak',       // baru
+        'qris'       => 'qris',        // baru
+        'kotak_qris' => 'kotak_qris',  // lama — tetap untuk data historis
         'kantor'     => 'kantor',
     ];
 
     // Key = nilai kanal canonical, value = kolom target di branch_targets
+    // kotak & qris fallback ke target_total karena belum ada kolom per-kanal
     private array $channelTargetCols = [
         'presentasi' => 'target_presentasi',
         'wgts'       => 'target_wgts',
         'gerai'      => 'target_gerai',
         'dfi'        => 'target_dfi',
         'dfe'        => 'target_dfe',
-        'kotak_qris' => 'target_kotak_qris',
+        'kotak'      => 'target_total',      // fallback — belum ada target_kotak
+        'qris'       => 'target_total',      // fallback — belum ada target_qris
+        'kotak_qris' => 'target_kotak_qris', // lama
         'kantor'     => 'target_kantor',
     ];
 
@@ -42,7 +48,9 @@ class AnalyticsController extends Controller
         'gerai'      => 'Gerai',
         'dfi'        => 'DFI (AR)',
         'dfe'        => 'DFE (AE)',
-        'kotak_qris' => 'Kotak & QRIS',
+        'kotak'      => 'Kotak Infak',       // baru
+        'qris'       => 'QRIS',              // baru
+        'kotak_qris' => 'Kotak/QRIS (Lama)', // lama
         'kantor'     => 'Kantor',
     ];
 
@@ -111,7 +119,7 @@ class AnalyticsController extends Controller
             'semester'  => $this->getSemesterData($year, $semester, $branchIds, $channel),
             'yearly'    => $this->getYearlyData($year, $branchIds, $channel),
             default     => $this->getMonthlyData($year, $month, $branchIds, $channel),
-        };
+        ];
 
         // ── Tambah data cost ke summary ──────────────────────────────────────
         [$costStart, $costEnd] = $this->getCostDateRange($period, $year, $month, $quarter, $semester);
@@ -333,8 +341,6 @@ class AnalyticsController extends Controller
     }
 
     // ─── SEMESTER ────────────────────────────────────────────────────────────
-    // Semester 1 = Jan–Jun, Semester 2 = Jul–Des. Target & biaya menyesuaikan
-    // rentang 6 bulan (target dijumlah per bulan, biaya via getCostDateRange).
     private function getSemesterData(int $year, int $semester, array $branchIds, string $channel): array
     {
         $months = $semester === 1 ? [1, 2, 3, 4, 5, 6] : [7, 8, 9, 10, 11, 12];
@@ -362,7 +368,6 @@ class AnalyticsController extends Controller
             $targetTotal += $target;
         }
 
-        // Semester sebelumnya: S1 → S2 tahun lalu; S2 → S1 tahun ini
         $prevSemester = $semester === 1 ? 2 : 1;
         $prevYear     = $semester === 1 ? $year - 1 : $year;
         $prevMonths   = $prevSemester === 1 ? [1, 6] : [7, 12];
@@ -529,9 +534,6 @@ class AnalyticsController extends Controller
             ->orderBy('total', 'desc')
             ->get();
 
-        // Target per cabang untuk periode terpilih (jumlah bulan dalam range [start, end]).
-        // period_month bertipe date (Y-m-01), jadi BETWEEN range harian sudah mencakup
-        // bulan yang relevan untuk monthly/quarterly/semester/yearly.
         $targetCol  = $channel === 'all' ? 'target_total' : ($this->channelTargetCols[$channel] ?? 'target_total');
         $targetRows = DB::table('branch_targets')
             ->whereIn('branch_id', $branchIds)
