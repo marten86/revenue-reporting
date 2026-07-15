@@ -23,7 +23,7 @@ class DailyRevenue extends Model
         'total_daily', 'cumulative', 'notes',
     ];
 
-    protected $casts = ['date' => 'date'];
+    protected $casts = ['date' => 'date:Y-m-d'];
 
     public function monthlyReport(): BelongsTo
     {

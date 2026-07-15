@@ -39,11 +39,11 @@ class MonthlyReport extends Model
     ];
 
     protected $casts = [
-        'period_month'    => 'date',
-        'submitted_at'    => 'datetime',
-        'approved_at'     => 'datetime',
-        'revised_at'      => 'datetime',
-        'achievement_pct' => 'decimal:4',
+    'period_month'    => 'date:Y-m-d',   // ← was 'date'
+    'submitted_at'    => 'datetime',
+    'approved_at'     => 'datetime',
+    'revised_at'      => 'datetime',
+    'achievement_pct' => 'decimal:4',
     ];
 
     // ── Relasi ──────────────────────────────────────────────
