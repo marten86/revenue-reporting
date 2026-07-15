@@ -14,27 +14,47 @@ use Inertia\Response;
 class ReportController extends Controller
 {
     public function index(Request $request): Response
-    {
-        $user  = $request->user();
-        $month = $request->get('month', now()->format('Y-m-01'));
+{
+    $user  = $request->user();
+    $month = $request->get('month', now()->format('Y-m-01'));
 
-        $branchIds = $user->accessibleBranches()->pluck('id');
+    $branchIds = $user->accessibleBranches()->pluck('id');
 
-        $reports = MonthlyReport::with(['branch.area'])
-            ->whereIn('branch_id', $branchIds)
-            ->where('period_month', $month)
-            ->orderByRaw("CASE status
-                WHEN 'submitted' THEN 1
-                WHEN 'approved'  THEN 2
-                WHEN 'draft'     THEN 3
-                ELSE 4 END")
-            ->get();
+    // Subquery: last_input_at = MAX(updated_at) dari revenue_details + safari_dakwah_logs
+    $detailMax = \DB::table('revenue_details')
+        ->select('monthly_report_id', \DB::raw('MAX(updated_at) as last_ts'))
+        ->groupBy('monthly_report_id');
 
-        return Inertia::render('Reports/Index', [
-            'reports'      => $reports,
-            'currentMonth' => $month,
-        ]);
-    }
+    $safariMax = \DB::table('safari_dakwah_logs')
+        ->select('monthly_report_id', \DB::raw('MAX(updated_at) as last_ts'))
+        ->groupBy('monthly_report_id');
+
+    $lastInputSub = \DB::table(
+        $detailMax->unionAll($safariMax),
+        'combined'
+    )
+        ->select('monthly_report_id', \DB::raw('MAX(last_ts) as last_input_at'))
+        ->groupBy('monthly_report_id');
+
+    $reports = MonthlyReport::with(['branch.area'])
+        ->whereIn('branch_id', $branchIds)
+        ->where('period_month', $month)
+        ->leftJoinSub($lastInputSub, 'last_input', function ($join) {
+            $join->on('monthly_reports.id', '=', 'last_input.monthly_report_id');
+        })
+        ->select('monthly_reports.*', 'last_input.last_input_at')
+        ->orderByRaw("CASE status
+            WHEN 'submitted' THEN 1
+            WHEN 'approved'  THEN 2
+            WHEN 'draft'     THEN 3
+            ELSE 4 END")
+        ->get();
+
+    return Inertia::render('Reports/Index', [
+        'reports'      => $reports,
+        'currentMonth' => $month,
+    ]);
+}
 
     public function create(Request $request): Response
     {
