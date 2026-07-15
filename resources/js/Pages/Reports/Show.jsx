@@ -26,15 +26,23 @@ const formatRpShort = (n) => {
     return `Rp ${(n / 1_000).toFixed(0)} rb`
 }
 
+// Kanal aktif (ke depan)
 const CHANNELS = [
     { key: 'presentasi', label: 'Presentasi' },
     { key: 'gerai',      label: 'Gerai' },
     { key: 'wgts',       label: 'WGTS' },
     { key: 'dfi',        label: 'DFI (AR)' },
     { key: 'dfe',        label: 'DFE (AE)' },
-    { key: 'kotak_qris', label: 'Kotak/QRIS' },
+    { key: 'kotak',      label: 'Kotak Infak' },
+    { key: 'qris',       label: 'QRIS' },
     { key: 'kantor',     label: 'Kantor' },
 ]
+
+// Kanal lama — masih muncul di Tab Rekap Per Tim untuk data historis
+const CHANNEL_LEGACY = { key: 'kotak_qris', label: 'Kotak/QRIS (Lama)' }
+
+// Semua kanal untuk Rekap Per Tim (termasuk legacy agar data lama tidak hilang)
+const CHANNELS_ALL = [...CHANNELS, CHANNEL_LEGACY]
 
 const CHANNEL_CONFIG = {
     presentasi: { hasSource: true, sourceLabel: 'Nama Tim',      hasSubChannel: true  },
@@ -42,7 +50,9 @@ const CHANNEL_CONFIG = {
     wgts:       { hasSource: true, sourceLabel: 'Nama Tim',      hasSubChannel: true  },
     dfi:        { hasSource: true, sourceLabel: 'Nama Karyawan', hasSubChannel: false },
     dfe:        { hasSource: true, sourceLabel: 'Nama Relawan',  hasSubChannel: false },
-    kotak_qris: { hasSource: false,                               hasSubChannel: false },
+    kotak:      { hasSource: false,                               hasSubChannel: false },
+    qris:       { hasSource: false,                               hasSubChannel: false },
+    kotak_qris: { hasSource: false,                               hasSubChannel: false }, // legacy
     kantor:     { hasSource: false,                               hasSubChannel: false },
 }
 
@@ -78,12 +88,21 @@ const btnPrimary = {
     fontSize: 13, fontWeight: 500, border: 'none', cursor: 'pointer',
 }
 
+// Helper: ambil nilai kanal dari objek daily (mendukung legacy kotak_qris)
+const getDayChannelValue = (day, channelKey) => day[channelKey] ?? 0
+
 // ══════════════════════════════════════════════════════════
 // Tab Rekap
 // ══════════════════════════════════════════════════════════
 
 function TabRekap({ report, weeklyBreakdown, isMobile }) {
     const pct = report.target_amount > 0 ? (report.total_revenue / report.target_amount * 100) : 0
+
+    // Tentukan kolom kanal yang aktif untuk tampilan.
+    // Jika ada data kotak_qris lama, tampilkan juga kolomnya.
+    const hasLegacyData = weeklyBreakdown.some(w => (w.total_kotak_qris ?? 0) > 0)
+    const displayChannels = hasLegacyData ? [...CHANNELS, CHANNEL_LEGACY] : CHANNELS
+
     return (
         <div>
             <div style={{ display: 'grid', gridTemplateColumns: `repeat(${isMobile ? 2 : 4},1fr)`, gap: isMobile ? 8 : 12, marginBottom: 16 }}>
@@ -109,7 +128,7 @@ function TabRekap({ report, weeklyBreakdown, isMobile }) {
                         <tr>
                             <th style={{ ...thStyle, textAlign: 'left', width: 36 }}>Tgl</th>
                             <th style={{ ...thStyle, textAlign: 'left', width: 72 }}>Hari</th>
-                            {CHANNELS.map(c => <th key={c.key} style={thStyle}>{c.label}</th>)}
+                            {displayChannels.map(c => <th key={c.key} style={thStyle}>{c.label}</th>)}
                             <th style={thStyle}>Total</th>
                             <th style={thStyle}>Kumulatif</th>
                         </tr>
@@ -121,9 +140,11 @@ function TabRekap({ report, weeklyBreakdown, isMobile }) {
                                     <tr key={day.date} className="rev-row">
                                         <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 600 }}>{new Date(day.date).getDate()}</td>
                                         <td style={{ ...tdStyle, textAlign: 'left', color: '#6b7280' }}>{day.day_name}</td>
-                                        {CHANNELS.map(c => (
+                                        {displayChannels.map(c => (
                                             <td key={c.key} style={tdStyle}>
-                                                {day[c.key] ? formatRpShort(day[c.key]) : <span style={{ color: '#e5e7eb' }}>—</span>}
+                                                {getDayChannelValue(day, c.key) > 0
+                                                    ? formatRpShort(getDayChannelValue(day, c.key))
+                                                    : <span style={{ color: '#e5e7eb' }}>—</span>}
                                             </td>
                                         ))}
                                         <td style={{ ...tdStyle, fontWeight: 600 }}>{day.total_daily ? formatRp(day.total_daily) : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
@@ -132,9 +153,9 @@ function TabRekap({ report, weeklyBreakdown, isMobile }) {
                                 ))}
                                 <tr style={{ background: '#f0fdf4', borderBottom: '2px solid #bbf7d0' }}>
                                     <td colSpan={2} style={{ padding: '7px 10px', fontSize: 12, fontWeight: 600, color: '#166534' }}>Total Pekan {wi + 1}</td>
-                                    {CHANNELS.map(c => (
+                                    {displayChannels.map(c => (
                                         <td key={c.key} style={{ ...tdStyle, fontWeight: 600, background: '#f0fdf4', borderBottom: '2px solid #bbf7d0' }}>
-                                            {week[`total_${c.key}`] ? formatRpShort(week[`total_${c.key}`]) : '—'}
+                                            {(week[`total_${c.key}`] ?? 0) > 0 ? formatRpShort(week[`total_${c.key}`]) : '—'}
                                         </td>
                                     ))}
                                     <td style={{ ...tdStyle, fontWeight: 700, background: '#f0fdf4', borderBottom: '2px solid #bbf7d0' }}>{formatRp(week.total)}</td>
@@ -146,8 +167,10 @@ function TabRekap({ report, weeklyBreakdown, isMobile }) {
                     <tfoot>
                         <tr style={{ background: '#f0fdf4' }}>
                             <td colSpan={2} style={{ padding: '8px 10px', fontSize: 12, fontWeight: 700 }}>GRAND TOTAL</td>
-                            {CHANNELS.map(c => (
-                                <td key={c.key} style={{ ...tdStyle, fontWeight: 700, background: '#f0fdf4' }}>{formatRpShort(report[`total_${c.key}`])}</td>
+                            {displayChannels.map(c => (
+                                <td key={c.key} style={{ ...tdStyle, fontWeight: 700, background: '#f0fdf4' }}>
+                                    {formatRpShort(report[`total_${c.key}`] ?? 0)}
+                                </td>
                             ))}
                             <td style={{ ...tdStyle, fontWeight: 700, background: '#f0fdf4' }}>{formatRp(report.total_revenue)}</td>
                             <td style={{ background: '#f0fdf4' }}></td>
@@ -421,6 +444,7 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
         [channelDetails]
     )
 
+    // Total per kanal (hanya kanal aktif untuk Tab Rincian)
     const channelTotals = useMemo(() => {
         const totals = {}
         CHANNELS.forEach(c => { totals[c.key] = allDetails.filter(d => d.channel === c.key).reduce((s, d) => s + (d.amount ?? 0), 0) })
@@ -555,6 +579,7 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
 
     return (
         <div>
+            {/* Pill kanal — hanya kanal aktif (bukan legacy) */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
                 {CHANNELS.map(c => {
                     const isActive = activeChannel === c.key
@@ -778,7 +803,7 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
 }
 
 // ══════════════════════════════════════════════════════════
-// Tab Safari Dakwah — Inline edit + narasumber autocomplete
+// Tab Safari Dakwah — tidak berubah dari sebelumnya
 // ══════════════════════════════════════════════════════════
 
 function TabSafari({ report, canEdit, isMobile, narasumberList = [] }) {
@@ -789,8 +814,6 @@ function TabSafari({ report, canEdit, isMobile, narasumberList = [] }) {
         realization: logs.reduce((s, l) => s + (l.realization ?? 0), 0),
     }
 
-    // ── Narasumber (master data) ──
-    // narasumberList datang dari backend sudah ter-scope: cabang laporan ini + nasional (branch_id null).
     const [speakers, setSpeakers] = useState(narasumberList)
     useEffect(() => { setSpeakers(narasumberList) }, [narasumberList])
 
@@ -802,7 +825,6 @@ function TabSafari({ report, canEdit, isMobile, narasumberList = [] }) {
     const [newSpeakerNational, setNewSpeakerNational] = useState(false)
     const [savingSpeaker, setSavingSpeaker] = useState(false)
 
-    // applyTo: 'form' | 'edit' — narasumber baru langsung dipilihkan ke form yang sedang aktif
     const handleAddSpeaker = (applyTo) => {
         const name = newSpeakerName.trim()
         if (!name) return
@@ -829,7 +851,6 @@ function TabSafari({ report, canEdit, isMobile, narasumberList = [] }) {
         })
     }
 
-    // ── Inline edit state ──
     const [editId, setEditId] = useState(null)
     const [editData, setEditData] = useState({})
     const [savingEdit, setSavingEdit] = useState(false)
@@ -863,13 +884,11 @@ function TabSafari({ report, canEdit, isMobile, narasumberList = [] }) {
         router.delete(`/reports/${report.id}/safari/${id}`, { preserveScroll: true })
     }
 
-    // Auto-fill hari saat tanggal berubah
     const handleEditDateChange = (val) => {
         const d = new Date(val)
         setEditData(p => ({ ...p, date: val, day_name: isNaN(d) ? '' : DAYS_ID[d.getDay()] }))
     }
 
-    // ── Form tambah ──
     const [formDate, setFormDate] = useState('')
     const [formDayName, setFormDayName] = useState('')
     const [formLocation, setFormLocation] = useState('')
@@ -900,8 +919,6 @@ function TabSafari({ report, canEdit, isMobile, narasumberList = [] }) {
     const numCell = { ...inputCell, textAlign: 'right', fontFamily: 'monospace' }
     const speakerSelectStyle = { ...inputCell }
 
-    // Opsi <select> narasumber, dengan fallback untuk nilai lama yang belum ada di master
-    // (mis. sebelum backfill jalan, atau ejaan lama yang belum di-normalisasi).
     const speakerOptions = (currentValue) => (
         <>
             <option value="">— Pilih narasumber —</option>
@@ -945,32 +962,16 @@ function TabSafari({ report, canEdit, isMobile, narasumberList = [] }) {
                                     style={{ borderBottom: '1px solid #f3f4f6', background: isEditing ? '#f0fdf4' : undefined, cursor: canEdit && !editId ? 'pointer' : undefined }}
                                     onClick={() => { if (canEdit && !editId) startEdit(l) }}>
                                     <td style={{ ...tdStyle, textAlign: 'left' }}>
-                                        {isEditing ? (
-                                            <input type="date" value={editData.date} onClick={e => e.stopPropagation()}
-                                                onChange={e => handleEditDateChange(e.target.value)}
-                                                style={{ ...inputCell, minWidth: 130 }} />
-                                        ) : new Date(l.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
+                                        {isEditing ? <input type="date" value={editData.date} onClick={e => e.stopPropagation()} onChange={e => handleEditDateChange(e.target.value)} style={{ ...inputCell, minWidth: 130 }} /> : new Date(l.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
                                     </td>
                                     <td style={{ ...tdStyle, textAlign: 'left', color: '#6b7280' }}>
-                                        {isEditing ? (
-                                            <input value={editData.day_name} readOnly style={{ ...inputCell, background: '#f9fafb', color: '#6b7280', width: 70 }} />
-                                        ) : l.day_name}
+                                        {isEditing ? <input value={editData.day_name} readOnly style={{ ...inputCell, background: '#f9fafb', color: '#6b7280', width: 70 }} /> : l.day_name}
                                     </td>
                                     <td style={{ ...tdStyle, textAlign: 'left' }}>
-                                        {isEditing ? (
-                                            <input value={editData.location} onClick={e => e.stopPropagation()}
-                                                onChange={e => setEditData(p => ({ ...p, location: e.target.value }))}
-                                                style={inputCell} />
-                                        ) : (l.location ?? '—')}
+                                        {isEditing ? <input value={editData.location} onClick={e => e.stopPropagation()} onChange={e => setEditData(p => ({ ...p, location: e.target.value }))} style={inputCell} /> : (l.location ?? '—')}
                                     </td>
                                     <td style={{ ...tdStyle, textAlign: 'left' }}>
-                                        {isEditing ? (
-                                            <select value={editData.speaker} onClick={e => e.stopPropagation()}
-                                                onChange={e => setEditData(p => ({ ...p, speaker: e.target.value }))}
-                                                style={speakerSelectStyle}>
-                                                {speakerOptions(editData.speaker)}
-                                            </select>
-                                        ) : (l.speaker ?? '—')}
+                                        {isEditing ? <select value={editData.speaker} onClick={e => e.stopPropagation()} onChange={e => setEditData(p => ({ ...p, speaker: e.target.value }))} style={speakerSelectStyle}>{speakerOptions(editData.speaker)}</select> : (l.speaker ?? '—')}
                                     </td>
                                     <td style={tdStyle} onClick={e => e.stopPropagation()}>
                                         {isEditing ? <input type="number" min="0" step="1000" value={editData.target || ''} onChange={e => setEditData(p => ({ ...p, target: parseInt(e.target.value) || 0 }))} style={numCell} /> : formatRpShort(l.target)}
@@ -982,9 +983,7 @@ function TabSafari({ report, canEdit, isMobile, narasumberList = [] }) {
                                         {isEditing ? <input type="number" min="0" step="1000" value={editData.realization || ''} onChange={e => setEditData(p => ({ ...p, realization: parseInt(e.target.value) || 0 }))} style={numCell} /> : formatRp(l.realization)}
                                     </td>
                                     <td style={{ ...tdStyle, fontWeight: 600, color: pct === null ? '#9ca3af' : pct >= 100 ? '#166534' : pct >= 70 ? '#d97706' : '#dc2626' }}>
-                                        {isEditing ? (
-                                            <span style={{ fontSize: 11, color: '#9ca3af' }}>auto</span>
-                                        ) : (pct !== null ? `${pct.toFixed(1)}%` : '—')}
+                                        {isEditing ? <span style={{ fontSize: 11, color: '#9ca3af' }}>auto</span> : (pct !== null ? `${pct.toFixed(1)}%` : '—')}
                                     </td>
                                     {canEdit && (
                                         <td style={{ padding: '4px 8px', whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
@@ -993,9 +992,7 @@ function TabSafari({ report, canEdit, isMobile, narasumberList = [] }) {
                                                     <button onClick={saveEdit} disabled={savingEdit} style={{ background: '#166534', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 12 }}>{savingEdit ? '...' : '✓'}</button>
                                                     <button onClick={cancelEdit} style={{ background: '#f3f4f6', border: 'none', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 12 }}>✕</button>
                                                 </div>
-                                            ) : (
-                                                <button onClick={() => handleDelete(l.id)} style={{ fontSize: 11, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer' }}>Hapus</button>
-                                            )}
+                                            ) : <button onClick={() => handleDelete(l.id)} style={{ fontSize: 11, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer' }}>Hapus</button>}
                                         </td>
                                     )}
                                 </tr>
@@ -1019,7 +1016,6 @@ function TabSafari({ report, canEdit, isMobile, narasumberList = [] }) {
                 </table>
             </div>
 
-            {/* Form tambah compact */}
             {canEdit && (
                 <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: 16 }}>
                     <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>Tambah Sesi Safari Dakwah</div>
@@ -1043,15 +1039,11 @@ function TabSafari({ report, canEdit, isMobile, narasumberList = [] }) {
                                     <select value={formSpeaker} onChange={e => setFormSpeaker(e.target.value)} style={{ ...inputStyle, flex: 1 }}>
                                         {speakerOptions(formSpeaker)}
                                     </select>
-                                    <button type="button" onClick={() => setShowNewSpeaker(true)}
-                                        style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 8, background: '#f9fafb', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                                        + Baru
-                                    </button>
+                                    <button type="button" onClick={() => setShowNewSpeaker(true)} style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 8, background: '#f9fafb', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>+ Baru</button>
                                 </div>
                             ) : (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                    <input value={newSpeakerName} onChange={e => setNewSpeakerName(e.target.value)}
-                                        placeholder="Nama narasumber baru" style={inputStyle} autoFocus />
+                                    <input value={newSpeakerName} onChange={e => setNewSpeakerName(e.target.value)} placeholder="Nama narasumber baru" style={inputStyle} autoFocus />
                                     {canAddNationalSpeaker && (
                                         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#374151' }}>
                                             <input type="checkbox" checked={newSpeakerNational} onChange={e => setNewSpeakerNational(e.target.checked)} />
@@ -1059,14 +1051,8 @@ function TabSafari({ report, canEdit, isMobile, narasumberList = [] }) {
                                         </label>
                                     )}
                                     <div style={{ display: 'flex', gap: 6 }}>
-                                        <button type="button" onClick={() => handleAddSpeaker('form')} disabled={savingSpeaker || !newSpeakerName.trim()}
-                                            style={{ ...btnPrimary, padding: '5px 12px', fontSize: 12, opacity: !newSpeakerName.trim() ? .5 : 1 }}>
-                                            {savingSpeaker ? '...' : 'Simpan'}
-                                        </button>
-                                        <button type="button" onClick={() => { setShowNewSpeaker(false); setNewSpeakerName(''); setNewSpeakerNational(false) }}
-                                            style={{ padding: '5px 12px', border: '1px solid #d1d5db', borderRadius: 8, background: '#f9fafb', fontSize: 12, cursor: 'pointer' }}>
-                                            Batal
-                                        </button>
+                                        <button type="button" onClick={() => handleAddSpeaker('form')} disabled={savingSpeaker || !newSpeakerName.trim()} style={{ ...btnPrimary, padding: '5px 12px', fontSize: 12, opacity: !newSpeakerName.trim() ? .5 : 1 }}>{savingSpeaker ? '...' : 'Simpan'}</button>
+                                        <button type="button" onClick={() => { setShowNewSpeaker(false); setNewSpeakerName(''); setNewSpeakerNational(false) }} style={{ padding: '5px 12px', border: '1px solid #d1d5db', borderRadius: 8, background: '#f9fafb', fontSize: 12, cursor: 'pointer' }}>Batal</button>
                                     </div>
                                 </div>
                             )}
@@ -1080,15 +1066,11 @@ function TabSafari({ report, canEdit, isMobile, narasumberList = [] }) {
                         ].map(f => (
                             <div key={f.label}>
                                 <label style={{ display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 4, color: '#374151' }}>{f.label}</label>
-                                <input type="number" min="0" step="1000" value={f.val || ''} placeholder="0"
-                                    onChange={e => f.set(parseInt(e.target.value) || 0)} style={numInputStyle} />
+                                <input type="number" min="0" step="1000" value={f.val || ''} placeholder="0" onChange={e => f.set(parseInt(e.target.value) || 0)} style={numInputStyle} />
                             </div>
                         ))}
                     </div>
-                    <button disabled={saving || !formDate} onClick={handleSave}
-                        style={{ ...btnPrimary, opacity: !formDate ? .5 : 1 }}>
-                        {saving ? 'Menyimpan...' : 'Simpan'}
-                    </button>
+                    <button disabled={saving || !formDate} onClick={handleSave} style={{ ...btnPrimary, opacity: !formDate ? .5 : 1 }}>{saving ? 'Menyimpan...' : 'Simpan'}</button>
                 </div>
             )}
         </div>
@@ -1096,12 +1078,16 @@ function TabSafari({ report, canEdit, isMobile, narasumberList = [] }) {
 }
 
 // ══════════════════════════════════════════════════════════
-// Tab Rekap Per Tim
+// Tab Rekap Per Tim — tampilkan semua kanal termasuk legacy
 // ══════════════════════════════════════════════════════════
 
 function TabRekapPerTim({ report, isMobile }) {
     const [selectedChannel, setSelectedChannel] = useState('presentasi')
     const allDetails = report.revenue_details ?? []
+
+    // Tentukan kanal mana saja yang punya data (kanal aktif + legacy jika ada)
+    const hasLegacyData = allDetails.some(d => d.channel === 'kotak_qris')
+    const channelList = hasLegacyData ? CHANNELS_ALL : CHANNELS
 
     const rekapData = useMemo(() => {
         const channelDetails = allDetails.filter(d => d.channel === selectedChannel)
@@ -1117,15 +1103,17 @@ function TabRekapPerTim({ report, isMobile }) {
         return { sources, total: sources.reduce((sum, s) => sum + s.subtotal, 0) }
     }, [allDetails, selectedChannel])
 
-    const selectedChannelLabel = CHANNELS.find(c => c.key === selectedChannel)?.label ?? ''
-    const config = CHANNEL_CONFIG[selectedChannel]
+    const selectedChannelLabel = channelList.find(c => c.key === selectedChannel)?.label ?? ''
+    const config = CHANNEL_CONFIG[selectedChannel] ?? { hasSubChannel: false }
 
     return (
         <div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
-                {CHANNELS.map(c => {
+                {channelList.map(c => {
                     const isActive = selectedChannel === c.key
                     const total = allDetails.filter(d => d.channel === c.key).reduce((s, d) => s + (d.amount ?? 0), 0)
+                    // Sembunyikan kanal yang tidak punya data
+                    if (total === 0 && !isActive) return null
                     return (
                         <button key={c.key} onClick={() => setSelectedChannel(c.key)}
                             style={{ ...pillBase, background: isActive ? '#166534' : '#f3f4f6', color: isActive ? '#fff' : '#374151' }}>
@@ -1185,8 +1173,9 @@ function TabRekapPerTim({ report, isMobile }) {
         </div>
     )
 }
+
 // ══════════════════════════════════════════════════════════
-// Tab Rekap Per Unit — sumber Presentasi/WGTS yang namanya mengandung "Unit"
+// Tab Rekap Per Unit — tidak berubah
 // ══════════════════════════════════════════════════════════
 
 const isUnitSource = (label) => (label ?? '').toLowerCase().includes('unit')
@@ -1224,7 +1213,6 @@ function TabRekapPerUnit({ report, isMobile }) {
             <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '8px 14px', marginBottom: 14, fontSize: 12, color: '#1e40af' }}>
                 Menampilkan hanya sumber yang namanya mengandung kata <strong>"Unit"</strong> (tim luar kota — safari dakwah &amp; DF). Tim reguler ada di tab <strong>Rekap Per Tim</strong>.
             </div>
-
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
                 {UNIT_CHANNELS.map(c => {
                     const isActive = selectedChannel === c.key
@@ -1238,12 +1226,10 @@ function TabRekapPerUnit({ report, isMobile }) {
                     )
                 })}
             </div>
-
             <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, padding: '10px 14px', marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: 13, fontWeight: 500 }}>Total Unit — {selectedChannelLabel}</span>
                 <span style={{ fontSize: 16, fontWeight: 600, fontFamily: 'monospace' }}>{formatRp(rekapData.total)}</span>
             </div>
-
             <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, overflowX: 'auto' }}>
                 <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb' }}>
                     <span style={{ fontWeight: 600, fontSize: 13 }}>Rekap {selectedChannelLabel} per Unit</span>
@@ -1290,11 +1276,12 @@ function TabRekapPerUnit({ report, isMobile }) {
         </div>
     )
 }
+
 // ══════════════════════════════════════════════════════════
-// Halaman utama
+// Halaman utama — tidak berubah
 // ══════════════════════════════════════════════════════════
 
-export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit, canApprove, canRevise, isReadOnly = false, narasumberList = [] }) { // ⬅ +isReadOnly
+export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit, canApprove, canRevise, isReadOnly = false, narasumberList = [] }) {
     const [tab, setTab] = useState('rincian')
     const [showApproveModal, setShowApproveModal] = useState(false)
     const [approveNote, setApproveNote] = useState('')
@@ -1311,8 +1298,6 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
         revision:  { label: 'Revisi',    bg: '#fef3c7', color: '#d97706' },
     }
     const st = statusMap[report.status] ?? statusMap.draft
-
-    // Detect if this is a draft that was sent back for revision
     const isRevisionDraft = report.status === 'draft' && report.revised_at
 
     return (
@@ -1327,28 +1312,16 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
                 @media (max-width: 768px) { table { font-size: 11px !important; } table th, table td { padding: 6px 8px !important; } }
             `}</style>
 
-            {/* ── Revision Banner ── */}
             {isRevisionDraft && (
-                <div style={{
-                    background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 10,
-                    padding: '14px 18px', marginBottom: 16, display: 'flex', gap: 12, alignItems: 'flex-start',
-                }}>
+                <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 10, padding: '14px 18px', marginBottom: 16, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                     <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>⚠️</span>
                     <div>
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#92400e', marginBottom: 4 }}>
                             Laporan dikembalikan untuk revisi
                             {report.revised_by && <span style={{ fontWeight: 400 }}> oleh <strong>{report.revised_by.name}</strong></span>}
                         </div>
-                        {report.revision_notes && (
-                            <div style={{ fontSize: 13, color: '#78350f', lineHeight: 1.5 }}>
-                                {report.revision_notes}
-                            </div>
-                        )}
-                        {report.revised_at && (
-                            <div style={{ fontSize: 11, color: '#b45309', marginTop: 6 }}>
-                                {new Date(report.revised_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                            </div>
-                        )}
+                        {report.revision_notes && <div style={{ fontSize: 13, color: '#78350f', lineHeight: 1.5 }}>{report.revision_notes}</div>}
+                        {report.revised_at && <div style={{ fontSize: 11, color: '#b45309', marginTop: 6 }}>{new Date(report.revised_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>}
                     </div>
                 </div>
             )}
@@ -1367,39 +1340,16 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
                     {canSubmit && <button onClick={() => { if (confirm('Submit laporan ini?')) router.patch(`/reports/${report.id}/submit`) }} style={{ background: '#166534', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: 'none', cursor: 'pointer', flex: isMobile ? 1 : undefined }}>Submit Laporan</button>}
                     {canApprove && (
                         <>
-                            <button
-                                onClick={() => setShowApproveModal(true)}
-                                style={{ background: '#1d4ed8', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: 'none', cursor: 'pointer', flex: isMobile ? 1 : undefined }}
-                            >Setujui</button>
-
+                            <button onClick={() => setShowApproveModal(true)} style={{ background: '#1d4ed8', color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: 'none', cursor: 'pointer', flex: isMobile ? 1 : undefined }}>Setujui</button>
                             {showApproveModal && (
-                                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
-                                    onClick={() => setShowApproveModal(false)}>
-                                    <div style={{ background: '#fff', borderRadius: 12, padding: 24, width: '100%', maxWidth: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}
-                                        onClick={e => e.stopPropagation()}>
+                                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setShowApproveModal(false)}>
+                                    <div style={{ background: '#fff', borderRadius: 12, padding: 24, width: '100%', maxWidth: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }} onClick={e => e.stopPropagation()}>
                                         <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Setujui Laporan</div>
-                                        <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 16 }}>
-                                            {report.branch?.name} — {new Date(report.period_month).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}
-                                        </div>
-                                        <textarea
-                                            placeholder="Catatan (opsional)..."
-                                            value={approveNote}
-                                            onChange={e => setApproveNote(e.target.value)}
-                                            style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, resize: 'vertical', minHeight: 80, boxSizing: 'border-box', marginBottom: 16 }}
-                                        />
+                                        <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 16 }}>{report.branch?.name} — {new Date(report.period_month).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}</div>
+                                        <textarea placeholder="Catatan (opsional)..." value={approveNote} onChange={e => setApproveNote(e.target.value)} style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, resize: 'vertical', minHeight: 80, boxSizing: 'border-box', marginBottom: 16 }} />
                                         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                                            <button onClick={() => setShowApproveModal(false)}
-                                                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #d1d5db', background: '#fff', fontSize: 13, cursor: 'pointer' }}>
-                                                Batal
-                                            </button>
-                                            <button onClick={() => {
-                                                router.patch(`/reports/${report.id}/approve`, { evaluation: approveNote })
-                                                setShowApproveModal(false)
-                                                setApproveNote('')
-                                            }}
-                                                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#1d4ed8', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
-                                                ✓ Setujui
-                                            </button>
+                                            <button onClick={() => setShowApproveModal(false)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #d1d5db', background: '#fff', fontSize: 13, cursor: 'pointer' }}>Batal</button>
+                                            <button onClick={() => { router.patch(`/reports/${report.id}/approve`, { evaluation: approveNote }); setShowApproveModal(false); setApproveNote('') }} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#1d4ed8', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>✓ Setujui</button>
                                         </div>
                                     </div>
                                 </div>
@@ -1408,43 +1358,17 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
                     )}
                     {canRevise && (
                         <>
-                            <button
-                                onClick={() => setShowReviseModal(true)}
-                                style={{ background: '#fff', color: '#d97706', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: '1px solid #d97706', cursor: 'pointer', flex: isMobile ? 1 : undefined }}
-                            >Revisi</button>
-
+                            <button onClick={() => setShowReviseModal(true)} style={{ background: '#fff', color: '#d97706', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: '1px solid #d97706', cursor: 'pointer', flex: isMobile ? 1 : undefined }}>Revisi</button>
                             {showReviseModal && (
-                                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
-                                    onClick={() => setShowReviseModal(false)}>
-                                    <div style={{ background: '#fff', borderRadius: 12, padding: 24, width: '100%', maxWidth: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}
-                                        onClick={e => e.stopPropagation()}>
+                                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setShowReviseModal(false)}>
+                                    <div style={{ background: '#fff', borderRadius: 12, padding: 24, width: '100%', maxWidth: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }} onClick={e => e.stopPropagation()}>
                                         <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8, color: '#92400e' }}>Kembalikan untuk Revisi</div>
-                                        <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 16 }}>
-                                            {report.branch?.name} — {new Date(report.period_month).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}
-                                        </div>
+                                        <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 16 }}>{report.branch?.name} — {new Date(report.period_month).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}</div>
                                         <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 6, color: '#374151' }}>Catatan revisi <span style={{ color: '#dc2626' }}>*</span></div>
-                                        <textarea
-                                            placeholder="Jelaskan apa yang perlu diperbaiki..."
-                                            value={reviseNote}
-                                            onChange={e => setReviseNote(e.target.value)}
-                                            style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, resize: 'vertical', minHeight: 100, boxSizing: 'border-box', marginBottom: 16 }}
-                                            autoFocus
-                                        />
+                                        <textarea placeholder="Jelaskan apa yang perlu diperbaiki..." value={reviseNote} onChange={e => setReviseNote(e.target.value)} style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, resize: 'vertical', minHeight: 100, boxSizing: 'border-box', marginBottom: 16 }} autoFocus />
                                         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                                            <button onClick={() => { setShowReviseModal(false); setReviseNote('') }}
-                                                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #d1d5db', background: '#fff', fontSize: 13, cursor: 'pointer' }}>
-                                                Batal
-                                            </button>
-                                            <button
-                                                disabled={!reviseNote.trim()}
-                                                onClick={() => {
-                                                    router.patch(`/reports/${report.id}/revise`, { revision_notes: reviseNote })
-                                                    setShowReviseModal(false)
-                                                    setReviseNote('')
-                                                }}
-                                                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: !reviseNote.trim() ? '#d1d5db' : '#d97706', color: '#fff', fontSize: 13, fontWeight: 500, cursor: !reviseNote.trim() ? 'not-allowed' : 'pointer' }}>
-                                                Kembalikan
-                                            </button>
+                                            <button onClick={() => { setShowReviseModal(false); setReviseNote('') }} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #d1d5db', background: '#fff', fontSize: 13, cursor: 'pointer' }}>Batal</button>
+                                            <button disabled={!reviseNote.trim()} onClick={() => { router.patch(`/reports/${report.id}/revise`, { revision_notes: reviseNote }); setShowReviseModal(false); setReviseNote('') }} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: !reviseNote.trim() ? '#d1d5db' : '#d97706', color: '#fff', fontSize: 13, fontWeight: 500, cursor: !reviseNote.trim() ? 'not-allowed' : 'pointer' }}>Kembalikan</button>
                                         </div>
                                     </div>
                                 </div>
@@ -1470,17 +1394,15 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
             </div>
 
             {tab === 'rincian' && <TabRincian report={report} canEdit={canEdit} sources={sources} isMobile={isMobile} />}
-            {tab === 'rekap' && <TabRekap report={report} weeklyBreakdown={weeklyBreakdown} isMobile={isMobile} />}
-            {tab === 'tim' && <TabRekapPerTim report={report} isMobile={isMobile} />}
-            {tab === 'unit' && <TabRekapPerUnit report={report} isMobile={isMobile} />}
-            {tab === 'safari' && <TabSafari report={report} canEdit={canEdit} isMobile={isMobile} narasumberList={narasumberList} />}
+            {tab === 'rekap'   && <TabRekap report={report} weeklyBreakdown={weeklyBreakdown} isMobile={isMobile} />}
+            {tab === 'tim'     && <TabRekapPerTim report={report} isMobile={isMobile} />}
+            {tab === 'unit'    && <TabRekapPerUnit report={report} isMobile={isMobile} />}
+            {tab === 'safari'  && <TabSafari report={report} canEdit={canEdit} isMobile={isMobile} narasumberList={narasumberList} />}
 
-            {/* ── Audit Log Timeline ── */}
+            {/* Audit Log Timeline */}
             <div style={{ marginTop: 32, borderTop: '1px solid #e5e7eb', paddingTop: 20 }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 14 }}>Riwayat Laporan</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-
-                    {/* Dibuat */}
                     <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 20 }}>
                             <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#d1d5db', marginTop: 3, flexShrink: 0 }} />
@@ -1488,13 +1410,9 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
                         </div>
                         <div style={{ paddingBottom: 16 }}>
                             <div style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>Laporan dibuat</div>
-                            <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
-                                {new Date(report.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                            </div>
+                            <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>{new Date(report.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
                         </div>
                     </div>
-
-                    {/* Disubmit */}
                     {report.submitted_at ? (
                         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 20 }}>
@@ -1502,13 +1420,8 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
                                 <div style={{ width: 2, height: (report.revised_at || report.approved_at) ? 28 : 0, background: '#e5e7eb' }} />
                             </div>
                             <div style={{ paddingBottom: (report.revised_at || report.approved_at) ? 16 : 0 }}>
-                                <div style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>
-                                    Disubmit
-                                    {report.submitted_by && <span style={{ fontWeight: 400, color: '#6b7280' }}> oleh <strong>{report.submitted_by.name}</strong></span>}
-                                </div>
-                                <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
-                                    {new Date(report.submitted_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                </div>
+                                <div style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>Disubmit{report.submitted_by && <span style={{ fontWeight: 400, color: '#6b7280' }}> oleh <strong>{report.submitted_by.name}</strong></span>}</div>
+                                <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>{new Date(report.submitted_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
                             </div>
                         </div>
                     ) : (
@@ -1516,13 +1429,9 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
                             <div style={{ minWidth: 20, display: 'flex', justifyContent: 'center' }}>
                                 <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#e5e7eb', marginTop: 3, border: '2px dashed #d1d5db' }} />
                             </div>
-                            <div>
-                                <div style={{ fontSize: 13, color: '#9ca3af', fontStyle: 'italic' }}>Belum disubmit</div>
-                            </div>
+                            <div><div style={{ fontSize: 13, color: '#9ca3af', fontStyle: 'italic' }}>Belum disubmit</div></div>
                         </div>
                     )}
-
-                    {/* Dikembalikan untuk Revisi */}
                     {report.revised_at && (
                         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 20 }}>
@@ -1530,48 +1439,26 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
                                 <div style={{ width: 2, height: report.approved_at ? 28 : 0, background: '#e5e7eb' }} />
                             </div>
                             <div style={{ paddingBottom: report.approved_at ? 16 : 0 }}>
-                                <div style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>
-                                    Dikembalikan untuk revisi
-                                    {report.revised_by && <span style={{ fontWeight: 400, color: '#6b7280' }}> oleh <strong>{report.revised_by.name}</strong></span>}
-                                </div>
-                                <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
-                                    {new Date(report.revised_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                </div>
-                                {report.revision_notes && (
-                                    <div style={{ marginTop: 6, padding: '8px 12px', background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 6, fontSize: 12, color: '#92400e' }}>
-                                        💬 {report.revision_notes}
-                                    </div>
-                                )}
+                                <div style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>Dikembalikan untuk revisi{report.revised_by && <span style={{ fontWeight: 400, color: '#6b7280' }}> oleh <strong>{report.revised_by.name}</strong></span>}</div>
+                                <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>{new Date(report.revised_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                                {report.revision_notes && <div style={{ marginTop: 6, padding: '8px 12px', background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 6, fontSize: 12, color: '#92400e' }}>💬 {report.revision_notes}</div>}
                             </div>
                         </div>
                     )}
-
-                    {/* Disetujui */}
                     {report.approved_at && (
-                        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginTop: 0 }}>
+                        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 20 }}>
                                 <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#166534', marginTop: 3, flexShrink: 0 }} />
                             </div>
                             <div>
-                                <div style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>
-                                    Disetujui
-                                    {report.approved_by && <span style={{ fontWeight: 400, color: '#6b7280' }}> oleh <strong>{report.approved_by.name}</strong></span>}
-                                </div>
-                                <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
-                                    {new Date(report.approved_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                </div>
-                                {report.evaluation && (
-                                    <div style={{ marginTop: 6, padding: '8px 12px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6, fontSize: 12, color: '#166534' }}>
-                                        💬 {report.evaluation}
-                                    </div>
-                                )}
+                                <div style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>Disetujui{report.approved_by && <span style={{ fontWeight: 400, color: '#6b7280' }}> oleh <strong>{report.approved_by.name}</strong></span>}</div>
+                                <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>{new Date(report.approved_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                                {report.evaluation && <div style={{ marginTop: 6, padding: '8px 12px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6, fontSize: 12, color: '#166534' }}>💬 {report.evaluation}</div>}
                             </div>
                         </div>
                     )}
-
                 </div>
             </div>
-
         </AppLayout>
     )
 }

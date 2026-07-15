@@ -16,7 +16,10 @@ class DailyRevenue extends Model
 
     protected $fillable = [
         'monthly_report_id', 'date', 'day_name',
-        'presentasi', 'gerai', 'wgts', 'dfi', 'dfe', 'kotak_qris', 'kantor',
+        'presentasi', 'gerai', 'wgts', 'dfi', 'dfe',
+        'kotak_qris',  // kolom lama — dibiarkan untuk kompatibilitas data historis
+        'kotak', 'qris', // kolom baru (pisah)
+        'kantor',
         'total_daily', 'cumulative', 'notes',
     ];
 

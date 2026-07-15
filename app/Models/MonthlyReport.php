@@ -18,14 +18,21 @@ class MonthlyReport extends Model
     const STATUS_APPROVED  = 'approved';
     const STATUS_REVISION  = 'revision';
 
-    const CHANNELS     = ['presentasi', 'gerai', 'wgts', 'dfi', 'dfe', 'kotak_qris', 'kantor'];
+    // kotak_qris tetap ada di sini agar revenue_details lama (channel='kotak_qris')
+    // masih diproses oleh recalculate() dan muncul di tab Rekap Per Tim.
+    // kotak & qris adalah kanal baru yang berlaku ke depan.
+    const CHANNELS     = ['presentasi', 'gerai', 'wgts', 'dfi', 'dfe', 'kotak', 'qris', 'kantor'];
+    const CHANNELS_LEGACY = ['kotak_qris']; // kanal lama — masih ada di revenue_details historis
     const SUB_CHANNELS = ['reguler', 'safdak', 'df'];
 
     protected $fillable = [
         'branch_id', 'period_month', 'status',
         'total_revenue', 'target_amount', 'achievement_pct', 'gap_amount',
         'total_presentasi', 'total_gerai', 'total_wgts',
-        'total_dfi', 'total_dfe', 'total_kotak_qris', 'total_kantor',
+        'total_dfi', 'total_dfe',
+        'total_kotak_qris', // kolom lama — tidak dihapus, tidak lagi ditulis recalculate()
+        'total_kotak', 'total_qris', // kolom baru
+        'total_kantor',
         'evaluation', 'submitted_by', 'submitted_at',
         'approved_by', 'approved_at',
         'revision_notes', 'revised_by', 'revised_at',
@@ -82,6 +89,9 @@ class MonthlyReport extends Model
 
     public function recalculate(): void
     {
+        // Semua kanal yang aktif sekarang (termasuk legacy agar data lama tetap terhitung)
+        $allChannels = array_merge(self::CHANNELS, self::CHANNELS_LEGACY);
+
         // Langkah 1: bangun ulang cache harian dari revenue_details
         $details = $this->revenueDetails()->get();
         $byDate  = $details->groupBy(fn ($d) => $d->date->toDateString());
@@ -97,13 +107,13 @@ class MonthlyReport extends Model
 
         // withoutEvents → mencegah hook DailyRevenue memicu
         // recalculate() balik (pengaman anti-infinite-loop).
-        DailyRevenue::withoutEvents(function () use ($byDate, $dayNames, $start, $end, &$cumulative) {
+        DailyRevenue::withoutEvents(function () use ($byDate, $dayNames, $start, $end, &$cumulative, $allChannels) {
             for ($date = $start->copy(); $date->lte($end); $date->addDay()) {
                 $key     = $date->toDateString();
                 $dayRows = $byDate->get($key, collect());
 
                 $channelSums = [];
-                foreach (self::CHANNELS as $channel) {
+                foreach ($allChannels as $channel) {
                     $channelSums[$channel] = (int) $dayRows->where('channel', $channel)->sum('amount');
                 }
 
@@ -130,12 +140,27 @@ class MonthlyReport extends Model
             'total_wgts'       => $daily->sum('wgts'),
             'total_dfi'        => $daily->sum('dfi'),
             'total_dfe'        => $daily->sum('dfe'),
-            'total_kotak_qris' => $daily->sum('kotak_qris'),
+            'total_kotak'      => $daily->sum('kotak'),
+            'total_qris'       => $daily->sum('qris'),
             'total_kantor'     => $daily->sum('kantor'),
+            // kolom lama — tetap dihitung agar laporan historis tidak kehilangan nilai
+            'total_kotak_qris' => $daily->sum('kotak_qris'),
         ];
 
-        $totalRevenue = array_sum($totals);
-        $target       = $this->target_amount;
+        // total_revenue = semua kanal baru + legacy (tanpa dobel-hitung:
+        // revenue_details hanya punya SATU channel per baris, tidak mungkin
+        // kotak_qris dan kotak/qris ada sekaligus untuk data yang sama)
+        $totalRevenue = $totals['total_presentasi']
+            + $totals['total_gerai']
+            + $totals['total_wgts']
+            + $totals['total_dfi']
+            + $totals['total_dfe']
+            + $totals['total_kotak']
+            + $totals['total_qris']
+            + $totals['total_kotak_qris']
+            + $totals['total_kantor'];
+
+        $target = $this->target_amount;
 
         $this->update([
             ...$totals,

@@ -24,6 +24,47 @@ const StatusBadge = ({ status }) => {
     )
 }
 
+const LastInputBadge = ({ lastInputAt }) => {
+    if (!lastInputAt) return <span style={{ color: '#9ca3af', fontSize: 12 }}>Belum ada</span>
+
+    const diffMs   = Date.now() - new Date(lastInputAt).getTime()
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+    const diffHrs  = Math.floor(diffMs / (1000 * 60 * 60))
+    const diffMins = Math.floor(diffMs / (1000 * 60))
+
+    // Label waktu relatif
+    let label
+    if (diffMins < 60)       label = `${diffMins} menit lalu`
+    else if (diffHrs < 24)   label = `${diffHrs} jam lalu`
+    else if (diffDays === 1) label = 'Kemarin'
+    else                     label = `${diffDays} hari lalu`
+
+    // Warna indikator
+    const color = diffDays <= 3 ? '#166534'
+                : diffDays <= 7 ? '#d97706'
+                : '#dc2626'
+    const bg    = diffDays <= 3 ? '#dcfce7'
+                : diffDays <= 7 ? '#fef3c7'
+                : '#fee2e2'
+
+    // Tooltip: tanggal & jam lengkap
+    const tooltip = new Date(lastInputAt).toLocaleString('id-ID', {
+        day: 'numeric', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+        timeZone: 'Asia/Makassar',
+    })
+
+    return (
+        <span title={tooltip} style={{
+            background: bg, color, padding: '2px 8px',
+            borderRadius: 99, fontSize: 11, fontWeight: 500,
+            cursor: 'default', whiteSpace: 'nowrap'
+        }}>
+            {label}
+        </span>
+    )
+}
+
 export default function ReportsIndex({ reports, currentMonth }) {
     const [month, setMonth] = useState(currentMonth.slice(0, 7))
 
@@ -53,14 +94,14 @@ export default function ReportsIndex({ reports, currentMonth }) {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
                         <tr style={{ background: '#f9fafb' }}>
-                            {['Cabang', 'Periode', 'Target', 'Realisasi', 'Capaian', 'Status', 'Disubmit', ''].map(h => (
+                            {['Cabang', 'Periode', 'Target', 'Realisasi', 'Capaian', 'Status', 'Disubmit', 'Update Terakhir', ''].map(h => (
                                 <th key={h} style={{ padding: '9px 14px', textAlign: 'left', fontSize: 11, fontWeight: 500, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid #e5e7eb', whiteSpace: 'nowrap' }}>{h}</th>
                             ))}
                         </tr>
                     </thead>
                     <tbody>
                         {reports.length === 0 && (
-                            <tr><td colSpan={8} style={{ padding: '32px', textAlign: 'center', color: '#9ca3af' }}>
+                            <tr><td colSpan={9} style={{ padding: '32px', textAlign: 'center', color: '#9ca3af' }}>
                                 Belum ada laporan untuk periode ini.
                             </td></tr>
                         )}
@@ -83,6 +124,9 @@ export default function ReportsIndex({ reports, currentMonth }) {
                                     <td style={{ padding: '10px 14px' }}><StatusBadge status={r.status} /></td>
                                     <td style={{ padding: '10px 14px', fontSize: 12, color: '#9ca3af' }}>
                                         {r.submitted_at ? new Date(r.submitted_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }) : '—'}
+                                    </td>
+                                    <td style={{ padding: '10px 14px' }}>
+                                        <LastInputBadge lastInputAt={r.last_input_at} />
                                     </td>
                                     <td style={{ padding: '10px 14px' }}>
                                         <Link href={`/reports/${r.id}`} style={{ fontSize: 12, color: '#166534', textDecoration: 'none', fontWeight: 500 }}>Buka →</Link>
