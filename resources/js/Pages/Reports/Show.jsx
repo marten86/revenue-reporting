@@ -212,24 +212,30 @@ function GridView({ report, activeChannel, config, sources, isMobile }) {
     const petugasLabel = selectedSourceData?.personnel ?? ''
 
     useEffect(() => {
-        if (!selectedSource) { setGridData({}); return }
-        const sourceDetails = channelDetails.filter(d => d.source_label === selectedSource)
-        const data = {}
-        days.forEach(day => {
-            const dateStr = toDateStr(day)
-            if (config.hasSubChannel) {
-                data[day] = { reguler: 0, safdak: 0, df: 0 }
-                sourceDetails.filter(d => d.date === dateStr || d.date?.startsWith?.(dateStr)).forEach(d => {
-                    if (d.sub_channel && data[day][d.sub_channel] !== undefined) data[day][d.sub_channel] = d.amount || 0
-                })
-            } else {
-                const entry = sourceDetails.find(d => d.date === dateStr || d.date?.startsWith?.(dateStr))
-                data[day] = { amount: entry?.amount || 0 }
-            }
-        })
-        setGridData(data)
-        setSavedMsg('')
-    }, [selectedSource, channelDetails.length])
+    // Kanal dengan source (Presentasi, Gerai, dll): tunggu sampai source dipilih
+    // Kanal tanpa source (Kotak, QRIS, Kantor): langsung load semua data channel
+    if (config.hasSource && !selectedSource) { setGridData({}); return }
+
+    const sourceDetails = config.hasSource
+        ? channelDetails.filter(d => d.source_label === selectedSource)
+        : channelDetails
+
+    const data = {}
+    days.forEach(day => {
+        const dateStr = toDateStr(day)
+        if (config.hasSubChannel) {
+            data[day] = { reguler: 0, safdak: 0, df: 0 }
+            sourceDetails.filter(d => d.date === dateStr || d.date?.startsWith?.(dateStr)).forEach(d => {
+                if (d.sub_channel && data[day][d.sub_channel] !== undefined) data[day][d.sub_channel] = d.amount || 0
+            })
+        } else {
+            const entry = sourceDetails.find(d => d.date === dateStr || d.date?.startsWith?.(dateStr))
+            data[day] = { amount: entry?.amount || 0 }
+        }
+    })
+    setGridData(data)
+    setSavedMsg('')
+}, [selectedSource, channelDetails.length])
 
     const updateCell = (day, field, value) => {
         setGridData(prev => ({ ...prev, [day]: { ...prev[day], [field]: parseInt(value) || 0 } }))
@@ -283,10 +289,12 @@ function GridView({ report, activeChannel, config, sources, isMobile }) {
     }
 
     const handleDeleteSource = () => {
-        if (!selectedSource) return
-        const idsToDelete = channelDetails.filter(d => d.source_label === selectedSource).map(d => d.id)
+        if (config.hasSource && !selectedSource) return
+        const idsToDelete = config.hasSource
+    ? channelDetails.filter(d => d.source_label === selectedSource).map(d => d.id)
+    : channelDetails.map(d => d.id)
         if (idsToDelete.length === 0) { alert('Tidak ada data untuk dihapus.'); return }
-        if (!confirm(`Hapus semua ${idsToDelete.length} entri untuk "${selectedSource}"? Tindakan ini tidak bisa dibatalkan.`)) return
+        if (!confirm(`Hapus semua ${idsToDelete.length} entri untuk kanal ini? Tindakan ini tidak bisa dibatalkan.`)) return
         setDeletingGrid(true)
         router.delete(`/reports/${report.id}/details/bulk`, {
             data: { ids: idsToDelete },
@@ -311,7 +319,9 @@ function GridView({ report, activeChannel, config, sources, isMobile }) {
         boxSizing: 'border-box', background: '#fff',
     }
 
-    const sourceHasData = selectedSource && channelDetails.some(d => d.source_label === selectedSource)
+    const sourceHasData = config.hasSource
+    ? (selectedSource && channelDetails.some(d => d.source_label === selectedSource))
+    : channelDetails.length > 0
 
     return (
         <div>
@@ -335,13 +345,13 @@ function GridView({ report, activeChannel, config, sources, isMobile }) {
                             Petugas belum diisi — update di Kelola Sumber
                         </div>
                     )}
-                    {sourceHasData && (
-                        <button onClick={handleDeleteSource} disabled={deletingGrid}
-                            style={{ padding: '8px 14px', fontSize: 12, fontWeight: 500, border: '1px solid #dc2626', borderRadius: 8, background: '#fff', color: '#dc2626', cursor: 'pointer', opacity: deletingGrid ? .5 : 1 }}>
-                            {deletingGrid ? 'Menghapus...' : `🗑 Hapus Semua Data "${selectedSource}"`}
-                        </button>
-                    )}
                 </div>
+            )}
+            {sourceHasData && (
+                <button onClick={handleDeleteSource} disabled={deletingGrid}
+                    style={{ padding: '8px 14px', fontSize: 12, fontWeight: 500, border: '1px solid #dc2626', borderRadius: 8, background: '#fff', color: '#dc2626', cursor: 'pointer', opacity: deletingGrid ? .5 : 1 }}>
+                    {deletingGrid ? 'Menghapus...' : `🗑 Hapus Semua Data ${selectedSource ? `"${selectedSource}"` : 'Kanal Ini'}`}
+                </button>
             )}
 
             {(selectedSource || !config.hasSource) && (
@@ -608,7 +618,7 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
                 </div>
             </div>
 
-            {viewMode === 'grid' && canEdit && <GridView report={report} activeChannel={activeChannel} config={config} sources={sources} isMobile={isMobile} />}
+            {viewMode === 'grid' && canEdit && <GridView key={activeChannel} report={report} activeChannel={activeChannel} config={config} sources={sources} isMobile={isMobile} />}
 
             {viewMode === 'list' && (
             <>
