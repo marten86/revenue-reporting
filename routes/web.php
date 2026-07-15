@@ -14,6 +14,8 @@ use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\AreaManagementController;
 use App\Http\Controllers\CostController;
 use App\Http\Controllers\SafariCalendarController;
+use App\Http\Controllers\SafdakEventController;
+
 
 // Auth
 Route::get('/login', [AuthController::class, 'showLogin'])->name('login')->middleware('guest');
@@ -163,5 +165,25 @@ Route::middleware(['auth'])->group(function () {
 
     // Safari Kalender
     Route::get('/safari-kalender', [SafariCalendarController::class, 'index'])->name('safari.calendar');
+
+    // Safdak Event
+
+    Route::get('/safari-pipeline', [SafdakEventController::class, 'index'])
+        ->name('safdak.pipeline');
+
+    Route::post('/safdak-events', [SafdakEventController::class, 'store'])
+        ->name('safdak-events.store');
+
+    Route::put('/safdak-events/{event}', [SafdakEventController::class, 'update'])
+        ->name('safdak-events.update');
+
+    Route::patch('/safdak-events/{event}/status', [SafdakEventController::class, 'updateStatus'])
+        ->name('safdak-events.status');
+
+    Route::delete('/safdak-events/{event}', [SafdakEventController::class, 'destroy'])
+        ->name('safdak-events.destroy');
+    
+    Route::post('/safdak-events/{event}/realization', [SafdakEventController::class, 'storeRealization'])
+        ->name('safdak-events.realization');
 
 });
