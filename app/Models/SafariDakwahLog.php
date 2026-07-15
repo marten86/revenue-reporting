@@ -18,7 +18,7 @@ class SafariDakwahLog extends Model
     ];
 
     protected $casts = [
-        'date'            => 'date',
+        'date'            => 'date:Y-m-d',
         'achievement_pct' => 'decimal:4',
     ];
 

@@ -16,7 +16,7 @@ class RevenueDetail extends Model
     ];
 
     protected $casts = [
-        'date'   => 'date',
+        'date'   => 'date:Y-m-d',
         'amount' => 'integer',
     ];
 
