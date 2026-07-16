@@ -8,14 +8,18 @@ import {
 } from 'recharts'
 
 const COLORS = ['#16a34a','#2563eb','#d97706','#dc2626','#7c3aed','#0891b2','#be185d']
+
+// Key HARUS sama persis dengan AnalyticsController::$channelLabels
 const CHANNEL_COLORS = {
-    'Presentasi':   '#16a34a',
-    'WGTS':         '#2563eb',
-    'Gerai':        '#d97706',
-    'DFI (AR)':     '#dc2626',
-    'DFE (AE)':     '#7c3aed',
-    'Kotak & QRIS': '#0891b2',
-    'Kantor':       '#be185d',
+    'Presentasi':          '#16a34a',
+    'WGTS':                '#2563eb',
+    'Gerai':               '#d97706',
+    'DFI (AR)':            '#dc2626',
+    'DFE (AE)':            '#7c3aed',
+    'Kotak Infak':         '#0891b2',
+    'QRIS':                '#0d9488',
+    'Kotak/QRIS (Lama)':   '#94a3b8',
+    'Kantor':              '#be185d',
 }
 
 const PERIOD_OPTIONS = [
@@ -122,6 +126,8 @@ export default function AnalyticsIndex({
     const costRatio        = summary.cost_ratio ?? 0
 
     // Filter 1 kanal aktif (berdasar prop dari server = filter yang sudah diterapkan)
+    // Biaya (monthly_costs) TIDAK punya dimensi kanal -> semua metrik biaya
+    // (Rasio, Total Biaya, badge B:) tidak valid saat memfilter 1 kanal.
     const singleChannel = channel !== 'all'
 
     // Total revenue semua kanal untuk hitung persentase Pie
@@ -170,6 +176,8 @@ export default function AnalyticsIndex({
             default:          return `Bulanan ${year}`
         }
     })()
+
+    const dash = <span style={{color:'#d1d5db'}}>—</span>
 
     return (
         <AppLayout title="Analytics">
@@ -432,12 +440,19 @@ export default function AnalyticsIndex({
                 {/* Tabel Breakdown Tahunan */}
                 <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:12,padding:20}}>
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8,marginBottom:16}}>
-                        <h3 style={{margin:0,fontSize:15,fontWeight:600,color:'#374151'}}>
-                            📋 Tabel Breakdown {tablePeriodLabel}
-                            {isSuperAdmin && localAreaId !== 'all' && (
-                                <span style={{marginLeft:8,fontSize:12,color:'#6b7280',fontWeight:400}}>— {selectedAreaLabel}</span>
+                        <div>
+                            <h3 style={{margin:0,fontSize:15,fontWeight:600,color:'#374151'}}>
+                                📋 Tabel Breakdown {tablePeriodLabel}
+                                {isSuperAdmin && localAreaId !== 'all' && (
+                                    <span style={{marginLeft:8,fontSize:12,color:'#6b7280',fontWeight:400}}>— {selectedAreaLabel}</span>
+                                )}
+                            </h3>
+                            {singleChannel && (
+                                <p style={{margin:'6px 0 0',fontSize:11,color:'#9ca3af'}}>
+                                    Kolom biaya hanya tersedia untuk <b style={{color:'#6b7280'}}>Semua Kanal</b> — biaya tidak dicatat per kanal.
+                                </p>
                             )}
-                        </h3>
+                        </div>
                         {(period === 'weekly' || period === 'monthly' || period === 'quarterly' || period === 'semester') && (
                             <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'#6b7280',cursor:'pointer',userSelect:'none'}}>
                                 <input type="checkbox" checked={fullYearTable} onChange={e => setFullYearTable(e.target.checked)} />
@@ -454,8 +469,8 @@ export default function AnalyticsIndex({
                                         <th key={mi} style={{padding:'8px 6px',textAlign:'right',color:'#6b7280',fontWeight:600,borderBottom:'1px solid #e5e7eb',minWidth:72}}>{MONTH_SHORT[mi]}</th>
                                     ))}
                                     <th style={{padding:'8px 12px',textAlign:'right',color:'#6b7280',fontWeight:600,borderBottom:'1px solid #e5e7eb',whiteSpace:'nowrap'}}>Total</th>
-                                    <th style={{padding:'8px 12px',textAlign:'right',color:'#6b7280',fontWeight:600,borderBottom:'1px solid #e5e7eb',whiteSpace:'nowrap'}}>Total Biaya</th>
-                                    <th style={{padding:'8px 12px',textAlign:'right',color:'#6b7280',fontWeight:600,borderBottom:'1px solid #e5e7eb',whiteSpace:'nowrap'}}>Rasio</th>
+                                    <th style={{padding:'8px 12px',textAlign:'right',color:singleChannel?'#d1d5db':'#6b7280',fontWeight:600,borderBottom:'1px solid #e5e7eb',whiteSpace:'nowrap'}}>Total Biaya</th>
+                                    <th style={{padding:'8px 12px',textAlign:'right',color:singleChannel?'#d1d5db':'#6b7280',fontWeight:600,borderBottom:'1px solid #e5e7eb',whiteSpace:'nowrap'}}>Rasio</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -477,22 +492,24 @@ export default function AnalyticsIndex({
                                                         {m.target > 0 && (
                                                             <div style={{fontSize:10,color:m.pct>=100?'#16a34a':m.pct>=75?'#d97706':'#dc2626'}}>{m.pct}%</div>
                                                         )}
-                                                        {m.cost > 0 && (
+                                                        {!singleChannel && m.cost > 0 && (
                                                             <div style={{fontSize:10,color:'#9ca3af'}}>B:{formatRp(m.cost)}</div>
                                                         )}
                                                     </td>
                                                 )
                                             })}
                                             <td style={{padding:'8px 12px',textAlign:'right',fontWeight:700,color:'#166534'}}>{formatRp(rowTotal)}</td>
-                                            <td style={{padding:'8px 12px',textAlign:'right',color:'#374151'}}>{totalCost > 0 ? formatRp(totalCost) : <span style={{color:'#d1d5db'}}>—</span>}</td>
+                                            <td style={{padding:'8px 12px',textAlign:'right',color:'#374151'}}>
+                                                {singleChannel ? dash : (totalCost > 0 ? formatRp(totalCost) : dash)}
+                                            </td>
                                             <td style={{padding:'8px 12px',textAlign:'right'}}>
-                                                {totalCost > 0 ? (
+                                                {!singleChannel && totalCost > 0 ? (
                                                     <span style={{padding:'2px 8px',borderRadius:99,fontSize:11,fontWeight:600,
                                                         background: ratio <= 30 ? '#dcfce7' : ratio <= 50 ? '#fef3c7' : '#fee2e2',
                                                         color: ratioColor(ratio)}}>
                                                         {ratio}%
                                                     </span>
-                                                ) : <span style={{color:'#d1d5db'}}>—</span>}
+                                                ) : dash}
                                             </td>
                                         </tr>
                                     )
@@ -506,7 +523,7 @@ export default function AnalyticsIndex({
                                         return (
                                             <td key={mi} style={{padding:'10px 6px',textAlign:'right',color:'#166534'}}>
                                                 <div>{formatRp(tot)}</div>
-                                                {costTot > 0 && <div style={{fontSize:10,color:'#9ca3af'}}>B:{formatRp(costTot)}</div>}
+                                                {!singleChannel && costTot > 0 && <div style={{fontSize:10,color:'#9ca3af'}}>B:{formatRp(costTot)}</div>}
                                             </td>
                                         )
                                     })}
@@ -514,10 +531,11 @@ export default function AnalyticsIndex({
                                         {formatRp((tableData||[]).reduce((s,r) => s + (isFullYearView ? r.total : visibleMonthIdx.reduce((ss, mi) => ss + (r.months?.[mi]?.actual || 0), 0)), 0))}
                                     </td>
                                     <td style={{padding:'10px 12px',textAlign:'right',color:'#374151'}}>
-                                        {formatRp((tableData||[]).reduce((s,r) => s + (isFullYearView ? (r.total_cost||0) : visibleMonthIdx.reduce((ss, mi) => ss + (r.months?.[mi]?.cost || 0), 0)), 0))}
+                                        {singleChannel ? dash : formatRp((tableData||[]).reduce((s,r) => s + (isFullYearView ? (r.total_cost||0) : visibleMonthIdx.reduce((ss, mi) => ss + (r.months?.[mi]?.cost || 0), 0)), 0))}
                                     </td>
                                     <td style={{padding:'10px 12px',textAlign:'right'}}>
                                         {(() => {
+                                            if (singleChannel) return dash
                                             const rev  = (tableData||[]).reduce((s,r) => s + (isFullYearView ? r.total : visibleMonthIdx.reduce((ss, mi) => ss + (r.months?.[mi]?.actual || 0), 0)), 0)
                                             const cost = (tableData||[]).reduce((s,r) => s + (isFullYearView ? (r.total_cost||0) : visibleMonthIdx.reduce((ss, mi) => ss + (r.months?.[mi]?.cost || 0), 0)), 0)
                                             const r    = rev > 0 ? (cost/rev*100).toFixed(1) : 0
@@ -527,7 +545,7 @@ export default function AnalyticsIndex({
                                                     color: ratioColor(r)}}>
                                                     {r}%
                                                 </span>
-                                            ) : <span style={{color:'#d1d5db'}}>—</span>
+                                            ) : dash
                                         })()}
                                     </td>
                                 </tr>
@@ -540,7 +558,7 @@ export default function AnalyticsIndex({
                         <span><span style={{display:'inline-block',width:8,height:8,borderRadius:99,background:'#166534',marginRight:4}}></span>Sehat (≤30%)</span>
                         <span><span style={{display:'inline-block',width:8,height:8,borderRadius:99,background:'#d97706',marginRight:4}}></span>Perhatian (31–50%)</span>
                         <span><span style={{display:'inline-block',width:8,height:8,borderRadius:99,background:'#dc2626',marginRight:4}}></span>Tinggi (&gt;50%)</span>
-                        <span style={{color:'#9ca3af'}}>B: = Total Biaya per bulan</span>
+                        {!singleChannel && <span style={{color:'#9ca3af'}}>B: = Total Biaya per bulan</span>}
                     </div>
                 </div>
 
