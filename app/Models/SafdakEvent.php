@@ -41,8 +41,8 @@ class SafdakEvent extends Model
     protected function casts(): array
     {
         return [
-            'start_date'        => 'date',
-            'end_date'          => 'date',
+            'start_date'        => 'date:Y-m-d',
+            'end_date'          => 'date:Y-m-d',
             'custom_dates'      => 'array',
             'has_mou'           => 'boolean',
             'total_cost'        => 'decimal:2',
@@ -53,7 +53,7 @@ class SafdakEvent extends Model
         ];
     }
 
-    // ── Turunan (dihitung, tidak disimpan) ─────────────────────
+    // -- Turunan (dihitung, tidak disimpan) ---------------------
 
     public function getTotalDaysAttribute(): int
     {
@@ -78,7 +78,7 @@ class SafdakEvent extends Model
         return $this->total_days * self::TARGET_IDEAL_PER_DAY;
     }
 
-    // ── Relasi ─────────────────────────────────────────────────
+    // -- Relasi -------------------------------------------------
 
     public function branch()
     {
@@ -86,7 +86,7 @@ class SafdakEvent extends Model
     }
 
     /**
-     * Realisasi terkait — via soft link event_id di safari_dakwah_logs
+     * Realisasi terkait - via soft link event_id di safari_dakwah_logs
      * (satu kampanye bisa punya banyak log titik).
      */
     public function logs()
@@ -94,7 +94,7 @@ class SafdakEvent extends Model
         return $this->hasMany(SafariDakwahLog::class, 'event_id');
     }
 
-    // ── Scopes ─────────────────────────────────────────────────
+    // -- Scopes -------------------------------------------------
 
     public function scopeForBranches(Builder $query, array $branchIds): Builder
     {
