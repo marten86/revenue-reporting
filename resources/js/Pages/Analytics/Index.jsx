@@ -286,9 +286,16 @@ export default function AnalyticsIndex({
                     <SummaryCard title="Capaian" icon="📊" color={achievementColor}
                         value={`${summary.achievement}%`}
                         sub={summary.achievement >= 100 ? '✅ Target tercapai' : `Kurang ${formatRp(summary.target - summary.total_revenue)}`} />
-                    <SummaryCard title="Total Biaya" icon="💸"
-                        value={formatRp(summary.total_cost ?? 0)}
-                        sub={formatRpFull(summary.total_cost ?? 0)} />
+                    {singleChannel ? (
+                        <SummaryCard title="Total Biaya" icon="💸"
+                            color="#9ca3af"
+                            value="—"
+                            sub="Hanya untuk Semua Kanal" />
+                    ) : (
+                        <SummaryCard title="Total Biaya" icon="💸"
+                            value={formatRp(summary.total_cost ?? 0)}
+                            sub={formatRpFull(summary.total_cost ?? 0)} />
+                    )}
                     {singleChannel ? (
                         <SummaryCard title="Rasio Biaya" icon="📉"
                             color="#9ca3af"
@@ -553,13 +560,15 @@ export default function AnalyticsIndex({
                         </table>
                     </div>
 
-                    {/* Legend rasio */}
+                    {/* Legend rasio — hanya relevan saat kolom biaya/rasio tampil */}
+                    {!singleChannel && (
                     <div style={{display:'flex',gap:16,fontSize:11,color:'#6b7280',marginTop:12}}>
                         <span><span style={{display:'inline-block',width:8,height:8,borderRadius:99,background:'#166534',marginRight:4}}></span>Sehat (≤30%)</span>
                         <span><span style={{display:'inline-block',width:8,height:8,borderRadius:99,background:'#d97706',marginRight:4}}></span>Perhatian (31–50%)</span>
                         <span><span style={{display:'inline-block',width:8,height:8,borderRadius:99,background:'#dc2626',marginRight:4}}></span>Tinggi (&gt;50%)</span>
-                        {!singleChannel && <span style={{color:'#9ca3af'}}>B: = Total Biaya per bulan</span>}
+                        <span style={{color:'#9ca3af'}}>B: = Total Biaya per bulan</span>
                     </div>
+                    )}
                 </div>
 
             </div>
