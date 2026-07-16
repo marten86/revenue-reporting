@@ -24,7 +24,7 @@ class MonthlyCost extends Model
     ];
 
     protected $casts = [
-        'period_month' => 'date',
+        'period_month' => 'date:Y-m-d',
         'submitted_at' => 'datetime',
         'approved_at'  => 'datetime',
         'revised_at'   => 'datetime',
