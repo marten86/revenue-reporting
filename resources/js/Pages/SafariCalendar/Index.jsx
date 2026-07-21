@@ -51,6 +51,8 @@ const tanggalPendek = (dateStr) => {
     return d.getDate() + ' ' + MONTH_NAMES[d.getMonth()].slice(0, 3);
 };
 
+const clampPct = (n) => Math.max(0, Math.min(100, n || 0));
+
 export default function SafariCalendarIndex({ month, logs, events = [], branches, branchFilter, canSeeAll }) {
     const [selected, setSelected] = useState(null);           // log realisasi
     const [selectedEvent, setSelectedEvent] = useState(null); // kampanye pipeline
@@ -121,8 +123,21 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
         const realization = logs.reduce((s, l) => s + (l.realization || 0), 0);
         const failed = logs.filter((l) => l.status === 'failed').length;
         const campaigns = events.filter((e) => e.status !== 'batal').length;
-        return { total, commitment, realization, failed, campaigns };
+        const rcr = commitment > 0 ? Math.round((realization / commitment) * 100) : 0;
+        return { total, commitment, realization, failed, campaigns, rcr };
     }, [logs, events]);
+
+    // Funnel kampanye bulan berjalan (titik saja — bukan rupiah; angka manajerial)
+    const funnel = useMemo(() => {
+        const active = events.filter((e) => e.status !== 'batal');
+        const targetMin = active.reduce((s, e) => s + (e.target_min || 0), 0);
+        const targetIdeal = active.reduce((s, e) => s + (e.target_ideal || 0), 0);
+        const deal = active.reduce((s, e) => s + (e.titik_deal || 0), 0);
+        const eksekusi = active.reduce((s, e) => s + (e.titik_eksekusi || 0), 0);
+        return { count: active.length, targetMin, targetIdeal, deal, eksekusi };
+    }, [events]);
+
+    const isEmpty = summary.total === 0 && funnel.count === 0;
 
     const navigate = (params) => {
         router.get(route('safari.calendar'), params, {
@@ -156,7 +171,7 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
     // batal    → putus-putus, redup + coret
     const campaignChipClass = (ev) => {
         const color = branchColor[ev.branch_id];
-        const base = 'w-full text-left px-1.5 py-0.5 rounded border text-[11px] leading-tight truncate ';
+        const base = 'w-full text-left px-1.5 py-0.5 rounded border text-[11px] leading-tight truncate transition-all duration-150 hover:-translate-y-px hover:shadow-sm ';
         if (ev.status === 'selesai') {
             return base + (color?.chip || 'bg-gray-100 text-gray-700 border-gray-300');
         }
@@ -174,6 +189,15 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
 
     const campaignPrefix = (ev) => (ev.status === 'selesai' ? '✓' : '▸');
 
+    // Warna latar sel grid: hari ini di-highlight (netral, tak bentrok warna cabang),
+    // akhir pekan (Sab/Ahd) diberi shading tipis untuk bantu pemindaian pola
+    const cellBgClass = (cell, ci) => {
+        if (cell === null) return 'bg-gray-50/60';
+        if (cell.dateStr === todayStr) return 'bg-gray-50 ring-2 ring-inset ring-gray-800/15';
+        if (ci >= 5) return 'bg-slate-50/50';
+        return '';
+    };
+
     return (
         <AppLayout>
             <Head title="Kalender Safari Dakwah" />
@@ -182,8 +206,8 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
                 {/* ── Header ── */}
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
                     <div>
-                        <h1 className="text-xl font-bold text-gray-900">
-                            Kalender Safari Dakwah
+                        <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                            <span>📅</span> Kalender Safari Dakwah
                         </h1>
                         <p className="text-sm text-gray-500">
                             Jadwal kegiatan seluruh cabang dalam satu tampilan
@@ -193,7 +217,7 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
                     <div className="flex items-center gap-2">
                         <button
                             onClick={() => changeMonth(-1)}
-                            className="w-9 h-9 rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 flex items-center justify-center"
+                            className="w-9 h-9 rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 hover:border-gray-400 transition flex items-center justify-center"
                             aria-label="Bulan sebelumnya"
                         >
                             ‹
@@ -203,14 +227,14 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
                         </div>
                         <button
                             onClick={() => changeMonth(1)}
-                            className="w-9 h-9 rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 flex items-center justify-center"
+                            className="w-9 h-9 rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 hover:border-gray-400 transition flex items-center justify-center"
                             aria-label="Bulan berikutnya"
                         >
                             ›
                         </button>
                         <button
                             onClick={goToday}
-                            className="ml-1 px-3 h-9 rounded-lg border border-gray-300 bg-white text-sm text-gray-700 hover:bg-gray-50"
+                            className="ml-1 px-3 h-9 rounded-lg border border-gray-300 bg-white text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition"
                         >
                             Hari Ini
                         </button>
@@ -218,28 +242,109 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
                 </div>
 
                 {/* ── Ringkasan bulan ── */}
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
-                    <div className="bg-white rounded-xl border border-gray-200 p-3">
-                        <div className="text-xs text-gray-500">Total Kegiatan</div>
-                        <div className="text-lg font-bold text-gray-900">{summary.total}</div>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-3">
+                    <div className="bg-white rounded-xl border border-gray-200 p-3 flex items-start gap-2.5">
+                        <span className="mt-0.5 w-9 h-9 shrink-0 rounded-lg bg-gray-100 flex items-center justify-center text-base">📋</span>
+                        <div className="min-w-0">
+                            <div className="text-xs text-gray-500">Total Kegiatan</div>
+                            <div className="text-lg font-bold text-gray-900">{summary.total}</div>
+                        </div>
                     </div>
-                    <div className="bg-white rounded-xl border border-gray-200 p-3">
-                        <div className="text-xs text-gray-500">Kampanye</div>
-                        <div className="text-lg font-bold text-gray-900">{summary.campaigns}</div>
+                    <div className="bg-white rounded-xl border border-gray-200 p-3 flex items-start gap-2.5">
+                        <span className="mt-0.5 w-9 h-9 shrink-0 rounded-lg bg-indigo-50 flex items-center justify-center text-base">🎯</span>
+                        <div className="min-w-0">
+                            <div className="text-xs text-gray-500">Kampanye</div>
+                            <div className="text-lg font-bold text-gray-900">{summary.campaigns}</div>
+                        </div>
                     </div>
-                    <div className="bg-white rounded-xl border border-gray-200 p-3">
-                        <div className="text-xs text-gray-500">Komitmen</div>
-                        <div className="text-lg font-bold text-gray-900">{shortRupiah(summary.commitment)}</div>
+                    <div className="bg-white rounded-xl border border-gray-200 p-3 flex items-start gap-2.5">
+                        <span className="mt-0.5 w-9 h-9 shrink-0 rounded-lg bg-sky-50 flex items-center justify-center text-base">🤝</span>
+                        <div className="min-w-0">
+                            <div className="text-xs text-gray-500">Komitmen</div>
+                            <div className="text-lg font-bold text-gray-900 truncate">{shortRupiah(summary.commitment)}</div>
+                        </div>
                     </div>
-                    <div className="bg-white rounded-xl border border-gray-200 p-3">
-                        <div className="text-xs text-gray-500">Realisasi</div>
-                        <div className="text-lg font-bold text-emerald-700">{shortRupiah(summary.realization)}</div>
+                    <div className="bg-white rounded-xl border border-gray-200 p-3 flex items-start gap-2.5">
+                        <span className="mt-0.5 w-9 h-9 shrink-0 rounded-lg bg-emerald-50 flex items-center justify-center text-base">✅</span>
+                        <div className="min-w-0">
+                            <div className="text-xs text-gray-500">Realisasi</div>
+                            <div className="text-lg font-bold text-emerald-700 truncate">{shortRupiah(summary.realization)}</div>
+                        </div>
                     </div>
-                    <div className="bg-white rounded-xl border border-gray-200 p-3">
-                        <div className="text-xs text-gray-500">Gagal / Batal</div>
-                        <div className="text-lg font-bold text-rose-600">{summary.failed}</div>
+                    <div className="bg-white rounded-xl border border-gray-200 p-3 flex items-start gap-2.5">
+                        <span className="mt-0.5 w-9 h-9 shrink-0 rounded-lg bg-rose-50 flex items-center justify-center text-base">⚠️</span>
+                        <div className="min-w-0">
+                            <div className="text-xs text-gray-500">Gagal / Batal</div>
+                            <div className="text-lg font-bold text-rose-600">{summary.failed}</div>
+                        </div>
                     </div>
                 </div>
+
+                {/* ── Bar capaian realisasi vs komitmen ── */}
+                {summary.commitment > 0 && (
+                    <div className="bg-white rounded-xl border border-gray-200 p-3 mb-3">
+                        <div className="flex items-center justify-between text-xs mb-1.5">
+                            <span className="text-gray-500">Capaian Realisasi vs Komitmen</span>
+                            <span className="font-semibold text-gray-800">{summary.rcr}%</span>
+                        </div>
+                        <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                            <div
+                                className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-emerald-600 transition-all"
+                                style={{ width: clampPct(summary.rcr) + '%' }}
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {/* ── Funnel kampanye (titik) — hanya bila ada kampanye ── */}
+                {funnel.count > 0 && (
+                    <div className="bg-white rounded-xl border border-gray-200 p-3 mb-4">
+                        <div className="flex items-center justify-between mb-2.5">
+                            <span className="text-xs font-medium text-gray-600">Funnel Kampanye Bulan Ini</span>
+                            <span className="text-[11px] text-gray-400">ℹ️ angka manajerial</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-3">
+                            {/* Target */}
+                            <div>
+                                <div className="flex items-baseline justify-between mb-1">
+                                    <span className="text-xs text-gray-500">Target Titik</span>
+                                    <span className="text-sm font-bold text-gray-900">
+                                        {funnel.targetMin}–{funnel.targetIdeal}
+                                    </span>
+                                </div>
+                                <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                                    <div className="h-full rounded-full bg-slate-400" style={{ width: '100%' }} />
+                                </div>
+                            </div>
+                            {/* Deal */}
+                            <div>
+                                <div className="flex items-baseline justify-between mb-1">
+                                    <span className="text-xs text-gray-500">Titik Deal</span>
+                                    <span className="text-sm font-bold text-amber-600">{funnel.deal}</span>
+                                </div>
+                                <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                                    <div
+                                        className="h-full rounded-full bg-amber-400"
+                                        style={{ width: clampPct(funnel.targetIdeal > 0 ? (funnel.deal / funnel.targetIdeal) * 100 : 0) + '%' }}
+                                    />
+                                </div>
+                            </div>
+                            {/* Eksekusi */}
+                            <div>
+                                <div className="flex items-baseline justify-between mb-1">
+                                    <span className="text-xs text-gray-500">Titik Eksekusi</span>
+                                    <span className="text-sm font-bold text-emerald-700">{funnel.eksekusi}</span>
+                                </div>
+                                <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                                    <div
+                                        className="h-full rounded-full bg-emerald-500"
+                                        style={{ width: clampPct(funnel.targetIdeal > 0 ? (funnel.eksekusi / funnel.targetIdeal) * 100 : 0) + '%' }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* ── Filter cabang ── */}
                 {canSeeAll && (
@@ -247,7 +352,7 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
                         <button
                             onClick={() => setBranch(null)}
                             className={
-                                'px-3 py-1.5 rounded-full text-sm border ' +
+                                'px-3 py-1.5 rounded-full text-sm border transition ' +
                                 (!branchFilter
                                     ? 'bg-gray-900 text-white border-gray-900'
                                     : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50')
@@ -260,7 +365,7 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
                                 key={b.id}
                                 onClick={() => setBranch(b.id)}
                                 className={
-                                    'px-3 py-1.5 rounded-full text-sm border flex items-center gap-1.5 ' +
+                                    'px-3 py-1.5 rounded-full text-sm border flex items-center gap-1.5 transition ' +
                                     (branchFilter === b.id
                                         ? 'bg-gray-900 text-white border-gray-900'
                                         : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50')
@@ -273,8 +378,19 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
                     </div>
                 )}
 
+                {/* ── Empty state (desktop) ── */}
+                {isEmpty && (
+                    <div className="hidden md:block bg-white rounded-xl border border-dashed border-gray-300 p-10 text-center mb-4">
+                        <div className="text-4xl mb-2">🗓️</div>
+                        <div className="text-sm font-medium text-gray-700">Belum ada agenda bulan ini</div>
+                        <div className="text-xs text-gray-500 mt-1">
+                            Kegiatan Safari Dakwah akan tampil di sini. Buat kampanye baru lewat <span className="font-medium">Pipeline SafDak</span>.
+                        </div>
+                    </div>
+                )}
+
                 {/* ── Grid bulanan (desktop / tablet) ── */}
-                <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <div className={'hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden ' + (isEmpty ? 'opacity-60' : '')}>
                     <div className="grid grid-cols-7 border-b border-gray-200 bg-gray-50">
                         {DAY_LABELS.map((d, i) => (
                             <div
@@ -295,21 +411,28 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
                                 <div
                                     key={ci}
                                     className={
-                                        'min-h-[104px] p-1.5 border-r border-gray-100 last:border-r-0 ' +
-                                        (cell === null ? 'bg-gray-50' : '')
+                                        'min-h-[104px] p-1.5 border-r border-gray-100 last:border-r-0 transition-colors ' +
+                                        cellBgClass(cell, ci)
                                     }
                                 >
                                     {cell && (
                                         <>
-                                            <div
-                                                className={
-                                                    'w-6 h-6 mb-1 flex items-center justify-center text-xs rounded-full ' +
-                                                    (cell.dateStr === todayStr
-                                                        ? 'bg-gray-900 text-white font-bold'
-                                                        : 'text-gray-500')
-                                                }
-                                            >
-                                                {cell.day}
+                                            <div className="flex items-center justify-between mb-1">
+                                                <div
+                                                    className={
+                                                        'w-6 h-6 flex items-center justify-center text-xs rounded-full ' +
+                                                        (cell.dateStr === todayStr
+                                                            ? 'bg-gray-900 text-white font-bold'
+                                                            : 'text-gray-500')
+                                                    }
+                                                >
+                                                    {cell.day}
+                                                </div>
+                                                {(cell.events.length + cell.campaigns.length) > 0 && (
+                                                    <span className="text-[10px] text-gray-400 font-medium pr-0.5">
+                                                        {cell.events.length + cell.campaigns.length}
+                                                    </span>
+                                                )}
                                             </div>
                                             <div className="space-y-1">
                                                 {/* Kampanye (rencana) dulu — garis putus-putus */}
@@ -317,7 +440,7 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
                                                     <button
                                                         key={'c-' + ev.id}
                                                         onClick={() => setSelectedEvent(ev)}
-                                                        title={'Kampanye: ' + (ev.speaker || ev.title || '-') + ' — ' + ev.branch_name}
+                                                        title={'Kampanye: ' + (ev.speaker || ev.title || '-') + ' — ' + ev.branch_name + ' (' + (CAMPAIGN_STATUS[ev.status]?.label || ev.status) + ')'}
                                                         className={campaignChipClass(ev)}
                                                     >
                                                         {campaignPrefix(ev)} {ev.speaker || ev.title || '(kampanye)'}
@@ -326,7 +449,7 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
                                                 {cell.campaigns.length > 2 && (
                                                     <button
                                                         onClick={() => setSelectedEvent(cell.campaigns[2])}
-                                                        className="w-full text-left px-1.5 text-[11px] text-gray-400 hover:text-gray-700"
+                                                        className="w-full text-left px-1.5 text-[11px] text-gray-400 hover:text-gray-700 transition"
                                                     >
                                                         +{cell.campaigns.length - 2} kampanye
                                                     </button>
@@ -336,9 +459,9 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
                                                     <button
                                                         key={ev.id}
                                                         onClick={() => setSelected(ev)}
-                                                        title={ev.speaker + ' — ' + ev.branch_name}
+                                                        title={ev.speaker + ' — ' + ev.branch_name + (ev.realization ? ' · ' + shortRupiah(ev.realization) : '')}
                                                         className={
-                                                            'w-full text-left px-1.5 py-0.5 rounded border text-[11px] leading-tight truncate ' +
+                                                            'w-full text-left px-1.5 py-0.5 rounded border text-[11px] leading-tight truncate transition-all duration-150 hover:-translate-y-px hover:shadow-sm ' +
                                                             (branchColor[ev.branch_id]?.chip ||
                                                                 'bg-gray-100 text-gray-700 border-gray-300') +
                                                             (ev.status === 'failed'
@@ -355,7 +478,7 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
                                                 {cell.events.length > 3 && (
                                                     <button
                                                         onClick={() => setSelected(cell.events[3])}
-                                                        className="w-full text-left px-1.5 text-[11px] text-gray-500 hover:text-gray-800"
+                                                        className="w-full text-left px-1.5 text-[11px] text-gray-500 hover:text-gray-800 transition"
                                                     >
                                                         +{cell.events.length - 3} lainnya
                                                     </button>
@@ -372,8 +495,10 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
                 {/* ── Agenda list (mobile) ── */}
                 <div className="md:hidden space-y-3">
                     {Object.keys(logsByDate).length === 0 && Object.keys(eventsByDate).length === 0 && (
-                        <div className="bg-white rounded-xl border border-gray-200 p-6 text-center text-sm text-gray-500">
-                            Belum ada kegiatan Safari Dakwah pada bulan ini.
+                        <div className="bg-white rounded-xl border border-dashed border-gray-300 p-8 text-center">
+                            <div className="text-3xl mb-2">🗓️</div>
+                            <div className="text-sm font-medium text-gray-700">Belum ada agenda bulan ini</div>
+                            <div className="text-xs text-gray-500 mt-1">Buat kampanye baru lewat Pipeline SafDak.</div>
                         </div>
                     )}
                     {[...new Set([...Object.keys(logsByDate), ...Object.keys(eventsByDate)])]
@@ -403,7 +528,7 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
                                             <button
                                                 key={'c-' + ev.id}
                                                 onClick={() => setSelectedEvent(ev)}
-                                                className="w-full text-left px-3 py-2.5 flex items-start gap-2.5 hover:bg-gray-50"
+                                                className="w-full text-left px-3 py-2.5 flex items-start gap-2.5 hover:bg-gray-50 transition"
                                             >
                                                 <span
                                                     className={
@@ -441,7 +566,7 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
                                             <button
                                                 key={ev.id}
                                                 onClick={() => setSelected(ev)}
-                                                className="w-full text-left px-3 py-2.5 flex items-start gap-2.5 hover:bg-gray-50"
+                                                className="w-full text-left px-3 py-2.5 flex items-start gap-2.5 hover:bg-gray-50 transition"
                                             >
                                                 <span
                                                     className={
@@ -512,6 +637,10 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
                     <span className="flex items-center gap-1.5">
                         <span className="inline-block w-4 h-3 rounded border bg-emerald-100 border-emerald-300" />
                         ✓ Kampanye selesai
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                        <span className="inline-block w-4 h-3 rounded bg-gray-50 ring-2 ring-inset ring-gray-800/15" />
+                        Hari ini
                     </span>
                 </div>
             </div>
