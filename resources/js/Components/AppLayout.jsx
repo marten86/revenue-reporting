@@ -63,7 +63,7 @@ export default function AppLayout({ title, children }) {
                 // Laporan Biaya: +admin_nasional (input), +viewer (lihat) — sesuai keputusan cost
                 { href: '/costs',   label: 'Laporan Biaya',   icon: '💰', roles: ['super_admin', 'area_manager', 'admin_nasional', 'viewer'] }, // ⬅
                 // Pipeline SafDak: semua role (viewer read-only; tombol tulis disembunyikan via prop canWrite dari controller)
-                { href: '/safari-pipeline', label: 'Pipeline SafDak', icon: '🎯' }, // ⬅ NEW: rencana → deal → eksekusi
+                { icon: '⏳', label: 'Pipeline SafDak', href: '/safari-pipeline' }, // ⬅ NEW: rencana → deal → eksekusi
                 // Kalender SafDak: semua role — jadwal & realisasi Safari Dakwah
                 { href: '/safari-kalender', label: 'Kalender SafDak', icon: '📅' }, // ⬅ NEW: link sidebar (sebelumnya hanya via URL langsung)
             ],
