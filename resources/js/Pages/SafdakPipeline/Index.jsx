@@ -2,11 +2,28 @@ import { useMemo, useState } from 'react';
 import { Head, router, useForm } from '@inertiajs/react';
 import AppLayout from '@/Components/AppLayout';
 
+/**
+ * Pipeline Safari Dakwah
+ * penanda versi: pipeline-rasio-cost-20260727
+ *
+ * Ditambahkan 27 Juli 2026: Rasio Cost vs Realisasi (cost / realisasi).
+ *
+ * Gradasi warnanya SENGAJA DIBALIK dari Capaian: di Capaian makin besar makin
+ * baik, di Rasio Cost makin KECIL makin baik. Bentuk badge juga dibedakan
+ * (outline + panah turun, tanpa bar) supaya dua persen yang bersebelahan tidak
+ * terbaca sebagai metrik sejenis.
+ *
+ * Semua persentase diturunkan di frontend dari prop yang sudah dikirim
+ * controller -> tidak ada rumus yang hidup di dua tempat.
+ * Penyebut 0 -> "-", BUKAN 0%. Angka yang tidak bisa dihitung lebih baik
+ * absen daripada berbohong (pelajaran sesi Analytics single-channel).
+ */
+
 const STATUS_META = {
-    rencana:  { label: 'Rencana',  badge: 'bg-slate-100 text-slate-700 border-slate-300',  dot: 'bg-slate-400' },
-    berjalan: { label: 'Berjalan', badge: 'bg-amber-100 text-amber-800 border-amber-300',  dot: 'bg-amber-500' },
-    selesai:  { label: 'Selesai',  badge: 'bg-green-100 text-green-800 border-green-300',  dot: 'bg-green-500' },
-    batal:    { label: 'Batal',    badge: 'bg-red-100 text-red-700 border-red-300',        dot: 'bg-red-500' },
+    rencana:  { label: 'Rencana',  badge: 'bg-slate-100 text-slate-700 border-slate-300',       dot: 'bg-slate-400',  accent: 'bg-slate-300' },
+    berjalan: { label: 'Berjalan', badge: 'bg-amber-100 text-amber-800 border-amber-300',       dot: 'bg-amber-500',  accent: 'bg-amber-400' },
+    selesai:  { label: 'Selesai',  badge: 'bg-emerald-100 text-emerald-800 border-emerald-300', dot: 'bg-emerald-500', accent: 'bg-emerald-500' },
+    batal:    { label: 'Batal',    badge: 'bg-rose-100 text-rose-700 border-rose-300',          dot: 'bg-rose-500',   accent: 'bg-rose-400' },
 };
 
 const NEXT_STATUS = { rencana: 'berjalan', berjalan: 'selesai' };
@@ -16,7 +33,20 @@ const TARGET_IDEAL_PER_DAY = 3;
 
 const formatRupiah = (value) => {
     if (value === null || value === undefined || value === '') return '—';
-    return 'Rp ' + Number(value).toLocaleString('id-ID', { maximumFractionDigits: 0 });
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '—';
+    return 'Rp ' + n.toLocaleString('id-ID', { maximumFractionDigits: 0 });
+};
+
+// Bentuk ringkas untuk kartu ringkasan; nominal penuh tetap tersedia di title
+const shortRupiah = (value) => {
+    if (value === null || value === undefined || value === '') return '—';
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '—';
+    if (n === 0) return 'Rp 0';
+    if (Math.abs(n) >= 1e9) return 'Rp ' + (n / 1e9).toFixed(2).replace('.', ',') + ' M';
+    if (Math.abs(n) >= 1e6) return 'Rp ' + Math.round(n / 1e6) + ' jt';
+    return 'Rp ' + n.toLocaleString('id-ID', { maximumFractionDigits: 0 });
 };
 
 const formatTanggal = (dateStr) => {
@@ -26,8 +56,17 @@ const formatTanggal = (dateStr) => {
 };
 
 const formatTanggalPendek = (dateStr) => {
+    if (!dateStr) return '—';
     const d = new Date(dateStr);
     return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+};
+
+// Tanggal hari ini dalam waktu LOKAL. Sengaja tidak memakai
+// toISOString().slice(0,10) -- itu memberi tanggal UTC, dan di WITA (UTC+8)
+// antara 00:00-08:00 hasilnya mundur satu hari.
+const todayStr = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
 const currentMonthStr = () => {
@@ -47,7 +86,9 @@ const monthLabel = (monthStr) => {
     return new Date(y, m - 1, 1).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
 };
 
-// Jumlah hari (frontend, untuk preview live di form) — logika sama dengan
+const clampPct = (n) => Math.max(0, Math.min(100, Number(n) || 0));
+
+// Jumlah hari (frontend, untuk preview live di form) - logika sama dengan
 // accessor total_days di model
 const countDays = (startDate, endDate, customDates) => {
     if (Array.isArray(customDates) && customDates.length > 0) return customDates.length;
@@ -66,6 +107,7 @@ const pctCapaian = (komitmen, realisasi) => {
     const k = Number(komitmen ?? 0);
     const r = Number(realisasi ?? 0);
     if (!Number.isFinite(k) || k <= 0) return null;
+    if (!Number.isFinite(r)) return null;
     return Math.round((r / k) * 100);
 };
 
@@ -104,6 +146,74 @@ function CapaianBadge({ komitmen, realisasi, withBar = false }) {
     );
 }
 
+// ── Rasio Cost: cost / realisasi ──────────────────────────────
+// Dua alasan berbeda kenapa rasio tidak bisa dihitung, dan keduanya perlu
+// tooltip yang berbeda supaya user tahu apa yang harus diisi:
+//   realisasi <= 0 → pembagi nol
+//   cost <= 0      → cost belum diisi (0 tidak bisa dibedakan dari kosong,
+//                    jadi diperlakukan sebagai belum diisi -- bukan "gratis")
+const rasioCost = (cost, realisasi) => {
+    const c = Number(cost ?? 0);
+    const r = Number(realisasi ?? 0);
+    if (!Number.isFinite(r) || r <= 0) {
+        return { pct: null, note: 'Realisasi belum ada — rasio tidak bisa dihitung' };
+    }
+    if (!Number.isFinite(c) || c <= 0) {
+        return { pct: null, note: 'Cost belum diisi' };
+    }
+    return { pct: Math.round((c / r) * 100), note: null };
+};
+
+// Gradasi DIBALIK dari pctMeta: makin kecil makin efisien.
+const rasioMeta = (pct) => {
+    if (pct === null) return { chip: 'border-gray-200 bg-white', text: 'text-gray-300' };
+    if (pct <= 20)    return { chip: 'border-emerald-300 bg-emerald-50', text: 'text-emerald-700' };
+    if (pct <= 35)    return { chip: 'border-sky-300 bg-sky-50',         text: 'text-sky-700' };
+    if (pct <= 50)    return { chip: 'border-amber-300 bg-amber-50',     text: 'text-amber-700' };
+    return { chip: 'border-rose-300 bg-rose-50', text: 'text-rose-700' };
+};
+
+const rasioLabel = (pct) => {
+    if (pct === null) return '';
+    if (pct <= 20) return 'sangat efisien';
+    if (pct <= 35) return 'efisien';
+    if (pct <= 50) return 'perlu dicermati';
+    return 'biaya tinggi';
+};
+
+function RasioBadge({ cost, realisasi }) {
+    const { pct, note } = rasioCost(cost, realisasi);
+    const meta = rasioMeta(pct);
+
+    if (pct === null) {
+        return (
+            <span className="text-[11px] text-gray-300" title={note}>
+                —
+            </span>
+        );
+    }
+
+    return (
+        <span
+            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border text-[11px] font-semibold ${meta.chip} ${meta.text}`}
+            title={`Cost ${pct}% dari realisasi (${rasioLabel(pct)}) — makin kecil makin baik`}
+        >
+            <span className="text-[9px] leading-none opacity-60">↓</span>
+            {pct}%
+        </span>
+    );
+}
+
+// Bar mungil untuk angka Deal / Eksekusi di tabel
+function MiniBar({ value, max, color }) {
+    const pct = max > 0 ? clampPct((Number(value) / max) * 100) : 0;
+    return (
+        <div className="mt-1 h-1 w-10 mx-auto bg-gray-100 rounded-full overflow-hidden">
+            <div className={`h-full ${color} rounded-full`} style={{ width: `${pct}%` }} />
+        </div>
+    );
+}
+
 const emptyForm = {
     branch_id: '',
     title: '',
@@ -131,10 +241,15 @@ export default function Index({ events, branches, speakers, statuses, summary, f
     const form = useForm({ ...emptyForm });
 
     const perStatus = summary?.per_status ?? {};
+    const TODAY = todayStr();
 
     // Capaian agregat pada filter aktif
     const summaryPct = pctCapaian(summary?.revenue_komitmen, summary?.revenue_realisasi);
     const summaryPctMeta = pctMeta(summaryPct);
+
+    // Rasio cost agregat pada filter aktif
+    const summaryRasio = rasioCost(summary?.total_cost, summary?.revenue_realisasi);
+    const summaryRasioMeta = rasioMeta(summaryRasio.pct);
 
     // Preview target live di modal
     const previewDays = countDays(
@@ -154,6 +269,7 @@ export default function Index({ events, branches, speakers, statuses, summary, f
     };
 
     const activeMonth = filters?.month || '';
+    const activeStatus = filters?.status || '';
 
     // ── Dai untuk cabang terpilih di form ─────────────────────
     const speakerOptions = useMemo(() => {
@@ -251,154 +367,273 @@ export default function Index({ events, branches, speakers, statuses, summary, f
         }
     };
 
-    const pctDealVsMin = summary?.target_min > 0
-        ? Math.round((summary.titik_deal / summary.target_min) * 100)
-        : null;
-    const pctEksekusiVsDeal = summary?.titik_deal > 0
-        ? Math.round((summary.titik_eksekusi / summary.titik_deal) * 100)
-        : null;
+    // Kampanye yang tanggal hari ini berada di dalam rentangnya
+    const isAktifHariIni = (ev) => {
+        if (!ev.start_date || !ev.end_date) return false;
+        return TODAY >= ev.start_date.substring(0, 10) && TODAY <= ev.end_date.substring(0, 10);
+    };
+
+    const targetMin = Number(summary?.target_min ?? 0);
+    const targetIdeal = Number(summary?.target_ideal ?? 0);
+    const titikDeal = Number(summary?.titik_deal ?? 0);
+    const titikEksekusi = Number(summary?.titik_eksekusi ?? 0);
+
+    const pctDealVsMin = targetMin > 0 ? Math.round((titikDeal / targetMin) * 100) : null;
+    const pctEksekusiVsDeal = titikDeal > 0 ? Math.round((titikEksekusi / titikDeal) * 100) : null;
+
+    const barDeal = targetIdeal > 0 ? clampPct((titikDeal / targetIdeal) * 100) : 0;
+    const barEksekusi = targetIdeal > 0 ? clampPct((titikEksekusi / targetIdeal) * 100) : 0;
+
+    const totalKampanye = summary?.total ?? 0;
+    const isKosong = (events?.length ?? 0) === 0;
 
     return (
         <AppLayout title="Pipeline Safari Dakwah">
             <Head title="Pipeline Safari Dakwah" />
 
-            <div className="space-y-4">
-                {/* Header */}
-                <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-3">
+                {/* ── Header ── */}
+                <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                        <h1 className="text-xl font-bold text-gray-800">🎯 Pipeline Safari Dakwah</h1>
+                        <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                            <span>⏳</span> Pipeline Safari Dakwah
+                        </h1>
                         <p className="text-sm text-gray-500">
-                            Kampanye per periode &middot; target 2&ndash;3 titik/hari &middot; {monthLabel(activeMonth)}
+                            Rencana &amp; progres kampanye &middot; target 2&ndash;3 titik/hari &middot;{' '}
+                            <span className="font-medium text-gray-600">{monthLabel(activeMonth)}</span>
                         </p>
                     </div>
                     {canWrite && (
                         <button
                             onClick={openCreate}
-                            className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700"
+                            className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg shadow-sm hover:bg-emerald-700 transition"
                         >
                             + Kampanye Baru
                         </button>
                     )}
                 </div>
 
-                {/* Ringkasan funnel */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <div className="bg-white border rounded-xl p-3">
-                        <div className="text-xs text-gray-500">Total Kampanye</div>
-                        <div className="text-2xl font-bold text-gray-800">{summary?.total ?? 0}</div>
-                        <div className="mt-1 flex flex-wrap gap-2">
+                {/* ── Ringkasan proses: total + funnel titik ── */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                    {/* Total kampanye + sebaran status */}
+                    <div className="bg-white border border-gray-200 rounded-xl p-3">
+                        <div className="flex items-start gap-2.5">
+                            <span className="mt-0.5 w-9 h-9 shrink-0 rounded-lg bg-indigo-50 flex items-center justify-center text-base">
+                                📋
+                            </span>
+                            <div className="min-w-0">
+                                <div className="text-xs text-gray-500">Total Kampanye</div>
+                                <div className="text-2xl font-bold text-gray-900 leading-tight">{totalKampanye}</div>
+                            </div>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
                             {statuses.map((s) => (
                                 <span key={s} className="inline-flex items-center gap-1 text-[11px] text-gray-500">
-                                <span className={`w-2 h-2 rounded-full ${STATUS_META[s]?.dot || 'bg-gray-300'}`}></span>
-                                    {perStatus[s] ?? 0}
+                                    <span className={`w-2 h-2 rounded-full ${STATUS_META[s]?.dot || 'bg-gray-300'}`} />
+                                    {STATUS_META[s]?.label ?? s}{' '}
+                                    <span className="font-semibold text-gray-700">{perStatus[s] ?? 0}</span>
                                 </span>
                             ))}
                         </div>
                     </div>
-                    <div className="bg-white border rounded-xl p-3">
-                        <div className="text-xs text-gray-500">Target Titik</div>
-                        <div className="text-2xl font-bold text-slate-700">
-                            {summary?.target_min ?? 0}
-                            <span className="text-sm font-normal text-gray-400"> – {summary?.target_ideal ?? 0}</span>
-                        </div>
-                        <div className="text-[11px] text-gray-400">min – ideal (otomatis dari hari)</div>
-                    </div>
-                    <div className="bg-white border rounded-xl p-3">
-                        <div className="text-xs text-gray-500">Titik Deal</div>
-                        <div className="text-2xl font-bold text-amber-600">{summary?.titik_deal ?? 0}</div>
-                        <div className="text-[11px] text-gray-400">
-                            {pctDealVsMin !== null ? `${pctDealVsMin}% dari target min` : '—'}
-                        </div>
-                    </div>
-                    <div className="bg-white border rounded-xl p-3">
-                        <div className="text-xs text-gray-500">Titik Eksekusi</div>
-                        <div className="text-2xl font-bold text-green-600">{summary?.titik_eksekusi ?? 0}</div>
-                        <div className="text-[11px] text-gray-400">
-                            {pctEksekusiVsDeal !== null ? `${pctEksekusiVsDeal}% dari deal` : '—'}
-                        </div>
-                    </div>
-                </div>
 
-                {/* Strip revenue (informasional) + capaian komitmen vs realisasi */}
-                <div className="bg-white border rounded-xl p-3 space-y-2">
-                    <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
-                        <div>
-                            <span className="text-xs text-gray-500">Revenue Komitmen: </span>
-                            <span className="text-sm font-bold text-gray-800">{formatRupiah(summary?.revenue_komitmen)}</span>
-                        </div>
-                        <div>
-                            <span className="text-xs text-gray-500">Revenue Realisasi: </span>
-                            <span className="text-sm font-bold text-emerald-700">{formatRupiah(summary?.revenue_realisasi)}</span>
-                        </div>
-                        <div>
-                            <span className="text-xs text-gray-500">Capaian: </span>
-                            <span className={`text-sm font-bold ${summaryPctMeta.text}`}>
-                                {summaryPct === null ? '—' : `${summaryPct}%`}
+                    {/* Funnel titik */}
+                    <div className="bg-white border border-gray-200 rounded-xl p-3 lg:col-span-2">
+                        <div className="flex items-center justify-between mb-2.5">
+                            <span className="text-xs font-semibold text-gray-600">Funnel Titik</span>
+                            <span className="text-[11px] text-gray-400">
+                                target otomatis dari jumlah hari &middot; ℹ️ angka manajerial
                             </span>
                         </div>
-                        <div className="text-[11px] text-gray-400">
-                            ℹ️ Angka manajerial — angka resmi tetap di laporan bulanan
+                        <div className="grid grid-cols-3 gap-3">
+                            {/* Target */}
+                            <div>
+                                <div className="flex items-baseline justify-between mb-1">
+                                    <span className="text-xs text-gray-500">Target</span>
+                                    <span className="text-sm font-bold text-slate-700 whitespace-nowrap">
+                                        {targetMin}&ndash;{targetIdeal}
+                                    </span>
+                                </div>
+                                <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                                    <div className="h-full rounded-full bg-slate-400" style={{ width: '100%' }} />
+                                </div>
+                                <div className="mt-1 text-[11px] text-gray-400">min &ndash; ideal</div>
+                            </div>
+                            {/* Deal */}
+                            <div>
+                                <div className="flex items-baseline justify-between mb-1">
+                                    <span className="text-xs text-gray-500">Deal</span>
+                                    <span className="text-sm font-bold text-amber-600">{titikDeal}</span>
+                                </div>
+                                <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                                    <div className="h-full rounded-full bg-amber-400" style={{ width: `${barDeal}%` }} />
+                                </div>
+                                <div className="mt-1 text-[11px] text-gray-400">
+                                    {pctDealVsMin !== null ? `${pctDealVsMin}% dari target min` : '—'}
+                                </div>
+                            </div>
+                            {/* Eksekusi */}
+                            <div>
+                                <div className="flex items-baseline justify-between mb-1">
+                                    <span className="text-xs text-gray-500">Eksekusi</span>
+                                    <span className="text-sm font-bold text-emerald-700">{titikEksekusi}</span>
+                                </div>
+                                <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                                    <div className="h-full rounded-full bg-emerald-500" style={{ width: `${barEksekusi}%` }} />
+                                </div>
+                                <div className="mt-1 text-[11px] text-gray-400">
+                                    {pctEksekusiVsDeal !== null ? `${pctEksekusiVsDeal}% dari deal` : '—'}
+                                </div>
+                            </div>
                         </div>
                     </div>
-
-                    {summaryPct !== null && (
-                        <div>
-                            <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
-                                <div
-                                    className={`h-full ${summaryPctMeta.bar} rounded-full transition-all`}
-                                    style={{ width: `${Math.min(summaryPct, 100)}%` }}
-                                />
-                            </div>
-                            <div className="mt-1 text-[11px] text-gray-400">
-                                Realisasi vs komitmen &middot; {summary?.total ?? 0} kampanye pada filter ini
-                                {summaryPct > 100 && (
-                                    <span className="text-emerald-700 font-medium"> &middot; melampaui komitmen</span>
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                    {summaryPct === null && (
-                        <div className="text-[11px] text-gray-400">
-                            Capaian muncul setelah Rev. Komitmen diisi di kampanye.
-                        </div>
-                    )}
                 </div>
 
-                {/* Filter bar */}
-                <div className="bg-white border rounded-xl p-3 space-y-3">
+                {/* ── Strip uang: komitmen / realisasi / cost ── */}
+                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-gray-50/70 border-b border-gray-200">
+                        <span className="text-xs font-semibold text-gray-600">💰 Revenue &amp; Biaya</span>
+                        <span className="text-[11px] text-gray-400">
+                            ℹ️ Angka manajerial &mdash; angka resmi tetap di laporan bulanan
+                        </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
+                        {/* Komitmen */}
+                        <div className="p-3">
+                            <div className="text-xs text-gray-500">Revenue Komitmen</div>
+                            <div
+                                className="text-xl font-bold text-gray-900 leading-tight"
+                                title={formatRupiah(summary?.revenue_komitmen)}
+                            >
+                                {shortRupiah(summary?.revenue_komitmen)}
+                            </div>
+                            <div className="mt-1 text-[11px] text-gray-400">
+                                {totalKampanye} kampanye pada filter ini
+                            </div>
+                        </div>
+
+                        {/* Realisasi + capaian */}
+                        <div className="p-3">
+                            <div className="flex items-baseline justify-between gap-2">
+                                <span className="text-xs text-gray-500">Revenue Realisasi</span>
+                                <span className={`text-xs font-bold ${summaryPctMeta.text}`}>
+                                    {summaryPct === null ? '—' : `${summaryPct}%`}
+                                </span>
+                            </div>
+                            <div
+                                className="text-xl font-bold text-emerald-700 leading-tight"
+                                title={formatRupiah(summary?.revenue_realisasi)}
+                            >
+                                {shortRupiah(summary?.revenue_realisasi)}
+                            </div>
+                            {summaryPct !== null ? (
+                                <>
+                                    <div className="mt-1.5 h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                                        <div
+                                            className={`h-full ${summaryPctMeta.bar} rounded-full transition-all`}
+                                            style={{ width: `${Math.min(summaryPct, 100)}%` }}
+                                        />
+                                    </div>
+                                    <div className="mt-1 text-[11px] text-gray-400">
+                                        Capaian vs komitmen
+                                        {summaryPct > 100 && (
+                                            <span className="text-emerald-700 font-medium"> &middot; melampaui komitmen</span>
+                                        )}
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="mt-1 text-[11px] text-gray-400">
+                                    Capaian muncul setelah Rev. Komitmen diisi.
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Cost + rasio */}
+                        <div className="p-3">
+                            <div className="flex items-baseline justify-between gap-2">
+                                <span className="text-xs text-gray-500">Total Cost</span>
+                                <span className={`text-xs font-bold ${summaryRasioMeta.text}`}>
+                                    {summaryRasio.pct === null ? '—' : `↓ ${summaryRasio.pct}%`}
+                                </span>
+                            </div>
+                            <div
+                                className="text-xl font-bold text-gray-900 leading-tight"
+                                title={formatRupiah(summary?.total_cost)}
+                            >
+                                {shortRupiah(summary?.total_cost)}
+                            </div>
+                            {summaryRasio.pct !== null ? (
+                                <>
+                                    <div className="mt-1.5 h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                                        <div
+                                            className={`h-full rounded-full transition-all ${
+                                                summaryRasio.pct <= 20
+                                                    ? 'bg-emerald-500'
+                                                    : summaryRasio.pct <= 35
+                                                    ? 'bg-sky-500'
+                                                    : summaryRasio.pct <= 50
+                                                    ? 'bg-amber-500'
+                                                    : 'bg-rose-500'
+                                            }`}
+                                            style={{ width: `${clampPct(summaryRasio.pct)}%` }}
+                                        />
+                                    </div>
+                                    <div className="mt-1 text-[11px] text-gray-400">
+                                        Rasio Cost vs Realisasi &middot;{' '}
+                                        <span className={summaryRasioMeta.text}>{rasioLabel(summaryRasio.pct)}</span>
+                                        <span className="text-gray-300"> &middot; makin kecil makin baik</span>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="mt-1 text-[11px] text-gray-400">{summaryRasio.note}</div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* ── Filter bar ── */}
+                <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-3">
                     {/* Bulan */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                         <button
                             onClick={() => applyFilters({ month: shiftMonth(activeMonth || currentMonthStr(), -1) })}
-                            className="px-2 py-1 border rounded-lg text-sm hover:bg-gray-50"
+                            className="w-8 h-8 flex items-center justify-center border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 hover:border-gray-400 transition"
                             aria-label="Bulan sebelumnya"
                         >
-                            &larr;
+                            &lsaquo;
                         </button>
-                        <span className="text-sm font-medium text-gray-700 min-w-[140px] text-center">
+                        <span className="text-sm font-semibold text-gray-800 min-w-[140px] text-center">
                             {monthLabel(activeMonth)}
                         </span>
                         <button
                             onClick={() => applyFilters({ month: shiftMonth(activeMonth || currentMonthStr(), 1) })}
-                            className="px-2 py-1 border rounded-lg text-sm hover:bg-gray-50"
+                            className="w-8 h-8 flex items-center justify-center border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 hover:border-gray-400 transition"
                             aria-label="Bulan berikutnya"
                         >
-                            &rarr;
+                            &rsaquo;
                         </button>
                         {activeMonth ? (
-                            <button
-                                onClick={() => applyFilters({ month: '' })}
-                                className="text-xs text-gray-500 underline ml-1"
-                            >
-                                Semua bulan
-                            </button>
+                            <>
+                                <button
+                                    onClick={() => applyFilters({ month: currentMonthStr() })}
+                                    className="px-3 h-8 border border-gray-300 rounded-lg text-xs text-gray-700 hover:bg-gray-50 transition"
+                                >
+                                    Bulan Ini
+                                </button>
+                                <button
+                                    onClick={() => applyFilters({ month: '' })}
+                                    className="text-xs text-gray-500 underline"
+                                >
+                                    Semua bulan
+                                </button>
+                            </>
                         ) : (
                             <button
                                 onClick={() => applyFilters({ month: currentMonthStr() })}
-                                className="text-xs text-gray-500 underline ml-1"
+                                className="px-3 h-8 border border-gray-300 rounded-lg text-xs text-gray-700 hover:bg-gray-50 transition"
                             >
-                                Bulan ini
+                                Bulan Ini
                             </button>
                         )}
                     </div>
@@ -408,21 +643,22 @@ export default function Index({ events, branches, speakers, statuses, summary, f
                         <div className="flex flex-wrap gap-1.5">
                             <button
                                 onClick={() => applyFilters({ branch: '' })}
-                                className={`px-3 py-1 rounded-full text-xs font-medium border ${
+                                className={`px-3 py-1 rounded-full text-xs font-medium border transition ${
                                     !filters?.branch
-                                        ? 'bg-gray-800 text-white border-gray-800'
+                                        ? 'bg-gray-900 text-white border-gray-900'
                                         : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
                                 }`}
                             >
-                                Semua
+                                Semua Cabang
                             </button>
                             {branches.map((b) => (
                                 <button
                                     key={b.id}
                                     onClick={() => applyFilters({ branch: b.id })}
-                                    className={`px-3 py-1 rounded-full text-xs font-medium border ${
+                                    title={b.name}
+                                    className={`px-3 py-1 rounded-full text-xs font-medium border transition ${
                                         filters?.branch === b.id
-                                            ? 'bg-gray-800 text-white border-gray-800'
+                                            ? 'bg-gray-900 text-white border-gray-900'
                                             : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
                                     }`}
                                 >
@@ -432,205 +668,301 @@ export default function Index({ events, branches, speakers, statuses, summary, f
                         </div>
                     )}
 
-                    {/* Status (pill) */}
+                    {/* Status (pill) + jumlah */}
                     <div className="flex flex-wrap gap-1.5">
                         <button
                             onClick={() => applyFilters({ status: '' })}
-                            className={`px-3 py-1 rounded-full text-xs font-medium border ${
-                                !filters?.status
-                                    ? 'bg-gray-800 text-white border-gray-800'
+                            className={`px-3 py-1 rounded-full text-xs font-medium border transition ${
+                                !activeStatus
+                                    ? 'bg-gray-900 text-white border-gray-900'
                                     : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
                             }`}
                         >
                             Semua status
+                            <span className="ml-1 opacity-70">({totalKampanye})</span>
                         </button>
                         {statuses.map((s) => (
                             <button
                                 key={s}
-                                onClick={() => applyFilters({ status: s })}
-                                className={`px-3 py-1 rounded-full text-xs font-medium border ${
-                                    filters?.status === s
-                                        ? 'bg-gray-800 text-white border-gray-800'
+                                onClick={() => applyFilters({ status: activeStatus === s ? '' : s })}
+                                className={`px-3 py-1 rounded-full text-xs font-medium border transition ${
+                                    activeStatus === s
+                                        ? 'bg-gray-900 text-white border-gray-900'
                                         : STATUS_META[s].badge + ' hover:opacity-80'
                                 }`}
                             >
                                 {STATUS_META[s].label}
+                                <span className="ml-1 opacity-70">({perStatus[s] ?? 0})</span>
                             </button>
                         ))}
                     </div>
+
+                    {/* Catatan: ringkasan sengaja tidak ikut filter status */}
+                    {activeStatus && (
+                        <div className="text-[11px] text-gray-500 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                            Daftar di bawah disaring status <span className="font-semibold">{STATUS_META[activeStatus]?.label ?? activeStatus}</span>,
+                            tetapi ringkasan &amp; funnel di atas tetap menghitung <span className="font-semibold">semua status</span> agar
+                            gambaran periodenya utuh.
+                        </div>
+                    )}
                 </div>
 
                 {/* ── Tabel (desktop) ── */}
-                <div className="hidden md:block bg-white border rounded-xl overflow-x-auto">
+                <div className="hidden md:block bg-white border border-gray-200 rounded-xl overflow-x-auto">
                     <table className="w-full text-sm">
-                        <thead className="bg-gray-50 text-left text-xs text-gray-500 uppercase">
+                        <thead className="bg-gray-50 text-left text-xs text-gray-500 uppercase tracking-wide">
                             <tr>
-                                <th className="px-3 py-2">Periode</th>
-                                <th className="px-3 py-2">Cabang</th>
-                                <th className="px-3 py-2">Dai</th>
-                                <th className="px-3 py-2 text-center">Hari</th>
-                                <th className="px-3 py-2 text-center">Target</th>
-                                <th className="px-3 py-2 text-center">D / E</th>
-                                <th className="px-3 py-2 text-right">Cost</th>
-                                <th className="px-3 py-2 text-right">Komitmen / Realisasi</th>
-                                <th className="px-3 py-2 text-center" title="Realisasi dibagi komitmen">
+                                <th className="px-3 py-2.5 pl-5">Periode</th>
+                                <th className="px-3 py-2.5">Cabang</th>
+                                <th className="px-3 py-2.5">Dai</th>
+                                <th className="px-3 py-2.5 text-center border-l border-gray-200">Hari</th>
+                                <th className="px-3 py-2.5 text-center">Target</th>
+                                <th className="px-3 py-2.5 text-center">Deal</th>
+                                <th className="px-3 py-2.5 text-center">Eksekusi</th>
+                                <th className="px-3 py-2.5 text-right border-l border-gray-200" title="Total cost kampanye + rasio terhadap realisasi">
+                                    Cost
+                                </th>
+                                <th className="px-3 py-2.5 text-right">Komitmen / Realisasi</th>
+                                <th className="px-3 py-2.5 text-center" title="Realisasi dibagi komitmen">
                                     Capaian
                                 </th>
-                                <th className="px-3 py-2 text-center">Status</th>
-                                {canWrite && <th className="px-3 py-2 text-right">Aksi</th>}
+                                <th className="px-3 py-2.5 text-center border-l border-gray-200">Status</th>
+                                {canWrite && <th className="px-3 py-2.5 text-right">Aksi</th>}
                             </tr>
                         </thead>
-                        <tbody className="divide-y">
-                            {events.length === 0 && (
+                        <tbody className="divide-y divide-gray-100">
+                            {isKosong && (
                                 <tr>
-                                    <td colSpan={canWrite ? 11 : 10} className="px-3 py-8 text-center text-gray-400">
-                                        Belum ada kampanye pada filter ini.
-                                        {canWrite && ' Tambahkan lewat tombol "+ Kampanye Baru".'}
+                                    <td colSpan={canWrite ? 12 : 11} className="px-3 py-12 text-center">
+                                        <div className="text-4xl mb-2">🗂️</div>
+                                        <div className="text-sm font-medium text-gray-700">
+                                            Belum ada kampanye pada filter ini
+                                        </div>
+                                        <div className="text-xs text-gray-500 mt-1">
+                                            Coba ganti bulan atau status di atas
+                                            {canWrite && ', atau buat lewat tombol "+ Kampanye Baru"'}.
+                                        </div>
                                     </td>
                                 </tr>
                             )}
-                            {events.map((ev) => (
-                                <tr key={ev.id} className="hover:bg-gray-50">
-                                    <td className="px-3 py-2 whitespace-nowrap">
-                                        <div>
-                                            {formatTanggalPendek(ev.start_date)} &ndash; {formatTanggal(ev.end_date)}
-                                        </div>
-                                        {Array.isArray(ev.custom_dates) && ev.custom_dates.length > 0 && (
-                                            <div className="text-[11px] text-gray-400">
-                                                {ev.custom_dates.length} tanggal terpilih
+                            {events.map((ev) => {
+                                const aktif = isAktifHariIni(ev);
+                                return (
+                                    <tr key={ev.id} className="hover:bg-gray-50/70 transition-colors">
+                                        <td className="relative px-3 py-2.5 pl-5 whitespace-nowrap">
+                                            <span
+                                                className={`absolute left-0 top-0 bottom-0 w-1 ${
+                                                    STATUS_META[ev.status]?.accent || 'bg-gray-200'
+                                                }`}
+                                            />
+                                            <div className="text-gray-800">
+                                                {formatTanggalPendek(ev.start_date)} &ndash; {formatTanggal(ev.end_date)}
                                             </div>
-                                        )}
-                                        {ev.title && <div className="text-xs text-gray-500">{ev.title}</div>}
-                                    </td>
-                                    <td className="px-3 py-2 font-medium">{ev.branch?.code}</td>
-                                    <td className="px-3 py-2">
-                                        <div>{ev.speaker || '—'}</div>
-                                        {ev.grade && (
-                                            <div className="text-[11px] text-gray-400">Grade: {ev.grade}</div>
-                                        )}
-                                        {ev.has_mou && <div className="text-[11px] text-gray-400">MOU ✅</div>}
-                                    </td>
-                                    <td className="px-3 py-2 text-center">{ev.total_days}</td>
-                                    <td className="px-3 py-2 text-center whitespace-nowrap text-gray-600">
-                                        {ev.target_min}&ndash;{ev.target_ideal}
-                                    </td>
-                                    <td className="px-3 py-2 text-center whitespace-nowrap">
-                                        <span className="text-amber-600 font-medium">{ev.titik_deal ?? '—'}</span>
-                                        {' / '}
-                                        <span className="text-green-600 font-medium">{ev.titik_eksekusi ?? '—'}</span>
-                                    </td>
-                                    <td className="px-3 py-2 text-right whitespace-nowrap">
-                                        {formatRupiah(ev.total_cost)}
-                                    </td>
-                                    <td className="px-3 py-2 text-right whitespace-nowrap">
-                                        <div>{formatRupiah(ev.revenue_komitmen)}</div>
-                                        <div className="text-emerald-700">{formatRupiah(ev.revenue_realisasi)}</div>
-                                    </td>
-                                    <td className="px-3 py-2 text-center whitespace-nowrap">
-                                        <CapaianBadge
-                                            komitmen={ev.revenue_komitmen}
-                                            realisasi={ev.revenue_realisasi}
-                                            withBar
-                                        />
-                                    </td>
-                                    <td className="px-3 py-2 text-center">
-                                        <span
-                                            className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium border ${STATUS_META[ev.status]?.badge}`}
-                                        >
-                                            {STATUS_META[ev.status]?.label ?? ev.status}
-                                        </span>
-                                    </td>
-                                    {canWrite && (
-                                        <td className="px-3 py-2 text-right whitespace-nowrap">
-                                            {NEXT_STATUS[ev.status] && (
-                                                <button
-                                                    onClick={() => quickStatus(ev, NEXT_STATUS[ev.status])}
-                                                    className="text-xs text-emerald-700 hover:underline mr-2"
-                                                    title={`Naikkan ke ${STATUS_META[NEXT_STATUS[ev.status]].label}`}
-                                                >
-                                                    &rarr; {STATUS_META[NEXT_STATUS[ev.status]].label}
-                                                </button>
+                                            {aktif && (
+                                                <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded-full bg-gray-900 text-white text-[10px] font-bold">
+                                                    HARI INI
+                                                </span>
                                             )}
-                                            <button
-                                                onClick={() => openEdit(ev)}
-                                                className="text-xs text-blue-600 hover:underline mr-2"
-                                            >
-                                                Edit
-                                            </button>
-                                            <button
-                                                onClick={() => destroy(ev)}
-                                                className="text-xs text-red-600 hover:underline"
-                                            >
-                                                Hapus
-                                            </button>
+                                            {Array.isArray(ev.custom_dates) && ev.custom_dates.length > 0 && (
+                                                <div className="text-[11px] text-gray-400">
+                                                    {ev.custom_dates.length} tanggal terpilih
+                                                </div>
+                                            )}
+                                            {ev.title && <div className="text-xs text-gray-500">{ev.title}</div>}
                                         </td>
-                                    )}
-                                </tr>
-                            ))}
+                                        <td className="px-3 py-2.5 font-semibold text-gray-700">{ev.branch?.code}</td>
+                                        <td className="px-3 py-2.5">
+                                            <div className="text-gray-800">{ev.speaker || '—'}</div>
+                                            <div className="flex flex-wrap gap-x-2 text-[11px] text-gray-400">
+                                                {ev.grade && <span>Grade {ev.grade}</span>}
+                                                {ev.has_mou && <span className="text-blue-600">MOU ✓</span>}
+                                            </div>
+                                        </td>
+                                        <td className="px-3 py-2.5 text-center text-gray-600 border-l border-gray-100">
+                                            {ev.total_days}
+                                        </td>
+                                        <td className="px-3 py-2.5 text-center whitespace-nowrap text-gray-500">
+                                            {ev.target_min}&ndash;{ev.target_ideal}
+                                        </td>
+                                        <td className="px-3 py-2.5 text-center">
+                                            <span className="text-amber-600 font-semibold">{ev.titik_deal ?? '—'}</span>
+                                            <MiniBar value={ev.titik_deal} max={ev.target_ideal} color="bg-amber-400" />
+                                        </td>
+                                        <td className="px-3 py-2.5 text-center">
+                                            <span className="text-emerald-700 font-semibold">{ev.titik_eksekusi ?? '—'}</span>
+                                            <MiniBar value={ev.titik_eksekusi} max={ev.target_ideal} color="bg-emerald-500" />
+                                        </td>
+                                        <td className="px-3 py-2.5 text-right whitespace-nowrap border-l border-gray-100">
+                                            <div className="text-gray-700">{formatRupiah(ev.total_cost)}</div>
+                                            <div className="mt-0.5">
+                                                <RasioBadge cost={ev.total_cost} realisasi={ev.revenue_realisasi} />
+                                            </div>
+                                        </td>
+                                        <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                                            <div className="text-gray-700">{formatRupiah(ev.revenue_komitmen)}</div>
+                                            <div className="text-emerald-700 font-medium">
+                                                {formatRupiah(ev.revenue_realisasi)}
+                                            </div>
+                                        </td>
+                                        <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                                            <CapaianBadge
+                                                komitmen={ev.revenue_komitmen}
+                                                realisasi={ev.revenue_realisasi}
+                                                withBar
+                                            />
+                                        </td>
+                                        <td className="px-3 py-2.5 text-center border-l border-gray-100">
+                                            <span
+                                                className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium border ${STATUS_META[ev.status]?.badge}`}
+                                            >
+                                                {STATUS_META[ev.status]?.label ?? ev.status}
+                                            </span>
+                                        </td>
+                                        {canWrite && (
+                                            <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                                                {NEXT_STATUS[ev.status] && (
+                                                    <button
+                                                        onClick={() => quickStatus(ev, NEXT_STATUS[ev.status])}
+                                                        className="text-xs text-emerald-700 hover:underline mr-2"
+                                                        title={`Naikkan ke ${STATUS_META[NEXT_STATUS[ev.status]].label}`}
+                                                    >
+                                                        &rarr; {STATUS_META[NEXT_STATUS[ev.status]].label}
+                                                    </button>
+                                                )}
+                                                <button
+                                                    onClick={() => openEdit(ev)}
+                                                    className="text-xs text-blue-600 hover:underline mr-2"
+                                                >
+                                                    Edit
+                                                </button>
+                                                <button
+                                                    onClick={() => destroy(ev)}
+                                                    className="text-xs text-red-600 hover:underline"
+                                                >
+                                                    Hapus
+                                                </button>
+                                            </td>
+                                        )}
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>
 
                 {/* ── Kartu (mobile) ── */}
                 <div className="md:hidden space-y-2">
-                    {events.length === 0 && (
-                        <div className="bg-white border rounded-xl p-6 text-center text-sm text-gray-400">
-                            Belum ada kampanye pada filter ini.
+                    {isKosong && (
+                        <div className="bg-white border border-dashed border-gray-300 rounded-xl p-8 text-center">
+                            <div className="text-3xl mb-2">🗂️</div>
+                            <div className="text-sm font-medium text-gray-700">Belum ada kampanye</div>
+                            <div className="text-xs text-gray-500 mt-1">Coba ganti bulan atau status di atas.</div>
                         </div>
                     )}
                     {events.map((ev) => (
-                        <div key={ev.id} className="bg-white border rounded-xl p-3 space-y-1.5">
-                            <div className="flex items-start justify-between gap-2">
-                                <div>
-                                    <div className="font-medium text-gray-800">
-                                        {ev.speaker || ev.title || 'Kampanye SafDak'}
+                        <div
+                            key={ev.id}
+                            className="bg-white border border-gray-200 rounded-xl overflow-hidden flex"
+                        >
+                            <span className={`w-1 shrink-0 ${STATUS_META[ev.status]?.accent || 'bg-gray-200'}`} />
+                            <div className="flex-1 min-w-0 p-3 space-y-2">
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                        <div className="font-semibold text-gray-900 truncate">
+                                            {ev.speaker || ev.title || 'Kampanye SafDak'}
+                                        </div>
+                                        <div className="text-xs text-gray-500">
+                                            {ev.branch?.code} &middot; {formatTanggalPendek(ev.start_date)} &ndash;{' '}
+                                            {formatTanggal(ev.end_date)}
+                                            {ev.grade && ` · Grade ${ev.grade}`}
+                                        </div>
                                     </div>
-                                    <div className="text-xs text-gray-500">
-                                        {ev.branch?.code} &middot; {formatTanggalPendek(ev.start_date)} &ndash;{' '}
-                                        {formatTanggal(ev.end_date)}
-                                        {ev.grade && ` · Grade ${ev.grade}`}
+                                    <span
+                                        className={`shrink-0 px-2 py-0.5 rounded-full text-[11px] font-medium border ${STATUS_META[ev.status]?.badge}`}
+                                    >
+                                        {STATUS_META[ev.status]?.label ?? ev.status}
+                                    </span>
+                                </div>
+
+                                {isAktifHariIni(ev) && (
+                                    <span className="inline-block px-1.5 py-0.5 rounded-full bg-gray-900 text-white text-[10px] font-bold">
+                                        HARI INI
+                                    </span>
+                                )}
+
+                                {/* Titik */}
+                                <div className="flex items-center gap-3 text-xs text-gray-600">
+                                    <span>🎯 {ev.total_days} hari</span>
+                                    <span className="text-gray-400">|</span>
+                                    <span>
+                                        Target <span className="font-medium text-slate-700">{ev.target_min}&ndash;{ev.target_ideal}</span>
+                                    </span>
+                                    <span className="text-gray-400">|</span>
+                                    <span>
+                                        D <span className="text-amber-600 font-semibold">{ev.titik_deal ?? '—'}</span>
+                                        {' / '}
+                                        E <span className="text-emerald-700 font-semibold">{ev.titik_eksekusi ?? '—'}</span>
+                                    </span>
+                                    {ev.has_mou && <span className="text-blue-600">MOU ✓</span>}
+                                </div>
+
+                                {/* Uang */}
+                                <div className="rounded-lg bg-gray-50 border border-gray-100 p-2 space-y-1.5">
+                                    <div className="flex items-center justify-between text-xs">
+                                        <span className="text-gray-500">Komitmen</span>
+                                        <span className="font-medium text-gray-800">{formatRupiah(ev.revenue_komitmen)}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-xs">
+                                        <span className="text-gray-500">Realisasi</span>
+                                        <span className="font-medium text-emerald-700">{formatRupiah(ev.revenue_realisasi)}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-xs">
+                                        <span className="text-gray-500">Capaian</span>
+                                        <CapaianBadge komitmen={ev.revenue_komitmen} realisasi={ev.revenue_realisasi} />
+                                    </div>
+                                    <div className="h-px bg-gray-200" />
+                                    <div className="flex items-center justify-between text-xs">
+                                        <span className="text-gray-500">Cost</span>
+                                        <span className="font-medium text-gray-800">{formatRupiah(ev.total_cost)}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-xs">
+                                        <span className="text-gray-500">Rasio Cost vs Realisasi</span>
+                                        <RasioBadge cost={ev.total_cost} realisasi={ev.revenue_realisasi} />
                                     </div>
                                 </div>
-                                <span
-                                    className={`shrink-0 px-2 py-0.5 rounded-full text-[11px] font-medium border ${STATUS_META[ev.status]?.badge}`}
-                                >
-                                    {STATUS_META[ev.status]?.label ?? ev.status}
-                                </span>
-                            </div>
-                            <div className="text-xs text-gray-600">
-                                {ev.total_days} hari &middot; Target {ev.target_min}&ndash;{ev.target_ideal} &middot; D{' '}
-                                <span className="text-amber-600 font-medium">{ev.titik_deal ?? '—'}</span> / E{' '}
-                                <span className="text-green-600 font-medium">{ev.titik_eksekusi ?? '—'}</span>
-                                {ev.has_mou ? ' · MOU ✅' : ''}
-                            </div>
-                            <div className="text-xs text-gray-600">
-                                Cost {formatRupiah(ev.total_cost)} &middot; Komit {formatRupiah(ev.revenue_komitmen)}{' '}
-                                &middot; <span className="text-emerald-700">Real {formatRupiah(ev.revenue_realisasi)}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <span className="text-xs text-gray-500">Capaian</span>
-                                <CapaianBadge komitmen={ev.revenue_komitmen} realisasi={ev.revenue_realisasi} />
-                            </div>
-                            {canWrite && (
-                                <div className="flex gap-3 pt-1">
-                                    {NEXT_STATUS[ev.status] && (
-                                        <button
-                                            onClick={() => quickStatus(ev, NEXT_STATUS[ev.status])}
-                                            className="text-xs text-emerald-700 font-medium"
-                                        >
-                                            &rarr; {STATUS_META[NEXT_STATUS[ev.status]].label}
+
+                                {canWrite && (
+                                    <div className="flex gap-3 pt-0.5">
+                                        {NEXT_STATUS[ev.status] && (
+                                            <button
+                                                onClick={() => quickStatus(ev, NEXT_STATUS[ev.status])}
+                                                className="text-xs text-emerald-700 font-medium"
+                                            >
+                                                &rarr; {STATUS_META[NEXT_STATUS[ev.status]].label}
+                                            </button>
+                                        )}
+                                        <button onClick={() => openEdit(ev)} className="text-xs text-blue-600 font-medium">
+                                            Edit
                                         </button>
-                                    )}
-                                    <button onClick={() => openEdit(ev)} className="text-xs text-blue-600 font-medium">
-                                        Edit
-                                    </button>
-                                    <button onClick={() => destroy(ev)} className="text-xs text-red-600 font-medium">
-                                        Hapus
-                                    </button>
-                                </div>
-                            )}
+                                        <button onClick={() => destroy(ev)} className="text-xs text-red-600 font-medium">
+                                            Hapus
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     ))}
+                </div>
+
+                {/* ── Legenda metrik ── */}
+                <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-gray-400 px-1">
+                    <span>
+                        <span className="font-semibold text-gray-500">Capaian</span> = realisasi &divide; komitmen &middot; makin besar makin baik
+                    </span>
+                    <span>
+                        <span className="font-semibold text-gray-500">↓ Rasio Cost</span> = cost &divide; realisasi &middot; makin kecil makin baik
+                    </span>
+                    <span>&mdash; = belum bisa dihitung (penyebut kosong)</span>
                 </div>
             </div>
 
@@ -641,7 +973,7 @@ export default function Index({ events, branches, speakers, statuses, summary, f
                     onClick={closeModal}
                 >
                     <div
-                        className="bg-white rounded-xl w-full max-w-lg my-6 p-4 space-y-3"
+                        className="bg-white rounded-xl w-full max-w-lg my-6 p-4 space-y-3 shadow-xl"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <h2 className="text-lg font-bold text-gray-800">
@@ -931,13 +1263,22 @@ export default function Index({ events, branches, speakers, statuses, summary, f
                                     </div>
                                 </div>
 
-                                {/* Preview capaian live di form */}
-                                <div className="text-xs text-gray-600 bg-white border rounded-lg px-3 py-2 flex items-center gap-2">
-                                    📈 Capaian komitmen vs realisasi:
-                                    <CapaianBadge
-                                        komitmen={form.data.revenue_komitmen}
-                                        realisasi={form.data.revenue_realisasi}
-                                    />
+                                {/* Preview turunan live di form */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <div className="text-xs text-gray-600 bg-white border rounded-lg px-3 py-2 flex items-center gap-2">
+                                        📈 <span className="text-gray-500">Capaian:</span>
+                                        <CapaianBadge
+                                            komitmen={form.data.revenue_komitmen}
+                                            realisasi={form.data.revenue_realisasi}
+                                        />
+                                    </div>
+                                    <div className="text-xs text-gray-600 bg-white border rounded-lg px-3 py-2 flex items-center gap-2">
+                                        🧾 <span className="text-gray-500">Rasio Cost:</span>
+                                        <RasioBadge
+                                            cost={form.data.total_cost}
+                                            realisasi={form.data.revenue_realisasi}
+                                        />
+                                    </div>
                                 </div>
                             </div>
 

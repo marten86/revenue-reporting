@@ -60,14 +60,22 @@ class SafdakEventController extends Controller
         // Summary: TANPA filter status (angka funnel tetap utuh).
         // Target min/ideal = turunan tanggal -> dijumlah via accessor di PHP
         // (bukan SQL), dari set yang sama dengan filter cabang+bulan.
+        //
+        // total_cost ikut di-select sejak 27 Juli 2026 untuk rasio Cost vs
+        // Realisasi di strip ringkasan. WAJIB ada di daftar kolom ini: kalau
+        // kolomnya tidak di-select, sum('total_cost') mengembalikan 0 secara
+        // DIAM-DIAM (tanpa error), dan rasio agregat jadi salah tanpa gejala.
         $summaryEvents = (clone $base)->get([
             'id', 'start_date', 'end_date', 'custom_dates', 'status',
-            'titik_deal', 'titik_eksekusi', 'revenue_komitmen', 'revenue_realisasi',
+            'titik_deal', 'titik_eksekusi', 'total_cost',
+            'revenue_komitmen', 'revenue_realisasi',
         ]);
 
-        // revenue_komitmen / revenue_realisasi dikirim sebagai float; persentase
-        // capaian dihitung di frontend (realisasi / komitmen). Komitmen 0 di
-        // frontend ditampilkan "-", bukan 0%.
+        // revenue_komitmen / revenue_realisasi / total_cost dikirim sebagai
+        // float; SEMUA persentase (capaian realisasi-vs-komitmen dan rasio
+        // cost-vs-realisasi) dihitung di frontend. Penyebut 0 di frontend
+        // ditampilkan "-", bukan 0% -- angka yang tidak bisa dihitung lebih
+        // baik absen daripada berbohong.
         $summary = [
             'total'              => $summaryEvents->count(),
             'per_status'         => $summaryEvents->countBy('status'),
@@ -75,6 +83,7 @@ class SafdakEventController extends Controller
             'target_ideal'       => $summaryEvents->sum->target_ideal,
             'titik_deal'         => (int) $summaryEvents->sum('titik_deal'),
             'titik_eksekusi'     => (int) $summaryEvents->sum('titik_eksekusi'),
+            'total_cost'         => (float) $summaryEvents->sum('total_cost'),
             'revenue_komitmen'   => (float) $summaryEvents->sum('revenue_komitmen'),
             'revenue_realisasi'  => (float) $summaryEvents->sum('revenue_realisasi'),
         ];
