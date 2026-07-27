@@ -58,6 +58,52 @@ const countDays = (startDate, endDate, customDates) => {
     return Math.round((end - start) / 86400000) + 1;
 };
 
+// ── Capaian: realisasi / komitmen ─────────────────────────────
+// Komitmen 0 / kosong → null (tidak bisa dihitung, tampil "—"), BUKAN 0%.
+// Sengaja dibedakan supaya kampanye yang belum diisi komitmennya tidak
+// terlihat seperti kampanye yang gagal total.
+const pctCapaian = (komitmen, realisasi) => {
+    const k = Number(komitmen ?? 0);
+    const r = Number(realisasi ?? 0);
+    if (!Number.isFinite(k) || k <= 0) return null;
+    return Math.round((r / k) * 100);
+};
+
+const pctMeta = (pct) => {
+    if (pct === null) return { text: 'text-gray-300', bar: 'bg-gray-300' };
+    if (pct >= 100)   return { text: 'text-emerald-700', bar: 'bg-emerald-500' };
+    if (pct >= 80)    return { text: 'text-sky-700',     bar: 'bg-sky-500' };
+    if (pct >= 50)    return { text: 'text-amber-700',   bar: 'bg-amber-500' };
+    return { text: 'text-red-600', bar: 'bg-red-500' };
+};
+
+function CapaianBadge({ komitmen, realisasi, withBar = false }) {
+    const pct = pctCapaian(komitmen, realisasi);
+    const meta = pctMeta(pct);
+
+    if (pct === null) {
+        return (
+            <span className="text-xs text-gray-300" title="Komitmen belum diisi — capaian tidak bisa dihitung">
+                —
+            </span>
+        );
+    }
+
+    return (
+        <div className="inline-block min-w-[52px]" title={`Realisasi ${pct}% dari komitmen`}>
+            <span className={`text-sm font-bold ${meta.text}`}>{pct}%</span>
+            {withBar && (
+                <div className="mt-1 h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                        className={`h-full ${meta.bar} rounded-full`}
+                        style={{ width: `${Math.min(pct, 100)}%` }}
+                    />
+                </div>
+            )}
+        </div>
+    );
+}
+
 const emptyForm = {
     branch_id: '',
     title: '',
@@ -76,64 +122,19 @@ const emptyForm = {
     notes: '',
 };
 
-export default function Index({ events, branches, speakers, reports = [], statuses, summary, filters, canWrite }) {
+export default function Index({ events, branches, speakers, statuses, summary, filters, canWrite }) {
     const [modalOpen, setModalOpen] = useState(false);
     const [editingId, setEditingId] = useState(null);
     const [dateMode, setDateMode] = useState('rentang'); // 'rentang' | 'custom'
     const [customDateInput, setCustomDateInput] = useState('');
-    const [realizeFor, setRealizeFor] = useState(null); // kampanye yang sedang dicatat realisasinya
 
     const form = useForm({ ...emptyForm });
 
-    const formR = useForm({
-        monthly_report_id: '',
-        date: '',
-        time: '',
-        location: '',
-        commitment: '',
-        realization: '',
-        cost: '',
-        notes: '',
-    });
-
-    const monthYearLabel = (dateStr) => {
-        if (!dateStr) return '-';
-        const d = new Date(dateStr.substring(0, 10) + 'T00:00:00');
-        return d.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
-    };
-
-    // Laporan kandidat untuk kampanye yang dipilih (cabang sama)
-    const reportOptions = useMemo(() => {
-        if (!realizeFor) return [];
-        return reports.filter((r) => r.branch_id === realizeFor.branch_id);
-    }, [reports, realizeFor]);
-
-    const openRealize = (ev) => {
-        setRealizeFor(ev);
-        formR.setData({
-            monthly_report_id: '',
-            date: ev.end_date ? ev.end_date.substring(0, 10) : '',
-            time: '',
-            location: '',
-            commitment: ev.revenue_komitmen ? Math.round(Number(ev.revenue_komitmen)) : '',
-            realization: ev.revenue_realisasi ? Math.round(Number(ev.revenue_realisasi)) : '',
-            cost: '',
-            notes: '',
-        });
-        formR.clearErrors();
-    };
-
-    const closeRealize = () => setRealizeFor(null);
-
-    const submitRealize = (e) => {
-        e.preventDefault();
-        formR.post(`/safdak-events/${realizeFor.id}/realization`, {
-            preserveScroll: true,
-            onSuccess: closeRealize,
-        });
-    };
-
     const perStatus = summary?.per_status ?? {};
+
+    // Capaian agregat pada filter aktif
+    const summaryPct = pctCapaian(summary?.revenue_komitmen, summary?.revenue_realisasi);
+    const summaryPctMeta = pctMeta(summaryPct);
 
     // Preview target live di modal
     const previewDays = countDays(
@@ -318,19 +319,50 @@ export default function Index({ events, branches, speakers, reports = [], status
                     </div>
                 </div>
 
-                {/* Strip revenue (informasional) */}
-                <div className="bg-white border rounded-xl p-3 flex flex-wrap items-center gap-x-6 gap-y-1">
-                    <div>
-                        <span className="text-xs text-gray-500">Revenue Komitmen: </span>
-                        <span className="text-sm font-bold text-gray-800">{formatRupiah(summary?.revenue_komitmen)}</span>
+                {/* Strip revenue (informasional) + capaian komitmen vs realisasi */}
+                <div className="bg-white border rounded-xl p-3 space-y-2">
+                    <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
+                        <div>
+                            <span className="text-xs text-gray-500">Revenue Komitmen: </span>
+                            <span className="text-sm font-bold text-gray-800">{formatRupiah(summary?.revenue_komitmen)}</span>
+                        </div>
+                        <div>
+                            <span className="text-xs text-gray-500">Revenue Realisasi: </span>
+                            <span className="text-sm font-bold text-emerald-700">{formatRupiah(summary?.revenue_realisasi)}</span>
+                        </div>
+                        <div>
+                            <span className="text-xs text-gray-500">Capaian: </span>
+                            <span className={`text-sm font-bold ${summaryPctMeta.text}`}>
+                                {summaryPct === null ? '—' : `${summaryPct}%`}
+                            </span>
+                        </div>
+                        <div className="text-[11px] text-gray-400">
+                            ℹ️ Angka manajerial — angka resmi tetap di laporan bulanan
+                        </div>
                     </div>
-                    <div>
-                        <span className="text-xs text-gray-500">Revenue Realisasi: </span>
-                        <span className="text-sm font-bold text-emerald-700">{formatRupiah(summary?.revenue_realisasi)}</span>
-                    </div>
-                    <div className="text-[11px] text-gray-400">
-                        ℹ️ Angka manajerial — angka resmi tetap di laporan bulanan
-                    </div>
+
+                    {summaryPct !== null && (
+                        <div>
+                            <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
+                                <div
+                                    className={`h-full ${summaryPctMeta.bar} rounded-full transition-all`}
+                                    style={{ width: `${Math.min(summaryPct, 100)}%` }}
+                                />
+                            </div>
+                            <div className="mt-1 text-[11px] text-gray-400">
+                                Realisasi vs komitmen &middot; {summary?.total ?? 0} kampanye pada filter ini
+                                {summaryPct > 100 && (
+                                    <span className="text-emerald-700 font-medium"> &middot; melampaui komitmen</span>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {summaryPct === null && (
+                        <div className="text-[11px] text-gray-400">
+                            Capaian muncul setelah Rev. Komitmen diisi di kampanye.
+                        </div>
+                    )}
                 </div>
 
                 {/* Filter bar */}
@@ -441,6 +473,9 @@ export default function Index({ events, branches, speakers, reports = [], status
                                 <th className="px-3 py-2 text-center">D / E</th>
                                 <th className="px-3 py-2 text-right">Cost</th>
                                 <th className="px-3 py-2 text-right">Komitmen / Realisasi</th>
+                                <th className="px-3 py-2 text-center" title="Realisasi dibagi komitmen">
+                                    Capaian
+                                </th>
                                 <th className="px-3 py-2 text-center">Status</th>
                                 {canWrite && <th className="px-3 py-2 text-right">Aksi</th>}
                             </tr>
@@ -448,7 +483,7 @@ export default function Index({ events, branches, speakers, reports = [], status
                         <tbody className="divide-y">
                             {events.length === 0 && (
                                 <tr>
-                                    <td colSpan={canWrite ? 10 : 9} className="px-3 py-8 text-center text-gray-400">
+                                    <td colSpan={canWrite ? 11 : 10} className="px-3 py-8 text-center text-gray-400">
                                         Belum ada kampanye pada filter ini.
                                         {canWrite && ' Tambahkan lewat tombol "+ Kampanye Baru".'}
                                     </td>
@@ -491,6 +526,13 @@ export default function Index({ events, branches, speakers, reports = [], status
                                         <div>{formatRupiah(ev.revenue_komitmen)}</div>
                                         <div className="text-emerald-700">{formatRupiah(ev.revenue_realisasi)}</div>
                                     </td>
+                                    <td className="px-3 py-2 text-center whitespace-nowrap">
+                                        <CapaianBadge
+                                            komitmen={ev.revenue_komitmen}
+                                            realisasi={ev.revenue_realisasi}
+                                            withBar
+                                        />
+                                    </td>
                                     <td className="px-3 py-2 text-center">
                                         <span
                                             className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium border ${STATUS_META[ev.status]?.badge}`}
@@ -500,15 +542,6 @@ export default function Index({ events, branches, speakers, reports = [], status
                                     </td>
                                     {canWrite && (
                                         <td className="px-3 py-2 text-right whitespace-nowrap">
-                                            {['berjalan', 'selesai'].includes(ev.status) && (
-                                                <button
-                                                    onClick={() => openRealize(ev)}
-                                                    className="text-xs text-purple-700 hover:underline mr-2"
-                                                    title="Catat ke laporan bulanan sebagai realisasi"
-                                                >
-                                                    💾 Realisasi
-                                                </button>
-                                            )}
                                             {NEXT_STATUS[ev.status] && (
                                                 <button
                                                     onClick={() => quickStatus(ev, NEXT_STATUS[ev.status])}
@@ -574,16 +607,12 @@ export default function Index({ events, branches, speakers, reports = [], status
                                 Cost {formatRupiah(ev.total_cost)} &middot; Komit {formatRupiah(ev.revenue_komitmen)}{' '}
                                 &middot; <span className="text-emerald-700">Real {formatRupiah(ev.revenue_realisasi)}</span>
                             </div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-gray-500">Capaian</span>
+                                <CapaianBadge komitmen={ev.revenue_komitmen} realisasi={ev.revenue_realisasi} />
+                            </div>
                             {canWrite && (
                                 <div className="flex gap-3 pt-1">
-                                    {['berjalan', 'selesai'].includes(ev.status) && (
-                                        <button
-                                            onClick={() => openRealize(ev)}
-                                            className="text-xs text-purple-700 font-medium"
-                                        >
-                                            💾 Realisasi
-                                        </button>
-                                    )}
                                     {NEXT_STATUS[ev.status] && (
                                         <button
                                             onClick={() => quickStatus(ev, NEXT_STATUS[ev.status])}
@@ -901,6 +930,15 @@ export default function Index({ events, branches, speakers, reports = [], status
                                         />
                                     </div>
                                 </div>
+
+                                {/* Preview capaian live di form */}
+                                <div className="text-xs text-gray-600 bg-white border rounded-lg px-3 py-2 flex items-center gap-2">
+                                    📈 Capaian komitmen vs realisasi:
+                                    <CapaianBadge
+                                        komitmen={form.data.revenue_komitmen}
+                                        realisasi={form.data.revenue_realisasi}
+                                    />
+                                </div>
                             </div>
 
                             <div>
@@ -927,171 +965,6 @@ export default function Index({ events, branches, speakers, reports = [], status
                                     className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50"
                                 >
                                     {form.processing ? 'Menyimpan…' : editingId ? 'Simpan Perubahan' : 'Tambah Kampanye'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {/* ── Modal Catat Realisasi (jembatan kampanye → log) ── */}
-            {realizeFor && (
-                <div
-                    className="fixed inset-0 z-50 flex items-start md:items-center justify-center bg-black/40 p-3 overflow-y-auto"
-                    onClick={closeRealize}
-                >
-                    <div
-                        className="bg-white rounded-xl w-full max-w-lg my-6 p-4 space-y-3"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <div>
-                            <h2 className="text-lg font-bold text-gray-800">💾 Catat Realisasi</h2>
-                            <p className="text-xs text-gray-500">
-                                {realizeFor.speaker || realizeFor.title || 'Kampanye'} &middot;{' '}
-                                {formatTanggalPendek(realizeFor.start_date)} &ndash;{' '}
-                                {formatTanggal(realizeFor.end_date)} &middot; masuk ke laporan bulanan sebagai
-                                entri Safari Dakwah resmi.
-                            </p>
-                        </div>
-
-                        <form onSubmit={submitRealize} className="space-y-3">
-                            <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">
-                                    Laporan Bulanan Tujuan *
-                                </label>
-                                <select
-                                    value={formR.data.monthly_report_id}
-                                    onChange={(e) => formR.setData('monthly_report_id', e.target.value)}
-                                    className="w-full border rounded-lg px-2 py-1.5 text-sm"
-                                    required
-                                >
-                                    <option value="">— Pilih laporan —</option>
-                                    {reportOptions.map((r) => (
-                                        <option key={r.id} value={r.id}>
-                                            {monthYearLabel(r.period_month)} — {r.status}
-                                        </option>
-                                    ))}
-                                </select>
-                                {reportOptions.length === 0 && (
-                                    <p className="text-[11px] text-amber-600 mt-1">
-                                        ⚠️ Belum ada laporan bulanan untuk cabang ini (6 bulan terakhir).
-                                        Buat dulu lewat menu Laporan Revenue, lalu kembali ke sini.
-                                    </p>
-                                )}
-                                {formR.errors.monthly_report_id && (
-                                    <p className="text-xs text-red-600 mt-0.5">{formR.errors.monthly_report_id}</p>
-                                )}
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-600 mb-1">
-                                        Tanggal Kegiatan *
-                                    </label>
-                                    <input
-                                        type="date"
-                                        value={formR.data.date}
-                                        onChange={(e) => formR.setData('date', e.target.value)}
-                                        className="w-full border rounded-lg px-2 py-1.5 text-sm"
-                                        required
-                                    />
-                                    <p className="text-[11px] text-gray-400 mt-0.5">
-                                        Tanggal asli acara — boleh bulan lampau
-                                    </p>
-                                    {formR.errors.date && (
-                                        <p className="text-xs text-red-600 mt-0.5">{formR.errors.date}</p>
-                                    )}
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-600 mb-1">Waktu</label>
-                                    <input
-                                        type="text"
-                                        value={formR.data.time}
-                                        onChange={(e) => formR.setData('time', e.target.value)}
-                                        className="w-full border rounded-lg px-2 py-1.5 text-sm"
-                                        placeholder="cth: Ba'da Subuh"
-                                    />
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Lokasi</label>
-                                <input
-                                    type="text"
-                                    value={formR.data.location}
-                                    onChange={(e) => formR.setData('location', e.target.value)}
-                                    className="w-full border rounded-lg px-2 py-1.5 text-sm"
-                                    placeholder="Masjid / alamat titik"
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-600 mb-1">
-                                        Komitmen (Rp)
-                                    </label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={formR.data.commitment}
-                                        onChange={(e) => formR.setData('commitment', e.target.value)}
-                                        className="w-full border rounded-lg px-2 py-1.5 text-sm"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-600 mb-1">
-                                        Realisasi (Rp)
-                                    </label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={formR.data.realization}
-                                        onChange={(e) => formR.setData('realization', e.target.value)}
-                                        className="w-full border rounded-lg px-2 py-1.5 text-sm"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-600 mb-1">Cost (Rp)</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={formR.data.cost}
-                                        onChange={(e) => formR.setData('cost', e.target.value)}
-                                        className="w-full border rounded-lg px-2 py-1.5 text-sm"
-                                    />
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Catatan</label>
-                                <textarea
-                                    value={formR.data.notes}
-                                    onChange={(e) => formR.setData('notes', e.target.value)}
-                                    rows={2}
-                                    className="w-full border rounded-lg px-2 py-1.5 text-sm"
-                                />
-                            </div>
-
-                            <p className="text-[11px] text-gray-400">
-                                ℹ️ Angka di sini menjadi angka resmi laporan bulanan (berbeda dari angka
-                                manajerial kampanye). Nama dai ({realizeFor.speaker || '-'}) ikut tercatat
-                                otomatis.
-                            </p>
-
-                            <div className="flex justify-end gap-2 pt-1">
-                                <button
-                                    type="button"
-                                    onClick={closeRealize}
-                                    className="px-4 py-2 text-sm text-gray-600 border rounded-lg hover:bg-gray-50"
-                                >
-                                    Batal
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={formR.processing || reportOptions.length === 0}
-                                    className="px-4 py-2 text-sm font-medium text-white bg-purple-700 rounded-lg hover:bg-purple-800 disabled:opacity-50"
-                                >
-                                    {formR.processing ? 'Menyimpan…' : 'Catat ke Laporan'}
                                 </button>
                             </div>
                         </form>

@@ -183,7 +183,4 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('/safdak-events/{event}', [SafdakEventController::class, 'destroy'])
         ->name('safdak-events.destroy');
     
-    Route::post('/safdak-events/{event}/realization', [SafdakEventController::class, 'storeRealization'])
-        ->name('safdak-events.realization');
-
 });
