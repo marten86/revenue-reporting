@@ -3,8 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Branch;
-use App\Models\MonthlyReport;
-use App\Models\SafariDakwahLog;
 use App\Models\SafdakEvent;
 use App\Models\Speaker;
 use Illuminate\Http\Request;
@@ -16,8 +14,15 @@ class SafdakEventController extends Controller
     /**
      * Halaman pipeline: daftar kampanye SafDak dengan filter status/cabang/bulan.
      * Scope baca mengikuti pola SafariCalendarController:
-     * - seesAllBranches() → semua cabang
-     * - selain itu → accessibleBranches() (AM: cabang areanya; BH/staff: cabang sendiri)
+     * - seesAllBranches() -> semua cabang
+     * - selain itu -> accessibleBranches() (AM: cabang areanya; BH/staff: cabang sendiri)
+     *
+     * CATATAN: pipeline TIDAK lagi terhubung ke laporan bulanan. Jembatan
+     * "Catat Realisasi" (storeRealization + prop reports) dihapus 27 Juli 2026
+     * atas keputusan Marten. Revenue di halaman ini murni angka manajerial;
+     * angka resmi diinput terpisah lewat TabSafari di laporan bulanan.
+     * Kolom safari_dakwah_logs.event_id SENGAJA dipertahankan (soft link,
+     * CRM-ready) supaya log lama tetap punya jejak asal-usulnya.
      */
     public function index(Request $request)
     {
@@ -53,13 +58,16 @@ class SafdakEventController extends Controller
         $events = $listQuery->get();
 
         // Summary: TANPA filter status (angka funnel tetap utuh).
-        // Target min/ideal = turunan tanggal → dijumlah via accessor di PHP
+        // Target min/ideal = turunan tanggal -> dijumlah via accessor di PHP
         // (bukan SQL), dari set yang sama dengan filter cabang+bulan.
         $summaryEvents = (clone $base)->get([
             'id', 'start_date', 'end_date', 'custom_dates', 'status',
             'titik_deal', 'titik_eksekusi', 'revenue_komitmen', 'revenue_realisasi',
         ]);
 
+        // revenue_komitmen / revenue_realisasi dikirim sebagai float; persentase
+        // capaian dihitung di frontend (realisasi / komitmen). Komitmen 0 di
+        // frontend ditampilkan "-", bukan 0%.
         $summary = [
             'total'              => $summaryEvents->count(),
             'per_status'         => $summaryEvents->countBy('status'),
@@ -71,7 +79,7 @@ class SafdakEventController extends Controller
             'revenue_realisasi'  => (float) $summaryEvents->sum('revenue_realisasi'),
         ];
 
-        // Narasumber (dai) untuk dropdown form — cabang accessible + nasional,
+        // Narasumber (dai) untuk dropdown form - cabang accessible + nasional,
         // difilter per cabang terpilih di frontend
         $speakers = Speaker::query()
             ->active()
@@ -81,30 +89,10 @@ class SafdakEventController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'branch_id']);
 
-        // Laporan bulanan kandidat tujuan "Catat Realisasi" — 6 bulan terakhir
-        // pada cabang accessible. TIDAK pernah auto-create report (pelajaran
-        // insiden import); kalau laporan bulan berjalan belum ada, tim membuat
-        // dulu lewat halaman Laporan seperti biasa.
-        $reports = MonthlyReport::query()
-            ->whereIn('branch_id', $branchIds)
-            ->where('period_month', '>=', now()->subMonths(6)->startOfMonth()->format('Y-m-d'))
-            ->orderByDesc('period_month')
-            ->get(['id', 'branch_id', 'period_month', 'status'])
-            ->map(fn ($r) => [
-                'id'           => $r->id,
-                'branch_id'    => $r->branch_id,
-                'period_month' => $r->period_month instanceof \Carbon\CarbonInterface
-                    ? $r->period_month->format('Y-m-d')
-                    : (string) $r->period_month,
-                'status'       => $r->status,
-            ])
-            ->values();
-
         return Inertia::render('SafdakPipeline/Index', [
             'events'    => $events,
             'branches'  => $accessibleBranches,
             'speakers'  => $speakers,
-            'reports'   => $reports,
             'statuses'  => SafdakEvent::STATUSES,
             'summary'   => $summary,
             'filters'   => [
@@ -144,7 +132,7 @@ class SafdakEventController extends Controller
     }
 
     /**
-     * Update status saja (aksi cepat dari list: rencana → berjalan → selesai / batal).
+     * Update status saja (aksi cepat dari list: rencana -> berjalan -> selesai / batal).
      */
     public function updateStatus(Request $request, SafdakEvent $event)
     {
@@ -168,69 +156,7 @@ class SafdakEventController extends Controller
         return back()->with('success', 'Kampanye Safari Dakwah dihapus.');
     }
 
-    /**
-     * Jembatan kampanye → realisasi: buat entri safari_dakwah_logs dari
-     * kampanye ini, menempel ke laporan bulanan PILIHAN user (tidak pernah
-     * auto-create report). date = tanggal kegiatan asli (boleh bulan lampau,
-     * mengikuti kebiasaan tim), event_id terisi sebagai soft link.
-     */
-    public function storeRealization(Request $request, SafdakEvent $event)
-    {
-        $this->authorizeWrite($request, $event->branch_id);
-
-        $validated = $request->validate([
-            'monthly_report_id' => ['required', 'uuid', 'exists:monthly_reports,id'],
-            'date'              => ['required', 'date'],
-            'time'              => ['nullable', 'string', 'max:20'],
-            'location'          => ['nullable', 'string', 'max:255'],
-            'commitment'        => ['nullable', 'numeric', 'min:0'],
-            'realization'       => ['nullable', 'numeric', 'min:0'],
-            'cost'              => ['nullable', 'numeric', 'min:0'],
-            'notes'             => ['nullable', 'string', 'max:2000'],
-        ]);
-
-        // Laporan tujuan harus milik cabang yang sama dengan kampanye
-        $report = MonthlyReport::findOrFail($validated['monthly_report_id']);
-        abort_unless($report->branch_id === $event->branch_id, 422,
-            'Laporan tujuan bukan milik cabang kampanye ini.');
-
-        // Assignment eksplisit per kolom (bukan mass-assignment) supaya tidak
-        // bergantung pada $fillable SafariDakwahLog yang mungkin belum memuat
-        // kolom-kolom baru (event_id, cost, has_mou, dst).
-        $log = new SafariDakwahLog();
-        $log->monthly_report_id = $report->id;
-        $log->date        = $validated['date'];
-        // day_name NOT NULL tanpa default — nama hari Indonesia dari tanggal
-        // (pola yang sama dengan input TabSafari)
-        $log->day_name    = [
-            'Sunday'    => 'Ahad',
-            'Monday'    => 'Senin',
-            'Tuesday'   => 'Selasa',
-            'Wednesday' => 'Rabu',
-            'Thursday'  => 'Kamis',
-            'Friday'    => 'Jumat',
-            'Saturday'  => 'Sabtu',
-        ][\Carbon\Carbon::parse($validated['date'])->format('l')];
-        $log->time        = $validated['time'] ?? null;
-        $log->speaker     = $event->speaker;
-        $log->location    = $validated['location'] ?? null;
-        $log->status      = 'done';
-        // safari_dakwah_logs.commitment/realization/cost bertipe BIGINT — tidak
-        // menerima string berformat desimal ("450000000.00", hasil decimal:2
-        // cast di SafdakEvent). Bulatkan ke integer dulu. cost NOT NULL
-        // default 0 — jangan assign null.
-        $log->commitment  = isset($validated['commitment']) ? (int) round((float) $validated['commitment']) : 0;
-        $log->realization = isset($validated['realization']) ? (int) round((float) $validated['realization']) : 0;
-        $log->cost        = isset($validated['cost']) ? (int) round((float) $validated['cost']) : 0;
-        $log->has_mou     = (bool) $event->has_mou;
-        $log->notes       = $validated['notes'] ?? null;
-        $log->event_id    = $event->id;
-        $log->save();
-
-        return back()->with('success', 'Realisasi tercatat ke laporan bulanan. Kegiatan kini muncul sebagai Realisasi di kalender.');
-    }
-
-    // ── Helpers ────────────────────────────────────────────────
+    // -- Helpers ------------------------------------------------
 
     private function authorizeWrite(Request $request, ?string $branchId): void
     {
@@ -240,7 +166,7 @@ class SafdakEventController extends Controller
         abort_unless($branchId, 403);
 
         // canAccessBranch() di User.php mengharapkan objek Branch, bukan uuid
-        // string — resolve dulu. 404 wajar bila branch_id kiriman tidak valid.
+        // string - resolve dulu. 404 wajar bila branch_id kiriman tidak valid.
         $branch = Branch::findOrFail($branchId);
 
         abort_unless($user->canAccessBranch($branch), 403);
@@ -267,7 +193,7 @@ class SafdakEventController extends Controller
             'notes'             => ['nullable', 'string', 'max:2000'],
         ]);
 
-        // Rapikan custom_dates: buang duplikat, urutkan; kosong → null
+        // Rapikan custom_dates: buang duplikat, urutkan; kosong -> null
         if (! empty($validated['custom_dates'])) {
             $dates = array_values(array_unique($validated['custom_dates']));
             sort($dates);
