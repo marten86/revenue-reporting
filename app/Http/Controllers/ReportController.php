@@ -6,7 +6,9 @@ use App\Models\Branch;
 use App\Models\MonthlyReport;
 use App\Models\RevenueSource;
 use App\Models\Speaker;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -68,6 +70,33 @@ class ReportController extends Controller
         ]);
     }
 
+    /**
+     * Membuat laporan bulanan baru.
+     *
+     * CATATAN PENTING - guard duplikat memakai withTrashed() (3 Agustus 2026).
+     *
+     * MonthlyReport memakai SoftDeletes, tetapi unique index PostgreSQL
+     * "monthly_reports_branch_id_period_month_unique" TIDAK mengenal kolom
+     * deleted_at. Akibatnya baris yang sudah di-soft-delete tetap mengunci
+     * kombinasi (branch_id, period_month) di level database, sementara query
+     * Eloquent biasa tidak melihatnya sama sekali.
+     *
+     * Tanpa withTrashed(), guard di bawah selalu bilang "belum ada", insert
+     * lolos ke DB, lalu ditolak constraint sebagai SQLSTATE 23505 dan tampil
+     * ke pengguna sebagai error 500 tanpa penjelasan.
+     *
+     * Riwayat kejadian: rollback import Notion (14 Juli 2026) memanggil
+     * delete() pada model ber-SoftDeletes sehingga 34 laporan Draft kosong
+     * hanya tersembunyi, bukan terhapus. Tiga minggu kemudian tim KDI kena
+     * error 500 saat membuat laporan Agustus. Baris-baris itu sudah dibersihkan
+     * permanen, tetapi guard ini dipasang supaya kasus serupa tidak pernah
+     * lagi muncul sebagai error 500.
+     *
+     * Blok try/catch 23505 adalah jaring pengaman lapis kedua: melindungi dari
+     * race condition (dua permintaan bersamaan) dan dari sumber tabrakan lain
+     * yang belum terpikirkan. Pengguna selalu mendapat pesan yang bisa
+     * dimengerti, tidak pernah layar 500.
+     */
     public function store(Request $request)
     {
         abort_unless($request->user()->canInputData(), 403);
@@ -80,9 +109,18 @@ class ReportController extends Controller
         $branch = Branch::findOrFail($data['branch_id']);
         abort_unless($request->user()->canAccessBranch($branch), 403);
 
-        $existing = MonthlyReport::where('branch_id', $data['branch_id'])
+        $existing = MonthlyReport::withTrashed()
+            ->where('branch_id', $data['branch_id'])
             ->where('period_month', $data['period_month'])
             ->first();
+
+        if ($existing && $existing->trashed()) {
+            throw ValidationException::withMessages([
+                'period_month' => 'Laporan periode ini pernah dibuat lalu dihapus, '
+                    . 'sehingga periodenya masih terkunci di database. '
+                    . 'Hubungi Area Manager untuk memulihkan atau membersihkannya.',
+            ]);
+        }
 
         if ($existing) {
             return redirect()->route('reports.show', $existing)
@@ -91,12 +129,33 @@ class ReportController extends Controller
 
         $target = $branch->targetForMonth($data['period_month']);
 
-        $report = MonthlyReport::create([
-            'branch_id'     => $data['branch_id'],
-            'period_month'  => $data['period_month'],
-            'status'        => MonthlyReport::STATUS_DRAFT,
-            'target_amount' => $target?->target_total ?? 0,
-        ]);
+        try {
+            $report = MonthlyReport::create([
+                'branch_id'     => $data['branch_id'],
+                'period_month'  => $data['period_month'],
+                'status'        => MonthlyReport::STATUS_DRAFT,
+                'target_amount' => $target?->target_total ?? 0,
+            ]);
+        } catch (QueryException $e) {
+            if ((string) ($e->errorInfo[0] ?? '') !== '23505') {
+                throw $e;
+            }
+
+            $racer = MonthlyReport::withTrashed()
+                ->where('branch_id', $data['branch_id'])
+                ->where('period_month', $data['period_month'])
+                ->first();
+
+            if ($racer && ! $racer->trashed()) {
+                return redirect()->route('reports.show', $racer)
+                    ->with('warning', 'Laporan periode ini sudah ada.');
+            }
+
+            throw ValidationException::withMessages([
+                'period_month' => 'Periode ini sudah terpakai untuk cabang tersebut '
+                    . 'dan tidak bisa dibuat ulang. Hubungi Area Manager.',
+            ]);
+        }
 
         $report->recalculate();
 
@@ -206,7 +265,7 @@ class ReportController extends Controller
             $channelTotal   += (int) $d->total;
             $byTeam[]        = [
                 'channel'     => $d->channel,
-                'source'      => $d->source_label ?? '—',
+                'source'      => $d->source_label ?? "\u{2014}",
                 'total'       => (int) $d->total,
                 'is_subtotal' => false,
             ];
