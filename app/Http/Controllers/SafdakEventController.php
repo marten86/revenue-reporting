@@ -5,14 +5,23 @@ namespace App\Http\Controllers;
 use App\Models\Branch;
 use App\Models\SafdakEvent;
 use App\Models\Speaker;
+use App\Support\PeriodRange;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
+/**
+ * penanda versi: safdakevent-ctrl-filter-dai-20260819
+ */
 class SafdakEventController extends Controller
 {
+    /** Nilai sentinel untuk memfilter kampanye yang dainya belum ditentukan */
+    private const SPEAKER_NONE = '__none__';
+
     /**
-     * Halaman pipeline: daftar kampanye SafDak dengan filter status/cabang/bulan.
+     * Halaman pipeline: daftar kampanye SafDak dengan filter
+     * status / cabang / periode / dai.
+     *
      * Scope baca mengikuti pola SafariCalendarController:
      * - seesAllBranches() -> semua cabang
      * - selain itu -> accessibleBranches() (AM: cabang areanya; BH/staff: cabang sendiri)
@@ -23,6 +32,17 @@ class SafdakEventController extends Controller
      * angka resmi diinput terpisah lewat TabSafari di laporan bulanan.
      * Kolom safari_dakwah_logs.event_id SENGAJA dipertahankan (soft link,
      * CRM-ready) supaya log lama tetap punya jejak asal-usulnya.
+     *
+     * FILTER MANA YANG MASUK RINGKASAN (ditetapkan 19 Agustus 2026):
+     *   cabang  -> YA
+     *   periode -> YA
+     *   dai     -> YA  <- baru
+     *   status  -> TIDAK (perilaku lama, disengaja: funnel periode tetap utuh)
+     * Aturannya diwujudkan lewat pemisahan builder: $base memuat cabang +
+     * periode + dai, lalu di-clone; status HANYA menempel di $listQuery.
+     * Kalau suatu saat dai dipindah ke $listQuery, ringkasan akan memakai
+     * pembilang & penyebut dari scope berbeda -- bug yang sama persis dengan
+     * "Analytics single-channel".
      */
     public function index(Request $request)
     {
@@ -34,19 +54,51 @@ class SafdakEventController extends Controller
 
         $branchIds = $accessibleBranches->pluck('id')->all();
 
-        // Builder dasar sesuai filter cabang & bulan (dipakai list + summary)
-        $base = SafdakEvent::query()->forBranches($branchIds);
+        // -- Filter cabang ---------------------------------------
+        $branchFilter = null;
 
         if ($request->filled('branch') && in_array($request->get('branch'), $branchIds, true)) {
-            $base->where('branch_id', $request->get('branch'));
+            $branchFilter = $request->get('branch');
         }
 
-        if (preg_match('/^\d{4}-\d{2}$/', (string) $request->get('month'))) {
-            [$year, $month] = explode('-', $request->get('month'));
-            $base->overlapsMonth((int) $year, (int) $month);
+        // -- Filter periode --------------------------------------
+        // ?range= menerima 2026-08 / 2026-Q3 / 2026-S2 / 2026 / kosong.
+        // ?month=YYYY-MM (skema lama) tetap diterima dan dipetakan ke range,
+        // supaya tautan & bookmark yang sudah beredar tidak mati.
+        $rangeParam = trim((string) $request->get('range', ''));
+
+        if ($rangeParam === '' && $request->filled('month')) {
+            $rangeParam = trim((string) $request->get('month'));
         }
 
-        // List: + filter status
+        $period = PeriodRange::parse($rangeParam);
+
+        // -- Filter dai ------------------------------------------
+        $speakerParam = trim((string) $request->get('speaker', ''));
+
+        // -- Builder dasar: cabang + periode + dai (dipakai list + summary)
+        $base = SafdakEvent::query()->forBranches($branchIds);
+
+        if ($branchFilter !== null) {
+            $base->where('branch_id', $branchFilter);
+        }
+
+        if ($period !== null) {
+            $base->overlapsRange($period['start'], $period['end']);
+        }
+
+        if ($speakerParam === self::SPEAKER_NONE) {
+            // Kampanye tanpa dai. Dicek null DAN string kosong: middleware
+            // ConvertEmptyStringsToNull membuat entri baru tersimpan null,
+            // tapi baris lama bisa saja menyimpan '' -- keduanya harus ikut.
+            $base->where(function ($q) {
+                $q->whereNull('speaker')->orWhere('speaker', '');
+            });
+        } elseif ($speakerParam !== '') {
+            $base->where('speaker', $speakerParam);
+        }
+
+        // -- List: + filter status -------------------------------
         $listQuery = (clone $base)
             ->with('branch:id,name,code')
             ->orderBy('start_date');
@@ -57,14 +109,20 @@ class SafdakEventController extends Controller
 
         $events = $listQuery->get();
 
-        // Summary: TANPA filter status (angka funnel tetap utuh).
+        // -- Summary: TANPA filter status (angka funnel tetap utuh) --
         // Target min/ideal = turunan tanggal -> dijumlah via accessor di PHP
-        // (bukan SQL), dari set yang sama dengan filter cabang+bulan.
+        // (bukan SQL), dari set yang sama dengan filter cabang+periode+dai.
         //
         // total_cost ikut di-select sejak 27 Juli 2026 untuk rasio Cost vs
         // Realisasi di strip ringkasan. WAJIB ada di daftar kolom ini: kalau
         // kolomnya tidak di-select, sum('total_cost') mengembalikan 0 secara
         // DIAM-DIAM (tanpa error), dan rasio agregat jadi salah tanpa gejala.
+        //
+        // 'speaker' TIDAK perlu di-select: filter dai bekerja lewat WHERE di
+        // $base, bukan lewat pengelompokan koleksi. Kalau nanti ditambah rekap
+        // per dai di ringkasan, kolom itu WAJIB dimasukkan ke daftar ini --
+        // groupBy('speaker') pada kolom yang tidak di-select akan menaruh
+        // semua baris ke satu bucket kosong, juga tanpa error.
         $summaryEvents = (clone $base)->get([
             'id', 'start_date', 'end_date', 'custom_dates', 'status',
             'titik_deal', 'titik_eksekusi', 'total_cost',
@@ -88,8 +146,37 @@ class SafdakEventController extends Controller
             'revenue_realisasi'  => (float) $summaryEvents->sum('revenue_realisasi'),
         ];
 
-        // Narasumber (dai) untuk dropdown form - cabang accessible + nasional,
-        // difilter per cabang terpilih di frontend
+        // -- Opsi dropdown dai (distinct dari kampanye yang benar-benar ada)
+        //
+        // SENGAJA TIDAK ikut filter periode. Kalau opsinya menyusut mengikuti
+        // periode aktif, dai yang sedang difilter bisa lenyap dari dropdown
+        // saat user pindah bulan -- user terjebak tanpa cara mengembalikan.
+        // Ikut filter cabang karena daftar dai per cabang memang berbeda.
+        //
+        // Sumbernya safdak_events, BUKAN master Speaker: yang berguna difilter
+        // hanyalah dai yang punya kampanye. Konsekuensinya varian ejaan yang
+        // belum dibersihkan ("Ustadz X" vs "Ust X") akan tampil sebagai dua
+        // opsi -- itu memang kondisi datanya, dan justru jadi terlihat.
+        $speakerQuery = SafdakEvent::query()->forBranches($branchIds);
+
+        if ($branchFilter !== null) {
+            $speakerQuery->where('branch_id', $branchFilter);
+        }
+
+        $rawSpeakers = $speakerQuery->select('speaker')
+            ->distinct()
+            ->orderBy('speaker')
+            ->pluck('speaker');
+
+        $hasUnnamedSpeaker = $rawSpeakers->contains(fn ($s) => $s === null || trim((string) $s) === '');
+
+        $speakerOptions = $rawSpeakers
+            ->reject(fn ($s) => $s === null || trim((string) $s) === '')
+            ->values();
+
+        // Narasumber (dai) untuk dropdown FORM - cabang accessible + nasional,
+        // difilter per cabang terpilih di frontend. Ini master Speaker, beda
+        // peran dengan $speakerOptions di atas (yang untuk filter daftar).
         $speakers = Speaker::query()
             ->active()
             ->where(function ($q) use ($branchIds) {
@@ -99,15 +186,31 @@ class SafdakEventController extends Controller
             ->get(['id', 'name', 'branch_id']);
 
         return Inertia::render('SafdakPipeline/Index', [
-            'events'    => $events,
-            'branches'  => $accessibleBranches,
-            'speakers'  => $speakers,
-            'statuses'  => SafdakEvent::STATUSES,
-            'summary'   => $summary,
+            'events'            => $events,
+            'branches'          => $accessibleBranches,
+            'speakers'          => $speakers,
+            'speakerOptions'    => $speakerOptions,
+            'hasUnnamedSpeaker' => $hasUnnamedSpeaker,
+            'statuses'          => SafdakEvent::STATUSES,
+            'summary'           => $summary,
+
+            // Navigasi periode dirakit di backend supaya frontend tidak perlu
+            // menghitung kuartal/semester sendiri (sumber kebenaran ganda).
+            'rangeNav'          => PeriodRange::nav($period),
+
+            // periodPresets: kunci setara saat GANTI TIPE (jangkar = periode
+            // aktif, jadi 2025-Q1 -> "Semester" mendarat di 2025-S1).
+            // todayPresets  : untuk tombol "Periode ini" (jangkar = hari ini).
+            // Keduanya dari backend supaya rumus kuartal/semester tidak hidup
+            // lagi di JSX.
+            'periodPresets'     => PeriodRange::presetsFor($period['start'] ?? null),
+            'todayPresets'      => PeriodRange::presetsFor(null),
+
             'filters'   => [
-                'status' => $request->get('status'),
-                'branch' => $request->get('branch'),
-                'month'  => $request->get('month'),
+                'status'  => $request->get('status'),
+                'branch'  => $branchFilter,
+                'range'   => $period['key'] ?? '',
+                'speaker' => $speakerParam,
             ],
             'canWrite'  => $user->canInputData(),
         ]);

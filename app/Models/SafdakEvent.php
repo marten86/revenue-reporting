@@ -6,6 +6,9 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
 
+/**
+ * penanda versi: safdakevent-overlapsrange-20260819
+ */
 class SafdakEvent extends Model
 {
     use HasUuids;
@@ -107,15 +110,39 @@ class SafdakEvent extends Model
     }
 
     /**
-     * Kampanye yang BERSINGGUNGAN dengan bulan tertentu
-     * (start <= akhir bulan DAN end >= awal bulan).
+     * Kampanye yang BERSINGGUNGAN dengan rentang tanggal tertentu
+     * (start <= akhir rentang DAN end >= awal rentang).
+     *
+     * Ditambahkan 19 Agustus 2026 sebagai generalisasi overlapsMonth(),
+     * untuk mendukung filter kuartal / semester / tahun di /safari-pipeline.
+     *
+     * CATATAN SEMANTIK: "bersinggungan", bukan "termuat seluruhnya". Kampanye
+     * 25 Jun - 5 Jul dihitung PENUH di Juni maupun Juli (dan penuh di Q2
+     * maupun Q3). Konsekuensinya angka funnel antar-periode TIDAK boleh
+     * dijumlahkan. Perilaku ini sengaja dipertahankan sama dengan sebelumnya
+     * -- mengubahnya akan menggeser angka yang sudah dilihat tim selama ini.
+     *
+     * @param  string  $start  tanggal awal inklusif, format Y-m-d
+     * @param  string  $end    tanggal akhir inklusif, format Y-m-d
+     */
+    public function scopeOverlapsRange(Builder $query, string $start, string $end): Builder
+    {
+        return $query->where('start_date', '<=', $end)
+                     ->where('end_date', '>=', $start);
+    }
+
+    /**
+     * Kampanye yang bersinggungan dengan bulan tertentu.
+     *
+     * Kini pembungkus tipis di atas overlapsRange(). SENGAJA dipertahankan:
+     * SafariCalendarController masih memanggilnya, dan menghapusnya berarti
+     * menyentuh halaman kalender tanpa alasan.
      */
     public function scopeOverlapsMonth(Builder $query, int $year, int $month): Builder
     {
         $start = sprintf('%04d-%02d-01', $year, $month);
         $end   = date('Y-m-t', strtotime($start));
 
-        return $query->where('start_date', '<=', $end)
-                     ->where('end_date', '>=', $start);
+        return $query->overlapsRange($start, $end);
     }
 }

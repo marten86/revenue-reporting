@@ -4,14 +4,16 @@ import AppLayout from '@/Components/AppLayout';
 
 /**
  * Pipeline Safari Dakwah
- * penanda versi: pipeline-rasio-cost-20260727
+ * penanda versi: pipeline-filter-dai-periode-20260819
  *
- * Ditambahkan 27 Juli 2026: Rasio Cost vs Realisasi (cost / realisasi).
+ * Ditambahkan 19 Agustus 2026:
+ *   - Filter Dai (dropdown, dari kampanye yang benar-benar ada)
+ *   - Filter periode Bulan / Kuartal / Semester / Tahun / Semua
  *
- * Gradasi warnanya SENGAJA DIBALIK dari Capaian: di Capaian makin besar makin
- * baik, di Rasio Cost makin KECIL makin baik. Bentuk badge juga dibedakan
- * (outline + panah turun, tanpa bar) supaya dua persen yang bersebelahan tidak
- * terbaca sebagai metrik sejenis.
+ * PERIODE DIHITUNG DI BACKEND. Tombol < > , label periode, dan kunci saat
+ * berganti tipe semuanya datang sebagai string siap pakai lewat prop
+ * `rangeNav` / `periodPresets` / `todayPresets`. Definisi kuartal & semester
+ * SENGAJA tidak diduplikasi di sini -- rumahnya App\Support\PeriodRange.
  *
  * Semua persentase diturunkan di frontend dari prop yang sudah dikirim
  * controller -> tidak ada rumus yang hidup di dua tempat.
@@ -30,6 +32,19 @@ const NEXT_STATUS = { rencana: 'berjalan', berjalan: 'selesai' };
 
 const TARGET_MIN_PER_DAY = 2;   // samakan dengan konstanta di model SafdakEvent
 const TARGET_IDEAL_PER_DAY = 3;
+
+// Tipe periode. `preset` = kunci di prop periodPresets/todayPresets;
+// null berarti "semua periode" (range dikosongkan).
+const PERIOD_TYPES = [
+    { type: 'month',    label: 'Bulan',    preset: 'month' },
+    { type: 'quarter',  label: 'Kuartal',  preset: 'quarter' },
+    { type: 'semester', label: 'Semester', preset: 'semester' },
+    { type: 'year',     label: 'Tahun',    preset: 'year' },
+    { type: 'all',      label: 'Semua',    preset: null },
+];
+
+// Sentinel filter dai tanpa nama - harus sama dengan SPEAKER_NONE di controller
+const SPEAKER_NONE = '__none__';
 
 const formatRupiah = (value) => {
     if (value === null || value === undefined || value === '') return '—';
@@ -67,23 +82,6 @@ const formatTanggalPendek = (dateStr) => {
 const todayStr = () => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
-
-const currentMonthStr = () => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-};
-
-const shiftMonth = (monthStr, delta) => {
-    const [y, m] = monthStr.split('-').map(Number);
-    const d = new Date(y, m - 1 + delta, 1);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-};
-
-const monthLabel = (monthStr) => {
-    if (!monthStr) return 'Semua bulan';
-    const [y, m] = monthStr.split('-').map(Number);
-    return new Date(y, m - 1, 1).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
 };
 
 const clampPct = (n) => Math.max(0, Math.min(100, Number(n) || 0));
@@ -232,7 +230,20 @@ const emptyForm = {
     notes: '',
 };
 
-export default function Index({ events, branches, speakers, statuses, summary, filters, canWrite }) {
+export default function Index({
+    events,
+    branches,
+    speakers,
+    speakerOptions = [],
+    hasUnnamedSpeaker = false,
+    statuses,
+    summary,
+    rangeNav,
+    periodPresets = {},
+    todayPresets = {},
+    filters,
+    canWrite,
+}) {
     const [modalOpen, setModalOpen] = useState(false);
     const [editingId, setEditingId] = useState(null);
     const [dateMode, setDateMode] = useState('rentang'); // 'rentang' | 'custom'
@@ -264,15 +275,36 @@ export default function Index({ events, branches, speakers, statuses, summary, f
         const query = {};
         if (next.status) query.status = next.status;
         if (next.branch) query.branch = next.branch;
-        if (next.month) query.month = next.month;
+        if (next.range) query.range = next.range;
+        if (next.speaker) query.speaker = next.speaker;
         router.get('/safari-pipeline', query, { preserveState: true, preserveScroll: true });
     };
 
-    const activeMonth = filters?.month || '';
     const activeStatus = filters?.status || '';
+    const activeSpeaker = filters?.speaker || '';
+
+    const periodType = rangeNav?.type || 'all';
+    const periodLabel = rangeNav?.label || 'Semua periode';
+    const isAllPeriod = periodType === 'all';
+
+    // Tombol "Periode ini" hanya bermakna kalau kita sedang TIDAK di sana
+    const todayKey = todayPresets?.[periodType] || '';
+    const showTodayButton = !isAllPeriod && todayKey && todayKey !== (rangeNav?.key || '');
+
+    // Dai yang sedang difilter tapi tidak ada di daftar opsi (mis. karena
+    // filter cabang berganti). Tetap ditampilkan supaya user tidak terjebak
+    // pada filter yang tak terlihat -- pola yang sama dengan fallback
+    // "(belum di master)" pada dropdown dai di modal.
+    const speakerNotInList =
+        activeSpeaker &&
+        activeSpeaker !== SPEAKER_NONE &&
+        !(speakerOptions || []).includes(activeSpeaker);
+
+    const speakerFilterLabel =
+        activeSpeaker === SPEAKER_NONE ? 'Belum ditentukan' : activeSpeaker;
 
     // ── Dai untuk cabang terpilih di form ─────────────────────
-    const speakerOptions = useMemo(() => {
+    const speakerOptionsForm = useMemo(() => {
         const list = (speakers || []).filter(
             (s) => s.branch_id === null || s.branch_id === form.data.branch_id
         );
@@ -400,7 +432,13 @@ export default function Index({ events, branches, speakers, statuses, summary, f
                         </h1>
                         <p className="text-sm text-gray-500">
                             Rencana &amp; progres kampanye &middot; target 2&ndash;3 titik/hari &middot;{' '}
-                            <span className="font-medium text-gray-600">{monthLabel(activeMonth)}</span>
+                            <span className="font-medium text-gray-600">{periodLabel}</span>
+                            {activeSpeaker && (
+                                <>
+                                    {' '}&middot;{' '}
+                                    <span className="font-medium text-gray-600">{speakerFilterLabel}</span>
+                                </>
+                            )}
                         </p>
                     </div>
                     {canWrite && (
@@ -594,46 +632,56 @@ export default function Index({ events, branches, speakers, statuses, summary, f
 
                 {/* ── Filter bar ── */}
                 <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-3">
-                    {/* Bulan */}
+                    {/* Tipe periode */}
+                    <div className="flex flex-wrap items-center gap-2">
+                        <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden">
+                            {PERIOD_TYPES.map((pt) => (
+                                <button
+                                    key={pt.type}
+                                    onClick={() =>
+                                        applyFilters({
+                                            range: pt.preset ? periodPresets?.[pt.preset] || '' : '',
+                                        })
+                                    }
+                                    className={`px-3 py-1.5 text-xs font-medium border-r border-gray-200 last:border-r-0 transition ${
+                                        periodType === pt.type
+                                            ? 'bg-gray-900 text-white'
+                                            : 'bg-white text-gray-600 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    {pt.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Navigasi periode */}
                     <div className="flex flex-wrap items-center gap-2">
                         <button
-                            onClick={() => applyFilters({ month: shiftMonth(activeMonth || currentMonthStr(), -1) })}
-                            className="w-8 h-8 flex items-center justify-center border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 hover:border-gray-400 transition"
-                            aria-label="Bulan sebelumnya"
+                            onClick={() => rangeNav?.prev && applyFilters({ range: rangeNav.prev })}
+                            disabled={isAllPeriod || !rangeNav?.prev}
+                            className="w-8 h-8 flex items-center justify-center border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 hover:border-gray-400 transition disabled:opacity-30 disabled:hover:bg-white disabled:cursor-not-allowed"
+                            aria-label="Periode sebelumnya"
                         >
                             &lsaquo;
                         </button>
-                        <span className="text-sm font-semibold text-gray-800 min-w-[140px] text-center">
-                            {monthLabel(activeMonth)}
+                        <span className="text-sm font-semibold text-gray-800 min-w-[180px] text-center">
+                            {periodLabel}
                         </span>
                         <button
-                            onClick={() => applyFilters({ month: shiftMonth(activeMonth || currentMonthStr(), 1) })}
-                            className="w-8 h-8 flex items-center justify-center border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 hover:border-gray-400 transition"
-                            aria-label="Bulan berikutnya"
+                            onClick={() => rangeNav?.next && applyFilters({ range: rangeNav.next })}
+                            disabled={isAllPeriod || !rangeNav?.next}
+                            className="w-8 h-8 flex items-center justify-center border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 hover:border-gray-400 transition disabled:opacity-30 disabled:hover:bg-white disabled:cursor-not-allowed"
+                            aria-label="Periode berikutnya"
                         >
                             &rsaquo;
                         </button>
-                        {activeMonth ? (
-                            <>
-                                <button
-                                    onClick={() => applyFilters({ month: currentMonthStr() })}
-                                    className="px-3 h-8 border border-gray-300 rounded-lg text-xs text-gray-700 hover:bg-gray-50 transition"
-                                >
-                                    Bulan Ini
-                                </button>
-                                <button
-                                    onClick={() => applyFilters({ month: '' })}
-                                    className="text-xs text-gray-500 underline"
-                                >
-                                    Semua bulan
-                                </button>
-                            </>
-                        ) : (
+                        {showTodayButton && (
                             <button
-                                onClick={() => applyFilters({ month: currentMonthStr() })}
+                                onClick={() => applyFilters({ range: todayKey })}
                                 className="px-3 h-8 border border-gray-300 rounded-lg text-xs text-gray-700 hover:bg-gray-50 transition"
                             >
-                                Bulan Ini
+                                Periode Ini
                             </button>
                         )}
                     </div>
@@ -668,6 +716,42 @@ export default function Index({ events, branches, speakers, statuses, summary, f
                         </div>
                     )}
 
+                    {/* Dai (dropdown) */}
+                    <div className="flex flex-wrap items-center gap-2">
+                        <label className="text-xs font-medium text-gray-600">🎤 Dai</label>
+                        <select
+                            value={activeSpeaker}
+                            onChange={(e) => applyFilters({ speaker: e.target.value })}
+                            className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs text-gray-700 max-w-[260px]"
+                        >
+                            <option value="">Semua dai</option>
+                            {speakerNotInList && (
+                                <option value={activeSpeaker}>{activeSpeaker} (di luar filter cabang)</option>
+                            )}
+                            {(speakerOptions || []).map((name) => (
+                                <option key={name} value={name}>
+                                    {name}
+                                </option>
+                            ))}
+                            {hasUnnamedSpeaker && (
+                                <option value={SPEAKER_NONE}>&mdash; Belum ditentukan &mdash;</option>
+                            )}
+                        </select>
+                        {activeSpeaker && (
+                            <button
+                                onClick={() => applyFilters({ speaker: '' })}
+                                className="text-xs text-gray-500 underline"
+                            >
+                                Reset dai
+                            </button>
+                        )}
+                        {(speakerOptions || []).length === 0 && !hasUnnamedSpeaker && (
+                            <span className="text-[11px] text-gray-400">
+                                Belum ada kampanye untuk cabang ini
+                            </span>
+                        )}
+                    </div>
+
                     {/* Status (pill) + jumlah */}
                     <div className="flex flex-wrap gap-1.5">
                         <button
@@ -697,12 +781,24 @@ export default function Index({ events, branches, speakers, statuses, summary, f
                         ))}
                     </div>
 
-                    {/* Catatan: ringkasan sengaja tidak ikut filter status */}
+                    {/* Catatan: ringkasan mengikuti periode/cabang/dai, TAPI bukan status */}
                     {activeStatus && (
                         <div className="text-[11px] text-gray-500 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
-                            Daftar di bawah disaring status <span className="font-semibold">{STATUS_META[activeStatus]?.label ?? activeStatus}</span>,
-                            tetapi ringkasan &amp; funnel di atas tetap menghitung <span className="font-semibold">semua status</span> agar
-                            gambaran periodenya utuh.
+                            Ringkasan &amp; funnel di atas mengikuti filter{' '}
+                            <span className="font-semibold">periode, cabang, dan dai</span>, tetapi{' '}
+                            <span className="font-semibold">tidak</span> mengikuti filter status &mdash; angkanya
+                            tetap menghitung semua status agar gambaran periodenya utuh. Yang disaring status{' '}
+                            <span className="font-semibold">{STATUS_META[activeStatus]?.label ?? activeStatus}</span>{' '}
+                            hanyalah daftar di bawah.
+                        </div>
+                    )}
+
+                    {/* Catatan semantik periode panjang */}
+                    {(periodType === 'quarter' || periodType === 'semester' || periodType === 'year') && (
+                        <div className="text-[11px] text-gray-500 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
+                            Kampanye yang <span className="font-semibold">bersinggungan</span> dengan periode ini
+                            dihitung penuh &mdash; kampanye lintas periode akan muncul di kedua periode, jadi angka
+                            antar-periode tidak untuk dijumlahkan.
                         </div>
                     )}
                 </div>
@@ -739,7 +835,7 @@ export default function Index({ events, branches, speakers, statuses, summary, f
                                             Belum ada kampanye pada filter ini
                                         </div>
                                         <div className="text-xs text-gray-500 mt-1">
-                                            Coba ganti bulan atau status di atas
+                                            Coba ganti periode, dai, atau status di atas
                                             {canWrite && ', atau buat lewat tombol "+ Kampanye Baru"'}.
                                         </div>
                                     </td>
@@ -856,7 +952,9 @@ export default function Index({ events, branches, speakers, statuses, summary, f
                         <div className="bg-white border border-dashed border-gray-300 rounded-xl p-8 text-center">
                             <div className="text-3xl mb-2">🗂️</div>
                             <div className="text-sm font-medium text-gray-700">Belum ada kampanye</div>
-                            <div className="text-xs text-gray-500 mt-1">Coba ganti bulan atau status di atas.</div>
+                            <div className="text-xs text-gray-500 mt-1">
+                                Coba ganti periode, dai, atau status di atas.
+                            </div>
                         </div>
                     )}
                     {events.map((ev) => (
@@ -1148,7 +1246,7 @@ export default function Index({ events, branches, speakers, statuses, summary, f
                                         disabled={!form.data.branch_id}
                                     >
                                         <option value="">— Belum ditentukan —</option>
-                                        {speakerOptions.map((s) => (
+                                        {speakerOptionsForm.map((s) => (
                                             <option key={s.id} value={s.name}>
                                                 {s.name}
                                                 {s.branch_id === null && !s.fallback ? ' · Nasional' : ''}
