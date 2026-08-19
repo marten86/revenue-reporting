@@ -4,7 +4,27 @@ import AppLayout from '@/Components/AppLayout';
 
 /**
  * Pipeline Safari Dakwah
- * penanda versi: pipeline-ranking-dai-20260819
+ * penanda versi: pipeline-avg-capaian-20260820
+ *
+ * Ditambahkan 20 Agustus 2026 (sesi rata-rata capaian):
+ *   - Strip Revenue: baris "rata-rata per kampanye" + "rupiah per titik
+ *     eksekusi" + label scope gabungan cabang
+ *   - Peringkat Da'i: angka rata-rata kecil di bawah Capaian agregat
+ *
+ * DUA ANGKA CAPAIAN, DUA MAKNA -- jangan disamakan:
+ *   agregat   = total realisasi / total komitmen  -> tertimbang nominal,
+ *               kampanye besar mendominasi. Ini angka pelaporan.
+ *   rata-rata = mean dari capaian tiap kampanye   -> setiap kampanye
+ *               berbobot sama. Ini angka pembacaan kondisi tim.
+ *   Selisih besar antara keduanya justru informasinya.
+ *
+ * SUMBER ANGKA RATA-RATA = BACKEND (`summary.avg_capaian_pct`), BUKAN
+ * dihitung di sini. Prop `events` datang dari $listQuery yang ikut filter
+ * status, sedangkan capaian agregat di sebelahnya datang dari $summaryEvents
+ * yang TIDAK ikut filter status. Menghitung rata-rata dari `events` membuat
+ * dua angka yang bersanding di kartu yang sama datang dari populasi berbeda
+ * -- tanpa error, tanpa gejala. Ini satu-satunya persentase di halaman ini
+ * yang dihitung di PHP, dan alasannya ditulis juga di controller.
  *
  * Ditambahkan 19 Agustus 2026 (sesi ranking):
  *   - Kartu "Peringkat Da'i" (per da'i PER CABANG, bisa diurutkan per kolom)
@@ -23,7 +43,7 @@ import AppLayout from '@/Components/AppLayout';
  * `rangeNav` / `periodPresets` / `todayPresets`. Definisi kuartal & semester
  * SENGAJA tidak diduplikasi di sini -- rumahnya App\Support\PeriodRange.
  *
- * Semua persentase diturunkan di frontend dari prop yang sudah dikirim
+ * Persentase lain diturunkan di frontend dari prop yang sudah dikirim
  * controller -> tidak ada rumus yang hidup di dua tempat.
  * Penyebut 0 -> "-", BUKAN 0%. Angka yang tidak bisa dihitung lebih baik
  * absen daripada berbohong (pelajaran sesi Analytics single-channel).
@@ -40,6 +60,11 @@ const NEXT_STATUS = { rencana: 'berjalan', berjalan: 'selesai' };
 
 const TARGET_MIN_PER_DAY = 2;   // samakan dengan konstanta di model SafdakEvent
 const TARGET_IDEAL_PER_DAY = 3;
+
+// Ambang selisih agregat vs rata-rata yang dianggap layak diberi catatan.
+// Di bawah ini selisihnya wajar (pembulatan + variasi kecil); di atasnya
+// biasanya menandakan sebaran nominal yang timpang.
+const GAP_NOTE_THRESHOLD = 15;
 
 // Tipe periode. `preset` = kunci di prop periodPresets/todayPresets;
 // null berarti "semua periode" (range dikosongkan).
@@ -76,6 +101,19 @@ const shortRupiah = (value) => {
     if (Math.abs(n) >= 1e9) return 'Rp ' + (n / 1e9).toFixed(2).replace('.', ',') + ' M';
     if (Math.abs(n) >= 1e6) return 'Rp ' + Math.round(n / 1e6) + ' jt';
     return 'Rp ' + n.toLocaleString('id-ID', { maximumFractionDigits: 0 });
+};
+
+// Nominal SATUAN (mis. per titik) biasanya di orde juta rendah, dan
+// shortRupiah membulatkan juta ke bilangan bulat -- 1.900.000 jadi "Rp 2 jt",
+// terlalu kasar untuk angka yang dipakai memperkirakan kebutuhan titik.
+// Versi ini menahan satu desimal di orde juta.
+const perUnitRupiah = (value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return '—';
+    if (n >= 1e9) return 'Rp ' + (n / 1e9).toFixed(2).replace('.', ',') + ' M';
+    if (n >= 1e6) return 'Rp ' + (n / 1e6).toFixed(1).replace('.', ',') + ' jt';
+    if (n >= 1e3) return 'Rp ' + Math.round(n / 1e3).toLocaleString('id-ID') + ' rb';
+    return 'Rp ' + Math.round(n).toLocaleString('id-ID');
 };
 
 const formatTanggal = (dateStr) => {
@@ -115,6 +153,12 @@ const countDays = (startDate, endDate, customDates) => {
 // Komitmen 0 / kosong → null (tidak bisa dihitung, tampil "—"), BUKAN 0%.
 // Sengaja dibedakan supaya kampanye yang belum diisi komitmennya tidak
 // terlihat seperti kampanye yang gagal total.
+//
+// PENTING: aturan pengecualian + pembulatan di sini DIKEMBARKAN di
+// SafdakEventController (blok $capaianPerKampanye dan $capaianRows) untuk
+// menghitung rata-rata per kampanye. Kalau rumus di bawah berubah, kedua
+// blok PHP itu WAJIB ikut berubah -- kalau tidak, angka "rata-rata" tidak
+// lagi cocok dengan angka-angka yang dirata-ratakannya.
 const pctCapaian = (komitmen, realisasi) => {
     const k = Number(komitmen ?? 0);
     const r = Number(realisasi ?? 0);
@@ -228,11 +272,19 @@ function MiniBar({ value, max, color }) {
 
 // ── Peringkat Dai ─────────────────────────────────────────────
 // Sumber angka: prop `ranking` dari controller (sudah diagregasi per dai per
-// cabang). Persentase TETAP diturunkan di sini lewat pctCapaian/rasioCost yang
-// sama dengan seluruh halaman -- tidak ada rumus baru yang lahir.
+// cabang). Persentase agregat TETAP diturunkan di sini lewat pctCapaian/
+// rasioCost yang sama dengan seluruh halaman -- tidak ada rumus baru.
+// Rata-rata per kampanye (`avg_capaian_pct`) datang jadi dari controller,
+// karena butuh persentase per baris yang tidak dikirim ke frontend.
 //
 // Pengurutan dilakukan di frontend (state lokal), bukan lewat request baru:
 // datanya sudah utuh di memori, jadi tidak ada alasan bolak-balik ke server.
+//
+// CATATAN: rata-rata sengaja BELUM jadi kolom yang bisa diurutkan. Menambah
+// kolom ke-9 membuat tabel sesak, dan menaruh dua tombol sort di satu header
+// membingungkan. Kalau nanti terasa perlu, tambahkan entri ke RANK_COLUMNS
+// dengan get: (r) => r.avg_capaian_pct ?? null -- aturan "null selalu di
+// bawah" di bawah sudah menanganinya tanpa perubahan lain.
 const RANK_COLUMNS = [
     { key: 'revenue_realisasi', label: 'Realisasi',  dir: 'desc', get: (r) => Number(r.revenue_realisasi ?? 0) },
     { key: 'revenue_komitmen',  label: 'Komitmen',   dir: 'desc', get: (r) => Number(r.revenue_komitmen ?? 0) },
@@ -251,6 +303,14 @@ const isRankRowActive = (r, activeSpeaker) => {
     if (activeSpeaker === SPEAKER_NONE) return !r.speaker;
     return r.speaker === activeSpeaker;
 };
+
+// Rata-rata hanya ditampilkan kalau ada > 1 kampanye berkomitmen. Dengan
+// satu kampanye, rata-rata SELALU sama dengan agregat -- menampilkannya
+// cuma menambah angka tanpa menambah informasi.
+const showAvgFor = (r) =>
+    r.avg_capaian_pct !== null &&
+    r.avg_capaian_pct !== undefined &&
+    Number(r.avg_capaian_n ?? 0) > 1;
 
 function RankingCard({ ranking, activeSpeaker, showBranch, onPickSpeaker }) {
     const [open, setOpen] = useState(true);
@@ -409,6 +469,14 @@ function RankingCard({ ranking, activeSpeaker, showBranch, onPickSpeaker }) {
                                                     komitmen={r.revenue_komitmen}
                                                     realisasi={r.revenue_realisasi}
                                                 />
+                                                {showAvgFor(r) && (
+                                                    <div
+                                                        className="text-[10px] text-gray-400 leading-tight mt-0.5"
+                                                        title={`Rata-rata capaian per kampanye: ${r.avg_capaian_pct}% dari ${r.avg_capaian_n} kampanye yang punya komitmen. Angka besar di atasnya tertimbang nominal.`}
+                                                    >
+                                                        rata² {r.avg_capaian_pct}%
+                                                    </div>
+                                                )}
                                             </td>
                                             <td className="px-3 py-2.5 text-center">
                                                 <RasioBadge cost={r.total_cost} realisasi={r.revenue_realisasi} />
@@ -453,6 +521,11 @@ function RankingCard({ ranking, activeSpeaker, showBranch, onPickSpeaker }) {
                                             {shortRupiah(r.revenue_realisasi)}
                                         </div>
                                         <CapaianBadge komitmen={r.revenue_komitmen} realisasi={r.revenue_realisasi} />
+                                        {showAvgFor(r) && (
+                                            <div className="text-[10px] text-gray-400 leading-tight">
+                                                rata² {r.avg_capaian_pct}%
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             );
@@ -710,6 +783,33 @@ export default function Index({
     const totalKampanye = summary?.total ?? 0;
     const isKosong = (events?.length ?? 0) === 0;
 
+    // ── Rata-rata capaian per kampanye (dari backend) ─────────
+    // Sengaja TIDAK dihitung ulang di sini. Lihat catatan di kepala file:
+    // `events` ikut filter status, ringkasan tidak -- menghitungnya dari
+    // `events` membuat rata-rata dan agregat datang dari populasi berbeda.
+    const avgCapaian = summary?.avg_capaian_pct ?? null;
+    const avgCapaianN = Number(summary?.avg_capaian_n ?? 0);
+    const avgCapaianExcluded = Number(summary?.avg_capaian_excluded ?? 0);
+    const avgCapaianMeta = pctMeta(avgCapaian);
+
+    // Selisih agregat vs rata-rata. Inilah bacaan yang paling berguna:
+    // agregat jauh di ATAS rata-rata = hasil ditopang segelintir kampanye
+    // besar, sementara mayoritas kampanye tertinggal.
+    const capaianGap =
+        summaryPct !== null && avgCapaian !== null ? summaryPct - avgCapaian : null;
+
+    // Rupiah per titik eksekusi. Boleh dihitung di sini: pembilang dan
+    // penyebut dua-duanya dari `summary` yang sama, jadi tidak ada risiko
+    // beda scope seperti pada rata-rata di atas.
+    const revPerTitik =
+        titikEksekusi > 0 ? Number(summary?.revenue_realisasi ?? 0) / titikEksekusi : null;
+
+    // Rata-rata lintas cabang menyembunyikan sebaran: cabang yang bagus dan
+    // cabang yang jeblok berbaur jadi angka "sedang", dan cabang bermasalah
+    // tidak terlihat. Tidak disembunyikan -- hanya diberi label supaya jelas
+    // ini angka campuran, bukan potret satu cabang.
+    const scopeGabungan = branches.length > 1 && !activeBranch;
+
     // Baris label + isi di kartu filter. Lebar label dikunci di desktop supaya
     // semua kontrol rata kiri di kolom yang sama.
     const FilterRow = ({ label, children }) => (
@@ -851,7 +951,7 @@ export default function Index({
                             </div>
                         </div>
 
-                        {/* Realisasi + capaian */}
+                        {/* Realisasi + capaian agregat + rata-rata */}
                         <div className="p-3">
                             <div className="flex items-baseline justify-between gap-2">
                                 <span className="text-xs text-gray-500">Revenue Realisasi</span>
@@ -874,7 +974,7 @@ export default function Index({
                                         />
                                     </div>
                                     <div className="mt-1 text-[11px] text-gray-400">
-                                        Capaian vs komitmen
+                                        Capaian agregat vs komitmen
                                         {summaryPct > 100 && (
                                             <span className="text-emerald-700 font-medium"> &middot; melampaui komitmen</span>
                                         )}
@@ -883,6 +983,59 @@ export default function Index({
                             ) : (
                                 <div className="mt-1 text-[11px] text-gray-400">
                                     Capaian muncul setelah Rev. Komitmen diisi.
+                                </div>
+                            )}
+
+                            {/* Angka pendamping: rata-rata per kampanye & rupiah per titik.
+                                Sengaja kecil dan di bawah garis -- agregat adalah angka
+                                yang dilaporkan ke atas, ini angka untuk membaca kondisi
+                                dan memperkirakan kebutuhan titik. */}
+                            {(avgCapaian !== null || revPerTitik !== null) && (
+                                <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
+                                    {avgCapaian !== null && (
+                                        <div
+                                            className="text-[11px] text-gray-500"
+                                            title={`Rata-rata dari capaian tiap kampanye (setiap kampanye berbobot sama). Dihitung dari ${avgCapaianN} kampanye yang punya Rev. Komitmen.`}
+                                        >
+                                            Rata-rata per kampanye{' '}
+                                            <span className={`font-bold ${avgCapaianMeta.text}`}>{avgCapaian}%</span>
+                                            <span className="text-gray-300"> &middot; dari {avgCapaianN} kampanye</span>
+                                            {avgCapaianExcluded > 0 && (
+                                                <span className="text-gray-300">
+                                                    {' '}&middot; {avgCapaianExcluded} tanpa komitmen dikecualikan
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {revPerTitik !== null && (
+                                        <div
+                                            className="text-[11px] text-gray-500"
+                                            title={`${formatRupiah(summary?.revenue_realisasi)} dibagi ${titikEksekusi} titik eksekusi`}
+                                        >
+                                            ~
+                                            <span className="font-semibold text-gray-700">
+                                                {perUnitRupiah(revPerTitik)}
+                                            </span>{' '}
+                                            / titik eksekusi
+                                            <span className="text-gray-300"> &middot; {titikEksekusi} titik</span>
+                                        </div>
+                                    )}
+
+                                    {capaianGap !== null && Math.abs(capaianGap) >= GAP_NOTE_THRESHOLD && (
+                                        <div className="text-[11px] text-slate-600 bg-slate-50 border border-slate-200 rounded px-2 py-1">
+                                            {capaianGap > 0
+                                                ? 'Agregat jauh di atas rata-rata — hasil ditopang segelintir kampanye bernilai besar.'
+                                                : 'Rata-rata jauh di atas agregat — kampanye bernilai besar tertinggal dari yang kecil.'}
+                                        </div>
+                                    )}
+
+                                    {scopeGabungan && (
+                                        <div className="text-[11px] text-amber-700">
+                                            ⚠️ Gabungan {branches.length} cabang &mdash; sebaran antar-cabang tidak
+                                            terlihat di angka ini. Pilih satu cabang untuk potret yang setara.
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -1396,6 +1549,9 @@ export default function Index({
                 <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-gray-400 px-1">
                     <span>
                         <span className="font-semibold text-gray-500">Capaian</span> = realisasi &divide; komitmen &middot; makin besar makin baik
+                    </span>
+                    <span>
+                        <span className="font-semibold text-gray-500">Rata-rata per kampanye</span> = mean capaian tiap kampanye &middot; setiap kampanye berbobot sama &middot; kampanye tanpa komitmen dikecualikan
                     </span>
                     <span>
                         <span className="font-semibold text-gray-500">↓ Rasio Cost</span> = cost &divide; realisasi &middot; makin kecil makin baik

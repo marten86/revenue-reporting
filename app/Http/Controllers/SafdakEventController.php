@@ -11,7 +11,7 @@ use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 /**
- * penanda versi: safdakevent-ctrl-ranking-dai-20260819
+ * penanda versi: safdakevent-ctrl-avg-capaian-20260820
  */
 class SafdakEventController extends Controller
 {
@@ -143,6 +143,9 @@ class SafdakEventController extends Controller
         // cost-vs-realisasi) dihitung di frontend. Penyebut 0 di frontend
         // ditampilkan "-", bukan 0% -- angka yang tidak bisa dihitung lebih
         // baik absen daripada berbohong.
+        //
+        // SATU PENGECUALIAN: avg_capaian_pct di bawah. Alasannya ditulis di
+        // blok berikutnya.
         $summary = [
             'total'              => $summaryEvents->count(),
             'per_status'         => $summaryEvents->countBy('status'),
@@ -154,6 +157,47 @@ class SafdakEventController extends Controller
             'revenue_komitmen'   => (float) $summaryEvents->sum('revenue_komitmen'),
             'revenue_realisasi'  => (float) $summaryEvents->sum('revenue_realisasi'),
         ];
+
+        // -- Rata-rata capaian per kampanye (20 Agustus 2026) -----
+        //
+        // BEDA MAKNA dengan capaian agregat (revenue_realisasi / komitmen):
+        //   agregat   -> tertimbang nominal; kampanye besar mendominasi
+        //   rata-rata -> setiap kampanye berbobot sama
+        // Selisih keduanya justru informasi utamanya: agregat jauh di atas
+        // rata-rata berarti hasil ditopang segelintir kampanye besar.
+        //
+        // KENAPA DI BACKEND, padahal persentase lain di frontend: angka ini
+        // butuh persentase PER BARIS, dan satu-satunya koleksi per-baris yang
+        // scope-nya SAMA dengan strip ringkasan adalah $summaryEvents. Prop
+        // `events` di frontend datang dari $listQuery (ikut filter status) --
+        // menghitungnya dari sana membuat rata-rata dan agregat yang bersanding
+        // di kartu yang sama datang dari populasi berbeda, tanpa gejala apa pun.
+        //
+        // RUMUS WAJIB IDENTIK dengan pctCapaian() di SafdakPipeline/Index.jsx:
+        //   komitmen <= 0 -> DIKECUALIKAN dari pembilang DAN penyebut
+        //                    (bukan dihitung sebagai 0%)
+        //   dibulatkan PER KAMPANYE dulu, baru dirata-rata -- supaya hasilnya
+        //   benar-benar rata-rata dari angka yang terlihat di kolom Capaian,
+        //   bukan angka lain yang kebetulan mirip.
+        // Kalau pctCapaian() di JSX berubah, blok ini WAJIB ikut berubah.
+        //
+        // avg_capaian_n & avg_capaian_excluded dikirim supaya frontend bisa
+        // menyebutkan penyebutnya. Rata-rata dari 3 kampanye dan rata-rata
+        // dari 30 kampanye tidak boleh tampil dengan bobot visual yang sama.
+        $capaianPerKampanye = $summaryEvents
+            ->filter(fn ($e) => (float) $e->revenue_komitmen > 0)
+            ->map(fn ($e) => (int) round(
+                ((float) $e->revenue_realisasi / (float) $e->revenue_komitmen) * 100
+            ))
+            ->values();
+
+        $summary['avg_capaian_pct'] = $capaianPerKampanye->isEmpty()
+            ? null
+            : (int) round($capaianPerKampanye->avg());
+
+        $summary['avg_capaian_n'] = $capaianPerKampanye->count();
+
+        $summary['avg_capaian_excluded'] = $summaryEvents->count() - $capaianPerKampanye->count();
 
         // -- Peringkat dai (ditambahkan 19 Agustus 2026) ----------
         //
@@ -185,6 +229,19 @@ class SafdakEventController extends Controller
                 $name   = trim((string) $first->speaker);
                 $branch = $branchMeta->get($first->branch_id);
 
+                // Rata-rata capaian per dai. Aturan pengecualian & pembulatan
+                // PERSIS sama dengan $capaianPerKampanye di atas -- kalau yang
+                // satu berubah, yang lain ikut. Sengaja tidak di-extract jadi
+                // helper: dua-duanya pendek, dan penanda "harus sama" lebih
+                // terbaca sebagai komentar berdampingan daripada sebagai
+                // pemanggilan method yang mudah terlewat.
+                $capaianRows = $rows
+                    ->filter(fn ($e) => (float) $e->revenue_komitmen > 0)
+                    ->map(fn ($e) => (int) round(
+                        ((float) $e->revenue_realisasi / (float) $e->revenue_komitmen) * 100
+                    ))
+                    ->values();
+
                 return [
                     'speaker'           => $name === '' ? null : $name,
                     'branch_id'         => $first->branch_id,
@@ -196,6 +253,10 @@ class SafdakEventController extends Controller
                     'total_cost'        => (float) $rows->sum('total_cost'),
                     'revenue_komitmen'  => (float) $rows->sum('revenue_komitmen'),
                     'revenue_realisasi' => (float) $rows->sum('revenue_realisasi'),
+                    'avg_capaian_pct'   => $capaianRows->isEmpty()
+                        ? null
+                        : (int) round($capaianRows->avg()),
+                    'avg_capaian_n'     => $capaianRows->count(),
                 ];
             })
             // Urutan awal = Rev. Realisasi (keputusan Marten). Frontend boleh
