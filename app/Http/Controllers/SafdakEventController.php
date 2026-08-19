@@ -11,7 +11,7 @@ use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 /**
- * penanda versi: safdakevent-ctrl-filter-dai-20260819
+ * penanda versi: safdakevent-ctrl-ranking-dai-20260819
  */
 class SafdakEventController extends Controller
 {
@@ -20,7 +20,7 @@ class SafdakEventController extends Controller
 
     /**
      * Halaman pipeline: daftar kampanye SafDak dengan filter
-     * status / cabang / periode / dai.
+     * status / cabang / periode / dai + peringkat dai.
      *
      * Scope baca mengikuti pola SafariCalendarController:
      * - seesAllBranches() -> semua cabang
@@ -33,13 +33,24 @@ class SafdakEventController extends Controller
      * Kolom safari_dakwah_logs.event_id SENGAJA dipertahankan (soft link,
      * CRM-ready) supaya log lama tetap punya jejak asal-usulnya.
      *
-     * FILTER MANA YANG MASUK RINGKASAN (ditetapkan 19 Agustus 2026):
-     *   cabang  -> YA
-     *   periode -> YA
-     *   dai     -> YA  <- baru
-     *   status  -> TIDAK (perilaku lama, disengaja: funnel periode tetap utuh)
-     * Aturannya diwujudkan lewat pemisahan builder: $base memuat cabang +
-     * periode + dai, lalu di-clone; status HANYA menempel di $listQuery.
+     * FILTER MANA YANG MASUK KE ANGKA MANA (ditetapkan 19 Agustus 2026):
+     *
+     *              | ringkasan/funnel | peringkat dai | daftar
+     *   cabang     |       YA         |      YA       |  YA
+     *   periode    |       YA         |      YA       |  YA
+     *   dai        |       YA         |    TIDAK      |  YA
+     *   status     |     TIDAK        |    TIDAK      |  YA
+     *
+     * Diwujudkan lewat TIGA builder bertingkat, bukan flag:
+     *   $scoped    = cabang + periode                 -> sumber PERINGKAT
+     *   $base      = $scoped + dai                    -> sumber RINGKASAN
+     *   $listQuery = $base + status                   -> sumber DAFTAR
+     *
+     * Kenapa peringkat TIDAK ikut filter dai: kalau ikut, tabelnya menyusut
+     * jadi satu baris dan kehilangan seluruh maknanya (peringkat butuh
+     * pembanding). Dai yang sedang difilter di-highlight barisnya di frontend
+     * supaya user tetap tahu posisinya.
+     *
      * Kalau suatu saat dai dipindah ke $listQuery, ringkasan akan memakai
      * pembilang & penyebut dari scope berbeda -- bug yang sama persis dengan
      * "Analytics single-channel".
@@ -76,16 +87,21 @@ class SafdakEventController extends Controller
         // -- Filter dai ------------------------------------------
         $speakerParam = trim((string) $request->get('speaker', ''));
 
-        // -- Builder dasar: cabang + periode + dai (dipakai list + summary)
-        $base = SafdakEvent::query()->forBranches($branchIds);
+        // -- Builder 1: cabang + periode (TANPA dai, TANPA status) --
+        // Ini scope terluas yang masih "yang sedang dilihat user". Dipakai
+        // sebagai sumber peringkat dai.
+        $scoped = SafdakEvent::query()->forBranches($branchIds);
 
         if ($branchFilter !== null) {
-            $base->where('branch_id', $branchFilter);
+            $scoped->where('branch_id', $branchFilter);
         }
 
         if ($period !== null) {
-            $base->overlapsRange($period['start'], $period['end']);
+            $scoped->overlapsRange($period['start'], $period['end']);
         }
+
+        // -- Builder 2: + dai (dipakai list + summary) ------------
+        $base = clone $scoped;
 
         if ($speakerParam === self::SPEAKER_NONE) {
             // Kampanye tanpa dai. Dicek null DAN string kosong: middleware
@@ -98,7 +114,7 @@ class SafdakEventController extends Controller
             $base->where('speaker', $speakerParam);
         }
 
-        // -- List: + filter status -------------------------------
+        // -- Builder 3: + status ---------------------------------
         $listQuery = (clone $base)
             ->with('branch:id,name,code')
             ->orderBy('start_date');
@@ -113,16 +129,9 @@ class SafdakEventController extends Controller
         // Target min/ideal = turunan tanggal -> dijumlah via accessor di PHP
         // (bukan SQL), dari set yang sama dengan filter cabang+periode+dai.
         //
-        // total_cost ikut di-select sejak 27 Juli 2026 untuk rasio Cost vs
-        // Realisasi di strip ringkasan. WAJIB ada di daftar kolom ini: kalau
-        // kolomnya tidak di-select, sum('total_cost') mengembalikan 0 secara
-        // DIAM-DIAM (tanpa error), dan rasio agregat jadi salah tanpa gejala.
-        //
-        // 'speaker' TIDAK perlu di-select: filter dai bekerja lewat WHERE di
-        // $base, bukan lewat pengelompokan koleksi. Kalau nanti ditambah rekap
-        // per dai di ringkasan, kolom itu WAJIB dimasukkan ke daftar ini --
-        // groupBy('speaker') pada kolom yang tidak di-select akan menaruh
-        // semua baris ke satu bucket kosong, juga tanpa error.
+        // WAJIB: setiap kolom yang di-sum() HARUS ada di daftar select ini.
+        // Kolom yang tidak di-select membuat sum() mengembalikan 0 secara
+        // DIAM-DIAM (tanpa error) -- gejalanya cuma angka yang salah.
         $summaryEvents = (clone $base)->get([
             'id', 'start_date', 'end_date', 'custom_dates', 'status',
             'titik_deal', 'titik_eksekusi', 'total_cost',
@@ -146,6 +155,55 @@ class SafdakEventController extends Controller
             'revenue_realisasi'  => (float) $summaryEvents->sum('revenue_realisasi'),
         ];
 
+        // -- Peringkat dai (ditambahkan 19 Agustus 2026) ----------
+        //
+        // Dikelompokkan per DAI PER CABANG, bukan per dai global. Nama yang
+        // sama di dua cabang bisa jadi dua orang berbeda (prinsip yang sama
+        // dengan dedup narasumber: "ASWIN" di KDI belum tentu "ASWIN" di BPN).
+        // Menggabungkan keduanya akan melahirkan satu baris peringkat yang
+        // tidak mewakili siapa pun -- diam-diam, tanpa error.
+        //
+        // 'speaker' dan 'branch_id' WAJIB ada di select ini: pengelompokan
+        // dilakukan di level Collection, jadi kolom yang tidak di-select akan
+        // membuat SEMUA baris ber-speaker null dan jatuh ke satu bucket.
+        // Sama senyapnya dengan jebakan groupBy() di SQL.
+        //
+        // Semua status ikut (termasuk 'batal'), konsisten dengan ringkasan
+        // yang memang sengaja tidak mengikuti filter status.
+        $rankingEvents = (clone $scoped)->get([
+            'id', 'speaker', 'branch_id', 'status',
+            'titik_deal', 'titik_eksekusi', 'total_cost',
+            'revenue_komitmen', 'revenue_realisasi',
+        ]);
+
+        $branchMeta = $accessibleBranches->keyBy('id');
+
+        $ranking = $rankingEvents
+            ->groupBy(fn ($e) => trim((string) $e->speaker) . '|' . $e->branch_id)
+            ->map(function ($rows) use ($branchMeta) {
+                $first  = $rows->first();
+                $name   = trim((string) $first->speaker);
+                $branch = $branchMeta->get($first->branch_id);
+
+                return [
+                    'speaker'           => $name === '' ? null : $name,
+                    'branch_id'         => $first->branch_id,
+                    'branch_code'       => $branch->code ?? '-',
+                    'branch_name'       => $branch->name ?? '',
+                    'kampanye'          => $rows->count(),
+                    'titik_deal'        => (int) $rows->sum('titik_deal'),
+                    'titik_eksekusi'    => (int) $rows->sum('titik_eksekusi'),
+                    'total_cost'        => (float) $rows->sum('total_cost'),
+                    'revenue_komitmen'  => (float) $rows->sum('revenue_komitmen'),
+                    'revenue_realisasi' => (float) $rows->sum('revenue_realisasi'),
+                ];
+            })
+            // Urutan awal = Rev. Realisasi (keputusan Marten). Frontend boleh
+            // mengurutkan ulang per kolom; urutan di sini yang menentukan
+            // tampilan pertama dan isi "5 besar" sebelum user menyentuh apa pun.
+            ->sortByDesc('revenue_realisasi')
+            ->values();
+
         // -- Opsi dropdown dai (distinct dari kampanye yang benar-benar ada)
         //
         // SENGAJA TIDAK ikut filter periode. Kalau opsinya menyusut mengikuti
@@ -157,6 +215,8 @@ class SafdakEventController extends Controller
         // hanyalah dai yang punya kampanye. Konsekuensinya varian ejaan yang
         // belum dibersihkan ("Ustadz X" vs "Ust X") akan tampil sebagai dua
         // opsi -- itu memang kondisi datanya, dan justru jadi terlihat.
+        // Di tabel peringkat konsekuensinya lebih tajam: satu orang terpecah
+        // jadi dua baris, dua-duanya turun peringkat.
         $speakerQuery = SafdakEvent::query()->forBranches($branchIds);
 
         if ($branchFilter !== null) {
@@ -193,6 +253,7 @@ class SafdakEventController extends Controller
             'hasUnnamedSpeaker' => $hasUnnamedSpeaker,
             'statuses'          => SafdakEvent::STATUSES,
             'summary'           => $summary,
+            'ranking'           => $ranking,
 
             // Navigasi periode dirakit di backend supaya frontend tidak perlu
             // menghitung kuartal/semester sendiri (sumber kebenaran ganda).

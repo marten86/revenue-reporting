@@ -4,11 +4,19 @@ import AppLayout from '@/Components/AppLayout';
 
 /**
  * Pipeline Safari Dakwah
- * penanda versi: pipeline-filter-dai-periode-20260819
+ * penanda versi: pipeline-ranking-dai-20260819
  *
- * Ditambahkan 19 Agustus 2026:
- *   - Filter Dai (dropdown, dari kampanye yang benar-benar ada)
- *   - Filter periode Bulan / Kuartal / Semester / Tahun / Semua
+ * Ditambahkan 19 Agustus 2026 (sesi ranking):
+ *   - Kartu "Peringkat Da'i" (per da'i PER CABANG, bisa diurutkan per kolom)
+ *   - Filter bar dirapikan: kolom label, divider, aturan warna netral/aktif
+ *
+ * ATURAN WARNA FILTER (supaya tidak ramai):
+ *   tidak aktif -> netral (putih, border slate-200, teks slate-500)
+ *   aktif       -> berwarna penuh
+ * Jadi dalam sekali pandang, yang berwarna HANYA filter yang menyala.
+ * Pill cabang sengaja TIDAK memakai palet warna cabang milik kalender --
+ * menyalinnya ke sini melahirkan sumber kebenaran ganda untuk sesuatu yang
+ * cuma kosmetik.
  *
  * PERIODE DIHITUNG DI BACKEND. Tombol < > , label periode, dan kunci saat
  * berganti tipe semuanya datang sebagai string siap pakai lewat prop
@@ -45,6 +53,12 @@ const PERIOD_TYPES = [
 
 // Sentinel filter dai tanpa nama - harus sama dengan SPEAKER_NONE di controller
 const SPEAKER_NONE = '__none__';
+
+// Kelas pill: netral saat tidak aktif, berwarna saat aktif
+const PILL_BASE =
+    'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition';
+const PILL_OFF = 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-700';
+const PILL_ON = 'bg-slate-900 text-white border-slate-900 shadow-sm';
 
 const formatRupiah = (value) => {
     if (value === null || value === undefined || value === '') return '—';
@@ -212,6 +226,268 @@ function MiniBar({ value, max, color }) {
     );
 }
 
+// ── Peringkat Dai ─────────────────────────────────────────────
+// Sumber angka: prop `ranking` dari controller (sudah diagregasi per dai per
+// cabang). Persentase TETAP diturunkan di sini lewat pctCapaian/rasioCost yang
+// sama dengan seluruh halaman -- tidak ada rumus baru yang lahir.
+//
+// Pengurutan dilakukan di frontend (state lokal), bukan lewat request baru:
+// datanya sudah utuh di memori, jadi tidak ada alasan bolak-balik ke server.
+const RANK_COLUMNS = [
+    { key: 'revenue_realisasi', label: 'Realisasi',  dir: 'desc', get: (r) => Number(r.revenue_realisasi ?? 0) },
+    { key: 'revenue_komitmen',  label: 'Komitmen',   dir: 'desc', get: (r) => Number(r.revenue_komitmen ?? 0) },
+    { key: 'capaian',           label: 'Capaian',    dir: 'desc', get: (r) => pctCapaian(r.revenue_komitmen, r.revenue_realisasi) },
+    { key: 'titik_eksekusi',    label: 'Eksekusi',   dir: 'desc', get: (r) => Number(r.titik_eksekusi ?? 0) },
+    { key: 'rasio',             label: 'Rasio Cost', dir: 'asc',  get: (r) => rasioCost(r.total_cost, r.revenue_realisasi).pct },
+    { key: 'kampanye',          label: 'Kampanye',   dir: 'desc', get: (r) => Number(r.kampanye ?? 0) },
+];
+
+const RANK_MEDALS = ['🥇', '🥈', '🥉'];
+
+const rankRowKey = (r) => `${r.speaker || SPEAKER_NONE}|${r.branch_id}`;
+
+const isRankRowActive = (r, activeSpeaker) => {
+    if (!activeSpeaker) return false;
+    if (activeSpeaker === SPEAKER_NONE) return !r.speaker;
+    return r.speaker === activeSpeaker;
+};
+
+function RankingCard({ ranking, activeSpeaker, showBranch, onPickSpeaker }) {
+    const [open, setOpen] = useState(true);
+    const [showAll, setShowAll] = useState(false);
+    const [sort, setSort] = useState({ key: 'revenue_realisasi', dir: 'desc' });
+
+    const sorted = useMemo(() => {
+        const col = RANK_COLUMNS.find((c) => c.key === sort.key) || RANK_COLUMNS[0];
+        const rows = [...(ranking || [])];
+        rows.sort((a, b) => {
+            const va = col.get(a);
+            const vb = col.get(b);
+            const na = va === null || va === undefined;
+            const nb = vb === null || vb === undefined;
+            // Nilai yang tidak bisa dihitung selalu di bawah, apa pun arah urutnya
+            if (na && nb) return 0;
+            if (na) return 1;
+            if (nb) return -1;
+            if (va === vb) return 0;
+            return sort.dir === 'asc' ? va - vb : vb - va;
+        });
+        return rows;
+    }, [ranking, sort]);
+
+    if (!ranking || ranking.length === 0) return null;
+
+    const visible = showAll ? sorted : sorted.slice(0, 5);
+    const sisa = sorted.length - visible.length;
+
+    const toggleSort = (col) =>
+        setSort((s) =>
+            s.key === col.key
+                ? { key: col.key, dir: s.dir === 'asc' ? 'desc' : 'asc' }
+                : { key: col.key, dir: col.dir }
+        );
+
+    const SortTh = ({ col, className = '' }) => (
+        <th className={`px-3 py-2.5 ${className}`}>
+            <button
+                onClick={() => toggleSort(col)}
+                className={`inline-flex items-center gap-1 uppercase tracking-wide transition ${
+                    sort.key === col.key ? 'text-slate-800 font-bold' : 'text-slate-400 hover:text-slate-600'
+                }`}
+                title={`Urutkan menurut ${col.label}`}
+            >
+                {col.label}
+                <span className="text-[9px] leading-none">
+                    {sort.key === col.key ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}
+                </span>
+            </button>
+        </th>
+    );
+
+    return (
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-gray-50/70 border-b border-gray-200">
+                <span className="text-xs font-semibold text-gray-600">
+                    🏆 Peringkat Da&apos;i
+                    <span className="ml-1.5 font-normal text-gray-400">
+                        {sorted.length} da&apos;i &middot; periode &amp; cabang aktif
+                    </span>
+                </span>
+                <button
+                    onClick={() => setOpen((v) => !v)}
+                    className="text-[11px] text-gray-500 hover:text-gray-800 underline"
+                >
+                    {open ? 'Sembunyikan' : 'Tampilkan'}
+                </button>
+            </div>
+
+            {open && (
+                <>
+                    <div className="px-3 py-1.5 text-[11px] text-gray-500 bg-white border-b border-gray-100">
+                        Mengikuti filter <span className="font-semibold">periode &amp; cabang</span>; sengaja{' '}
+                        <span className="font-semibold">tidak</span> mengikuti filter da&apos;i &amp; status &mdash;
+                        peringkat butuh pembanding. Dikelompokkan{' '}
+                        <span className="font-semibold">per da&apos;i per cabang</span>: nama sama di dua cabang
+                        dihitung terpisah. Klik nama untuk memfilter halaman ini.
+                    </div>
+
+                    {/* Tabel (desktop) */}
+                    <div className="hidden md:block overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="bg-white text-left text-[11px] border-b border-gray-200">
+                                <tr>
+                                    <th className="px-3 py-2.5 pl-4 w-10 text-slate-400 uppercase tracking-wide">#</th>
+                                    <th className="px-3 py-2.5 text-slate-400 uppercase tracking-wide">Da&apos;i</th>
+                                    <SortTh col={RANK_COLUMNS[5]} className="text-center" />
+                                    <SortTh col={RANK_COLUMNS[3]} className="text-center" />
+                                    <SortTh col={RANK_COLUMNS[1]} className="text-right" />
+                                    <SortTh col={RANK_COLUMNS[0]} className="text-right" />
+                                    <SortTh col={RANK_COLUMNS[2]} className="text-center" />
+                                    <SortTh col={RANK_COLUMNS[4]} className="text-center" />
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {visible.map((r, i) => {
+                                    const aktif = isRankRowActive(r, activeSpeaker);
+                                    const sampelKecil = Number(r.kampanye) < 2;
+                                    return (
+                                        <tr
+                                            key={rankRowKey(r)}
+                                            className={`transition-colors ${
+                                                aktif
+                                                    ? 'bg-amber-50/70 ring-1 ring-inset ring-amber-200'
+                                                    : 'hover:bg-gray-50/70'
+                                            }`}
+                                        >
+                                            <td className="px-3 py-2.5 pl-4 text-center">
+                                                {i < 3 && !showAll ? (
+                                                    <span className="text-base leading-none">{RANK_MEDALS[i]}</span>
+                                                ) : (
+                                                    <span className="text-xs font-semibold text-slate-400">{i + 1}</span>
+                                                )}
+                                            </td>
+                                            <td className="px-3 py-2.5">
+                                                <button
+                                                    onClick={() => onPickSpeaker(r)}
+                                                    className="text-left text-gray-800 hover:text-slate-900 hover:underline font-medium"
+                                                    title="Filter halaman ini untuk da'i tersebut"
+                                                >
+                                                    {r.speaker || 'Belum ditentukan'}
+                                                </button>
+                                                {showBranch && (
+                                                    <div className="text-[11px] text-gray-400" title={r.branch_name}>
+                                                        {r.branch_code}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="px-3 py-2.5 text-center">
+                                                <span
+                                                    className={sampelKecil ? 'text-gray-400' : 'text-gray-700'}
+                                                    title={
+                                                        sampelKecil
+                                                            ? 'Baru 1 kampanye - persentasenya belum bisa dibandingkan setara'
+                                                            : undefined
+                                                    }
+                                                >
+                                                    {r.kampanye}
+                                                </span>
+                                            </td>
+                                            <td className="px-3 py-2.5 text-center text-emerald-700 font-semibold">
+                                                {r.titik_eksekusi}
+                                                <span className="text-[11px] font-normal text-gray-400">
+                                                    {' '}/ {r.titik_deal} D
+                                                </span>
+                                            </td>
+                                            <td className="px-3 py-2.5 text-right whitespace-nowrap text-gray-700">
+                                                {formatRupiah(r.revenue_komitmen)}
+                                            </td>
+                                            <td className="px-3 py-2.5 text-right whitespace-nowrap font-semibold text-emerald-700">
+                                                {formatRupiah(r.revenue_realisasi)}
+                                            </td>
+                                            <td className="px-3 py-2.5 text-center">
+                                                <CapaianBadge
+                                                    komitmen={r.revenue_komitmen}
+                                                    realisasi={r.revenue_realisasi}
+                                                />
+                                            </td>
+                                            <td className="px-3 py-2.5 text-center">
+                                                <RasioBadge cost={r.total_cost} realisasi={r.revenue_realisasi} />
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Daftar (mobile) */}
+                    <div className="md:hidden divide-y divide-gray-100">
+                        {visible.map((r, i) => {
+                            const aktif = isRankRowActive(r, activeSpeaker);
+                            return (
+                                <div
+                                    key={rankRowKey(r)}
+                                    className={`flex items-center gap-3 px-3 py-2.5 ${aktif ? 'bg-amber-50/70' : ''}`}
+                                >
+                                    <span className="w-6 text-center shrink-0">
+                                        {i < 3 && !showAll ? (
+                                            <span className="text-base leading-none">{RANK_MEDALS[i]}</span>
+                                        ) : (
+                                            <span className="text-xs font-semibold text-slate-400">{i + 1}</span>
+                                        )}
+                                    </span>
+                                    <div className="min-w-0 flex-1">
+                                        <button
+                                            onClick={() => onPickSpeaker(r)}
+                                            className="block text-left text-sm font-medium text-gray-800 truncate"
+                                        >
+                                            {r.speaker || 'Belum ditentukan'}
+                                        </button>
+                                        <div className="text-[11px] text-gray-400">
+                                            {showBranch && `${r.branch_code} · `}
+                                            {r.kampanye} kampanye &middot; E {r.titik_eksekusi}
+                                        </div>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                        <div className="text-sm font-semibold text-emerald-700">
+                                            {shortRupiah(r.revenue_realisasi)}
+                                        </div>
+                                        <CapaianBadge komitmen={r.revenue_komitmen} realisasi={r.revenue_realisasi} />
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-t border-gray-100">
+                        <span className="text-[11px] text-gray-400">
+                            Nama dikelompokkan persis seperti tertulis &mdash; varian ejaan muncul sebagai baris
+                            terpisah.
+                        </span>
+                        {sisa > 0 ? (
+                            <button
+                                onClick={() => setShowAll(true)}
+                                className="text-[11px] text-slate-600 hover:text-slate-900 underline"
+                            >
+                                Lihat semua ({sisa} lagi)
+                            </button>
+                        ) : (
+                            sorted.length > 5 && (
+                                <button
+                                    onClick={() => setShowAll(false)}
+                                    className="text-[11px] text-slate-600 hover:text-slate-900 underline"
+                                >
+                                    Tampilkan 5 besar saja
+                                </button>
+                            )
+                        )}
+                    </div>
+                </>
+            )}
+        </div>
+    );
+}
+
 const emptyForm = {
     branch_id: '',
     title: '',
@@ -238,6 +514,7 @@ export default function Index({
     hasUnnamedSpeaker = false,
     statuses,
     summary,
+    ranking = [],
     rangeNav,
     periodPresets = {},
     todayPresets = {},
@@ -282,6 +559,14 @@ export default function Index({
 
     const activeStatus = filters?.status || '';
     const activeSpeaker = filters?.speaker || '';
+    const activeBranch = filters?.branch || '';
+
+    // Periode SELALU punya nilai (default = bulan berjalan), jadi tidak
+    // dihitung sebagai "filter aktif" -- kalau ikut dihitung, badge-nya tidak
+    // pernah nol dan kehilangan makna.
+    const activeFilterCount = [activeBranch, activeSpeaker, activeStatus].filter(Boolean).length;
+
+    const resetFilters = () => applyFilters({ branch: '', speaker: '', status: '' });
 
     const periodType = rangeNav?.type || 'all';
     const periodLabel = rangeNav?.label || 'Semua periode';
@@ -302,6 +587,12 @@ export default function Index({
 
     const speakerFilterLabel =
         activeSpeaker === SPEAKER_NONE ? 'Belum ditentukan' : activeSpeaker;
+
+    // Klik nama di tabel peringkat -> filter dai. Cabang TIDAK ikut diubah:
+    // mengubah dua filter sekaligus dari satu klik bikin user kehilangan jejak
+    // apa yang barusan terjadi.
+    const pickSpeakerFromRanking = (row) =>
+        applyFilters({ speaker: row.speaker || SPEAKER_NONE });
 
     // ── Dai untuk cabang terpilih di form ─────────────────────
     const speakerOptionsForm = useMemo(() => {
@@ -418,6 +709,15 @@ export default function Index({
 
     const totalKampanye = summary?.total ?? 0;
     const isKosong = (events?.length ?? 0) === 0;
+
+    // Baris label + isi di kartu filter. Lebar label dikunci di desktop supaya
+    // semua kontrol rata kiri di kolom yang sama.
+    const FilterRow = ({ label, children }) => (
+        <div className="px-3 py-2.5 grid grid-cols-1 md:grid-cols-[86px_1fr] gap-1.5 md:gap-3 md:items-center">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</div>
+            <div>{children}</div>
+        </div>
+    );
 
     return (
         <AppLayout title="Pipeline Safari Dakwah">
@@ -631,177 +931,217 @@ export default function Index({
                 </div>
 
                 {/* ── Filter bar ── */}
-                <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-3">
-                    {/* Tipe periode */}
-                    <div className="flex flex-wrap items-center gap-2">
-                        <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden">
-                            {PERIOD_TYPES.map((pt) => (
-                                <button
-                                    key={pt.type}
-                                    onClick={() =>
-                                        applyFilters({
-                                            range: pt.preset ? periodPresets?.[pt.preset] || '' : '',
-                                        })
-                                    }
-                                    className={`px-3 py-1.5 text-xs font-medium border-r border-gray-200 last:border-r-0 transition ${
-                                        periodType === pt.type
-                                            ? 'bg-gray-900 text-white'
-                                            : 'bg-white text-gray-600 hover:bg-gray-50'
-                                    }`}
-                                >
-                                    {pt.label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Navigasi periode */}
-                    <div className="flex flex-wrap items-center gap-2">
-                        <button
-                            onClick={() => rangeNav?.prev && applyFilters({ range: rangeNav.prev })}
-                            disabled={isAllPeriod || !rangeNav?.prev}
-                            className="w-8 h-8 flex items-center justify-center border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 hover:border-gray-400 transition disabled:opacity-30 disabled:hover:bg-white disabled:cursor-not-allowed"
-                            aria-label="Periode sebelumnya"
-                        >
-                            &lsaquo;
-                        </button>
-                        <span className="text-sm font-semibold text-gray-800 min-w-[180px] text-center">
-                            {periodLabel}
+                <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100">
+                    {/* Header kartu filter */}
+                    <div className="flex items-center justify-between px-3 py-2">
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                            🔎 Filter
+                            {activeFilterCount > 0 && (
+                                <span className="px-1.5 py-0.5 rounded-full bg-slate-900 text-white text-[10px] font-bold">
+                                    {activeFilterCount}
+                                </span>
+                            )}
                         </span>
-                        <button
-                            onClick={() => rangeNav?.next && applyFilters({ range: rangeNav.next })}
-                            disabled={isAllPeriod || !rangeNav?.next}
-                            className="w-8 h-8 flex items-center justify-center border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 hover:border-gray-400 transition disabled:opacity-30 disabled:hover:bg-white disabled:cursor-not-allowed"
-                            aria-label="Periode berikutnya"
-                        >
-                            &rsaquo;
-                        </button>
-                        {showTodayButton && (
+                        {activeFilterCount > 0 && (
                             <button
-                                onClick={() => applyFilters({ range: todayKey })}
-                                className="px-3 h-8 border border-gray-300 rounded-lg text-xs text-gray-700 hover:bg-gray-50 transition"
+                                onClick={resetFilters}
+                                className="text-[11px] text-slate-500 hover:text-slate-900 underline"
                             >
-                                Periode Ini
+                                Reset filter
                             </button>
                         )}
                     </div>
 
-                    {/* Cabang (pill) */}
+                    {/* Periode: tipe + navigasi dalam satu baris */}
+                    <FilterRow label="Periode">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden">
+                                {PERIOD_TYPES.map((pt) => (
+                                    <button
+                                        key={pt.type}
+                                        onClick={() =>
+                                            applyFilters({
+                                                range: pt.preset ? periodPresets?.[pt.preset] || '' : '',
+                                            })
+                                        }
+                                        className={`px-3 py-1.5 text-xs font-medium border-r border-slate-200 last:border-r-0 transition ${
+                                            periodType === pt.type
+                                                ? 'bg-slate-900 text-white'
+                                                : 'bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+                                        }`}
+                                    >
+                                        {pt.label}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="inline-flex items-center gap-1">
+                                <button
+                                    onClick={() => rangeNav?.prev && applyFilters({ range: rangeNav.prev })}
+                                    disabled={isAllPeriod || !rangeNav?.prev}
+                                    className="w-8 h-8 flex items-center justify-center border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-800 transition disabled:opacity-30 disabled:hover:bg-white disabled:cursor-not-allowed"
+                                    aria-label="Periode sebelumnya"
+                                >
+                                    &lsaquo;
+                                </button>
+                                <span className="text-sm font-semibold text-slate-800 min-w-[150px] text-center">
+                                    {periodLabel}
+                                </span>
+                                <button
+                                    onClick={() => rangeNav?.next && applyFilters({ range: rangeNav.next })}
+                                    disabled={isAllPeriod || !rangeNav?.next}
+                                    className="w-8 h-8 flex items-center justify-center border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-800 transition disabled:opacity-30 disabled:hover:bg-white disabled:cursor-not-allowed"
+                                    aria-label="Periode berikutnya"
+                                >
+                                    &rsaquo;
+                                </button>
+                            </div>
+
+                            {showTodayButton && (
+                                <button
+                                    onClick={() => applyFilters({ range: todayKey })}
+                                    className="px-3 h-8 border border-slate-200 rounded-lg text-xs text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition"
+                                >
+                                    Periode Ini
+                                </button>
+                            )}
+                        </div>
+                    </FilterRow>
+
+                    {/* Cabang */}
                     {branches.length > 1 && (
+                        <FilterRow label="Cabang">
+                            <div className="flex flex-wrap gap-1.5">
+                                <button
+                                    onClick={() => applyFilters({ branch: '' })}
+                                    className={`${PILL_BASE} ${!activeBranch ? PILL_ON : PILL_OFF}`}
+                                >
+                                    Semua
+                                </button>
+                                {branches.map((b) => (
+                                    <button
+                                        key={b.id}
+                                        onClick={() => applyFilters({ branch: b.id })}
+                                        title={b.name}
+                                        className={`${PILL_BASE} ${activeBranch === b.id ? PILL_ON : PILL_OFF}`}
+                                    >
+                                        {b.code}
+                                    </button>
+                                ))}
+                            </div>
+                        </FilterRow>
+                    )}
+
+                    {/* Dai */}
+                    <FilterRow label="Da'i">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <select
+                                value={activeSpeaker}
+                                onChange={(e) => applyFilters({ speaker: e.target.value })}
+                                className={`border rounded-lg px-2 py-1.5 text-xs max-w-[280px] transition ${
+                                    activeSpeaker
+                                        ? 'border-slate-900 bg-slate-900 text-white font-medium'
+                                        : 'border-slate-200 bg-white text-slate-600'
+                                }`}
+                            >
+                                <option value="">Semua da&apos;i</option>
+                                {speakerNotInList && (
+                                    <option value={activeSpeaker}>{activeSpeaker} (di luar filter cabang)</option>
+                                )}
+                                {(speakerOptions || []).map((name) => (
+                                    <option key={name} value={name}>
+                                        {name}
+                                    </option>
+                                ))}
+                                {hasUnnamedSpeaker && (
+                                    <option value={SPEAKER_NONE}>&mdash; Belum ditentukan &mdash;</option>
+                                )}
+                            </select>
+                            {activeSpeaker && (
+                                <button
+                                    onClick={() => applyFilters({ speaker: '' })}
+                                    className="text-[11px] text-slate-500 hover:text-slate-900 underline"
+                                >
+                                    Reset da&apos;i
+                                </button>
+                            )}
+                            {(speakerOptions || []).length === 0 && !hasUnnamedSpeaker && (
+                                <span className="text-[11px] text-slate-400">
+                                    Belum ada kampanye untuk cabang ini
+                                </span>
+                            )}
+                        </div>
+                    </FilterRow>
+
+                    {/* Status - satu-satunya pill yang boleh berwarna sendiri saat
+                        aktif, karena warnanya membawa arti (status), bukan sekadar
+                        penanda "terpilih". Saat tidak aktif: netral + dot warna. */}
+                    <FilterRow label="Status">
                         <div className="flex flex-wrap gap-1.5">
                             <button
-                                onClick={() => applyFilters({ branch: '' })}
-                                className={`px-3 py-1 rounded-full text-xs font-medium border transition ${
-                                    !filters?.branch
-                                        ? 'bg-gray-900 text-white border-gray-900'
-                                        : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
-                                }`}
+                                onClick={() => applyFilters({ status: '' })}
+                                className={`${PILL_BASE} ${!activeStatus ? PILL_ON : PILL_OFF}`}
                             >
-                                Semua Cabang
+                                Semua
+                                <span className="opacity-70">({totalKampanye})</span>
                             </button>
-                            {branches.map((b) => (
+                            {statuses.map((s) => (
                                 <button
-                                    key={b.id}
-                                    onClick={() => applyFilters({ branch: b.id })}
-                                    title={b.name}
-                                    className={`px-3 py-1 rounded-full text-xs font-medium border transition ${
-                                        filters?.branch === b.id
-                                            ? 'bg-gray-900 text-white border-gray-900'
-                                            : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                                    key={s}
+                                    onClick={() => applyFilters({ status: activeStatus === s ? '' : s })}
+                                    className={`${PILL_BASE} ${
+                                        activeStatus === s
+                                            ? `${STATUS_META[s].badge} font-semibold shadow-sm`
+                                            : PILL_OFF
                                     }`}
                                 >
-                                    {b.code}
+                                    <span className={`w-2 h-2 rounded-full ${STATUS_META[s].dot}`} />
+                                    {STATUS_META[s].label}
+                                    <span className="opacity-70">({perStatus[s] ?? 0})</span>
                                 </button>
                             ))}
                         </div>
-                    )}
+                    </FilterRow>
 
-                    {/* Dai (dropdown) */}
-                    <div className="flex flex-wrap items-center gap-2">
-                        <label className="text-xs font-medium text-gray-600">🎤 Dai</label>
-                        <select
-                            value={activeSpeaker}
-                            onChange={(e) => applyFilters({ speaker: e.target.value })}
-                            className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs text-gray-700 max-w-[260px]"
-                        >
-                            <option value="">Semua dai</option>
-                            {speakerNotInList && (
-                                <option value={activeSpeaker}>{activeSpeaker} (di luar filter cabang)</option>
+                    {/* Catatan - hanya muncul kalau relevan, supaya kartu tidak
+                        selalu memanjang */}
+                    {(activeStatus ||
+                        periodType === 'quarter' ||
+                        periodType === 'semester' ||
+                        periodType === 'year') && (
+                        <div className="px-3 py-2 space-y-1.5">
+                            {activeStatus && (
+                                <div className="text-[11px] text-slate-600 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                                    Ringkasan &amp; funnel mengikuti filter{' '}
+                                    <span className="font-semibold">periode, cabang, dan da&apos;i</span>, tetapi{' '}
+                                    <span className="font-semibold">tidak</span> mengikuti filter status. Yang disaring
+                                    status{' '}
+                                    <span className="font-semibold">
+                                        {STATUS_META[activeStatus]?.label ?? activeStatus}
+                                    </span>{' '}
+                                    hanyalah daftar di bawah.
+                                </div>
                             )}
-                            {(speakerOptions || []).map((name) => (
-                                <option key={name} value={name}>
-                                    {name}
-                                </option>
-                            ))}
-                            {hasUnnamedSpeaker && (
-                                <option value={SPEAKER_NONE}>&mdash; Belum ditentukan &mdash;</option>
+                            {(periodType === 'quarter' ||
+                                periodType === 'semester' ||
+                                periodType === 'year') && (
+                                <div className="text-[11px] text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
+                                    Kampanye yang <span className="font-semibold">bersinggungan</span> dengan periode
+                                    ini dihitung penuh &mdash; kampanye lintas periode akan muncul di kedua periode,
+                                    jadi angka antar-periode tidak untuk dijumlahkan.
+                                </div>
                             )}
-                        </select>
-                        {activeSpeaker && (
-                            <button
-                                onClick={() => applyFilters({ speaker: '' })}
-                                className="text-xs text-gray-500 underline"
-                            >
-                                Reset dai
-                            </button>
-                        )}
-                        {(speakerOptions || []).length === 0 && !hasUnnamedSpeaker && (
-                            <span className="text-[11px] text-gray-400">
-                                Belum ada kampanye untuk cabang ini
-                            </span>
-                        )}
-                    </div>
-
-                    {/* Status (pill) + jumlah */}
-                    <div className="flex flex-wrap gap-1.5">
-                        <button
-                            onClick={() => applyFilters({ status: '' })}
-                            className={`px-3 py-1 rounded-full text-xs font-medium border transition ${
-                                !activeStatus
-                                    ? 'bg-gray-900 text-white border-gray-900'
-                                    : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
-                            }`}
-                        >
-                            Semua status
-                            <span className="ml-1 opacity-70">({totalKampanye})</span>
-                        </button>
-                        {statuses.map((s) => (
-                            <button
-                                key={s}
-                                onClick={() => applyFilters({ status: activeStatus === s ? '' : s })}
-                                className={`px-3 py-1 rounded-full text-xs font-medium border transition ${
-                                    activeStatus === s
-                                        ? 'bg-gray-900 text-white border-gray-900'
-                                        : STATUS_META[s].badge + ' hover:opacity-80'
-                                }`}
-                            >
-                                {STATUS_META[s].label}
-                                <span className="ml-1 opacity-70">({perStatus[s] ?? 0})</span>
-                            </button>
-                        ))}
-                    </div>
-
-                    {/* Catatan: ringkasan mengikuti periode/cabang/dai, TAPI bukan status */}
-                    {activeStatus && (
-                        <div className="text-[11px] text-gray-500 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
-                            Ringkasan &amp; funnel di atas mengikuti filter{' '}
-                            <span className="font-semibold">periode, cabang, dan dai</span>, tetapi{' '}
-                            <span className="font-semibold">tidak</span> mengikuti filter status &mdash; angkanya
-                            tetap menghitung semua status agar gambaran periodenya utuh. Yang disaring status{' '}
-                            <span className="font-semibold">{STATUS_META[activeStatus]?.label ?? activeStatus}</span>{' '}
-                            hanyalah daftar di bawah.
-                        </div>
-                    )}
-
-                    {/* Catatan semantik periode panjang */}
-                    {(periodType === 'quarter' || periodType === 'semester' || periodType === 'year') && (
-                        <div className="text-[11px] text-gray-500 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
-                            Kampanye yang <span className="font-semibold">bersinggungan</span> dengan periode ini
-                            dihitung penuh &mdash; kampanye lintas periode akan muncul di kedua periode, jadi angka
-                            antar-periode tidak untuk dijumlahkan.
                         </div>
                     )}
                 </div>
+
+                {/* ── Peringkat dai ── */}
+                <RankingCard
+                    ranking={ranking}
+                    activeSpeaker={activeSpeaker}
+                    showBranch={branches.length > 1 && !activeBranch}
+                    onPickSpeaker={pickSpeakerFromRanking}
+                />
 
                 {/* ── Tabel (desktop) ── */}
                 <div className="hidden md:block bg-white border border-gray-200 rounded-xl overflow-x-auto">
