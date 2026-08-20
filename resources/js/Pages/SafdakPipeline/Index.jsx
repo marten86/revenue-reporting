@@ -4,27 +4,34 @@ import AppLayout from '@/Components/AppLayout';
 
 /**
  * Pipeline Safari Dakwah
- * penanda versi: pipeline-avg-capaian-20260820
+ * penanda versi: pipeline-per-titik-20260820
  *
- * Ditambahkan 20 Agustus 2026 (sesi rata-rata capaian):
- *   - Strip Revenue: baris "rata-rata per kampanye" + "rupiah per titik
- *     eksekusi" + label scope gabungan cabang
- *   - Peringkat Da'i: angka rata-rata kecil di bawah Capaian agregat
+ * Ditambahkan 20 Agustus 2026 (sesi rupiah per titik):
+ *   Nilai per TITIK EKSEKUSI untuk komitmen DAN realisasi, di tiga level:
+ *     - per periode  -> Strip Revenue (dari prop `summary`)
+ *     - per da'i     -> Peringkat Da'i (dari prop `ranking`)
+ *     - per kampanye -> tabel & kartu daftar (dari prop `events`)
+ *   Plus preview live di modal form.
  *
- * DUA ANGKA CAPAIAN, DUA MAKNA -- jangan disamakan:
- *   agregat   = total realisasi / total komitmen  -> tertimbang nominal,
- *               kampanye besar mendominasi. Ini angka pelaporan.
- *   rata-rata = mean dari capaian tiap kampanye   -> setiap kampanye
- *               berbobot sama. Ini angka pembacaan kondisi tim.
- *   Selisih besar antara keduanya justru informasinya.
+ * KENAPA NOMINAL, BUKAN PERSENTASE: total absolut tidak bisa dibandingkan
+ * antar-cabang/antar-periode yang ukurannya berbeda -- yang kampanyenya lebih
+ * banyak selalu menang. Rupiah per titik menjawab pertanyaan perencanaan yang
+ * sebenarnya dipakai: "satu titik menghasilkan berapa, jadi untuk target Rp X
+ * butuh berapa titik?"
  *
- * SUMBER ANGKA RATA-RATA = BACKEND (`summary.avg_capaian_pct`), BUKAN
- * dihitung di sini. Prop `events` datang dari $listQuery yang ikut filter
- * status, sedangkan capaian agregat di sebelahnya datang dari $summaryEvents
- * yang TIDAK ikut filter status. Menghitung rata-rata dari `events` membuat
- * dua angka yang bersanding di kartu yang sama datang dari populasi berbeda
- * -- tanpa error, tanpa gejala. Ini satu-satunya persentase di halaman ini
- * yang dihitung di PHP, dan alasannya ditulis juga di controller.
+ * PENYEBUT KEDUANYA = titik_eksekusi (keputusan Marten, 20 Agustus 2026).
+ * Konsekuensi yang HARUS diingat: selama titik_eksekusi < titik_deal, angka
+ * Komitmen/titik akan tampak tinggi -- pembilangnya janji untuk SELURUH titik
+ * deal, penyebutnya baru titik yang sudah jalan. Itu bukan bug; supaya tidak
+ * salah baca, strip menampilkan catatan otomatis saat eksekusi < deal.
+ * Kalau suatu saat Komitmen dipindah ke penyebut titik_deal, angka Komitmen/
+ * titik TIDAK lagi bisa dikurangkan langsung dari Realisasi/titik.
+ *
+ * SEMUA DITURUNKAN DI FRONTEND dari prop yang sudah dikirim controller.
+ * Pembilang dan penyebut selalu diambil dari OBJEK YANG SAMA (satu baris
+ * summary / satu baris ranking / satu event), jadi tidak ada risiko beda
+ * scope seperti pada kasus "Analytics single-channel". Controller TIDAK
+ * disentuh oleh sesi ini.
  *
  * Ditambahkan 19 Agustus 2026 (sesi ranking):
  *   - Kartu "Peringkat Da'i" (per da'i PER CABANG, bisa diurutkan per kolom)
@@ -60,11 +67,6 @@ const NEXT_STATUS = { rencana: 'berjalan', berjalan: 'selesai' };
 
 const TARGET_MIN_PER_DAY = 2;   // samakan dengan konstanta di model SafdakEvent
 const TARGET_IDEAL_PER_DAY = 3;
-
-// Ambang selisih agregat vs rata-rata yang dianggap layak diberi catatan.
-// Di bawah ini selisihnya wajar (pembulatan + variasi kecil); di atasnya
-// biasanya menandakan sebaran nominal yang timpang.
-const GAP_NOTE_THRESHOLD = 15;
 
 // Tipe periode. `preset` = kunci di prop periodPresets/todayPresets;
 // null berarti "semua periode" (range dikosongkan).
@@ -116,6 +118,54 @@ const perUnitRupiah = (value) => {
     return 'Rp ' + Math.round(n).toLocaleString('id-ID');
 };
 
+// ── Nilai per titik eksekusi ──────────────────────────────────
+// Penyebut 0 / kosong -> null, ditampilkan "—" BUKAN Rp 0. Kampanye yang
+// belum dieksekusi tidak boleh terlihat seperti kampanye yang menghasilkan
+// nol rupiah per titik. Aturan yang sama dengan pctCapaian dan rasioCost.
+//
+// Pembilang dan penyebut WAJIB dari objek yang sama (satu baris summary,
+// satu baris ranking, atau satu event). Mengambil penyebut dari sumber lain
+// -- misalnya titik dari `summary` tapi nominal dari `events` -- menghasilkan
+// angka yang kelihatan wajar tapi salah, tanpa error apa pun.
+const perTitik = (nominal, titik) => {
+    const n = Number(nominal ?? 0);
+    const t = Number(titik ?? 0);
+    if (!Number.isFinite(t) || t <= 0) return null;
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return n / t;
+};
+
+// Perataan ditulis sebagai kelas UTUH, bukan dirakit `text-${align}`. Tailwind
+// memindai kode sebagai teks biasa: kelas yang dirakit dari variabel tidak
+// pernah terlihat olehnya dan akan hilang dari CSS hasil build -- lolos di
+// dev, rusak diam-diam di produksi.
+const ALIGN_CLASS = {
+    right:  'text-right',
+    left:   'text-left',
+    center: 'text-center',
+};
+
+// Pasangan K/R per titik dalam satu baris ringkas. Dipakai di tabel daftar,
+// kartu mobile, dan peringkat -- supaya bentuknya seragam di seluruh halaman.
+function PerTitikPair({ komitmen, realisasi, titik, align = 'right' }) {
+    const k = perTitik(komitmen, titik);
+    const r = perTitik(realisasi, titik);
+
+    if (k === null && r === null) return null;
+
+    const t = Number(titik ?? 0);
+
+    return (
+        <div
+            className={`text-[10px] leading-tight text-gray-400 ${ALIGN_CLASS[align] || ALIGN_CLASS.right}`}
+            title={`Per titik eksekusi (${t} titik) — komitmen ${k === null ? '—' : formatRupiah(Math.round(k))}, realisasi ${r === null ? '—' : formatRupiah(Math.round(r))}`}
+        >
+            /titik: K {k === null ? '—' : perUnitRupiah(k)} &middot; R{' '}
+            <span className="text-emerald-600">{r === null ? '—' : perUnitRupiah(r)}</span>
+        </div>
+    );
+}
+
 const formatTanggal = (dateStr) => {
     if (!dateStr) return '—';
     const d = new Date(dateStr);
@@ -153,12 +203,6 @@ const countDays = (startDate, endDate, customDates) => {
 // Komitmen 0 / kosong → null (tidak bisa dihitung, tampil "—"), BUKAN 0%.
 // Sengaja dibedakan supaya kampanye yang belum diisi komitmennya tidak
 // terlihat seperti kampanye yang gagal total.
-//
-// PENTING: aturan pengecualian + pembulatan di sini DIKEMBARKAN di
-// SafdakEventController (blok $capaianPerKampanye dan $capaianRows) untuk
-// menghitung rata-rata per kampanye. Kalau rumus di bawah berubah, kedua
-// blok PHP itu WAJIB ikut berubah -- kalau tidak, angka "rata-rata" tidak
-// lagi cocok dengan angka-angka yang dirata-ratakannya.
 const pctCapaian = (komitmen, realisasi) => {
     const k = Number(komitmen ?? 0);
     const r = Number(realisasi ?? 0);
@@ -272,26 +316,24 @@ function MiniBar({ value, max, color }) {
 
 // ── Peringkat Dai ─────────────────────────────────────────────
 // Sumber angka: prop `ranking` dari controller (sudah diagregasi per dai per
-// cabang). Persentase agregat TETAP diturunkan di sini lewat pctCapaian/
-// rasioCost yang sama dengan seluruh halaman -- tidak ada rumus baru.
-// Rata-rata per kampanye (`avg_capaian_pct`) datang jadi dari controller,
-// karena butuh persentase per baris yang tidak dikirim ke frontend.
+// cabang). SEMUA turunan -- persentase maupun nilai per titik -- dihitung di
+// sini lewat helper yang sama dengan seluruh halaman. Tidak ada rumus baru.
 //
 // Pengurutan dilakukan di frontend (state lokal), bukan lewat request baru:
 // datanya sudah utuh di memori, jadi tidak ada alasan bolak-balik ke server.
 //
-// CATATAN: rata-rata sengaja BELUM jadi kolom yang bisa diurutkan. Menambah
-// kolom ke-9 membuat tabel sesak, dan menaruh dua tombol sort di satu header
-// membingungkan. Kalau nanti terasa perlu, tambahkan entri ke RANK_COLUMNS
-// dengan get: (r) => r.avg_capaian_pct ?? null -- aturan "null selalu di
-// bawah" di bawah sudah menanganinya tanpa perubahan lain.
+// Entri 'realisasi_per_titik' menjawab kelemahan utama peringkat berbasis
+// total: da'i dengan kampanye lebih banyak hampir selalu menang, sehebat apa
+// pun da'i lain per titiknya. Nilainya null saat titik_eksekusi 0, dan aturan
+// "null selalu di bawah" di comparator sudah menanganinya.
 const RANK_COLUMNS = [
-    { key: 'revenue_realisasi', label: 'Realisasi',  dir: 'desc', get: (r) => Number(r.revenue_realisasi ?? 0) },
-    { key: 'revenue_komitmen',  label: 'Komitmen',   dir: 'desc', get: (r) => Number(r.revenue_komitmen ?? 0) },
-    { key: 'capaian',           label: 'Capaian',    dir: 'desc', get: (r) => pctCapaian(r.revenue_komitmen, r.revenue_realisasi) },
-    { key: 'titik_eksekusi',    label: 'Eksekusi',   dir: 'desc', get: (r) => Number(r.titik_eksekusi ?? 0) },
-    { key: 'rasio',             label: 'Rasio Cost', dir: 'asc',  get: (r) => rasioCost(r.total_cost, r.revenue_realisasi).pct },
-    { key: 'kampanye',          label: 'Kampanye',   dir: 'desc', get: (r) => Number(r.kampanye ?? 0) },
+    { key: 'revenue_realisasi',   label: 'Realisasi',  dir: 'desc', get: (r) => Number(r.revenue_realisasi ?? 0) },
+    { key: 'revenue_komitmen',    label: 'Komitmen',   dir: 'desc', get: (r) => Number(r.revenue_komitmen ?? 0) },
+    { key: 'capaian',             label: 'Capaian',    dir: 'desc', get: (r) => pctCapaian(r.revenue_komitmen, r.revenue_realisasi) },
+    { key: 'titik_eksekusi',      label: 'Eksekusi',   dir: 'desc', get: (r) => Number(r.titik_eksekusi ?? 0) },
+    { key: 'rasio',               label: 'Rasio Cost', dir: 'asc',  get: (r) => rasioCost(r.total_cost, r.revenue_realisasi).pct },
+    { key: 'kampanye',            label: 'Kampanye',   dir: 'desc', get: (r) => Number(r.kampanye ?? 0) },
+    { key: 'realisasi_per_titik', label: 'Rp/Titik',   dir: 'desc', get: (r) => perTitik(r.revenue_realisasi, r.titik_eksekusi) },
 ];
 
 const RANK_MEDALS = ['🥇', '🥈', '🥉'];
@@ -303,14 +345,6 @@ const isRankRowActive = (r, activeSpeaker) => {
     if (activeSpeaker === SPEAKER_NONE) return !r.speaker;
     return r.speaker === activeSpeaker;
 };
-
-// Rata-rata hanya ditampilkan kalau ada > 1 kampanye berkomitmen. Dengan
-// satu kampanye, rata-rata SELALU sama dengan agregat -- menampilkannya
-// cuma menambah angka tanpa menambah informasi.
-const showAvgFor = (r) =>
-    r.avg_capaian_pct !== null &&
-    r.avg_capaian_pct !== undefined &&
-    Number(r.avg_capaian_n ?? 0) > 1;
 
 function RankingCard({ ranking, activeSpeaker, showBranch, onPickSpeaker }) {
     const [open, setOpen] = useState(true);
@@ -402,6 +436,7 @@ function RankingCard({ ranking, activeSpeaker, showBranch, onPickSpeaker }) {
                                     <SortTh col={RANK_COLUMNS[3]} className="text-center" />
                                     <SortTh col={RANK_COLUMNS[1]} className="text-right" />
                                     <SortTh col={RANK_COLUMNS[0]} className="text-right" />
+                                    <SortTh col={RANK_COLUMNS[6]} className="text-right" />
                                     <SortTh col={RANK_COLUMNS[2]} className="text-center" />
                                     <SortTh col={RANK_COLUMNS[4]} className="text-center" />
                                 </tr>
@@ -464,19 +499,39 @@ function RankingCard({ ranking, activeSpeaker, showBranch, onPickSpeaker }) {
                                             <td className="px-3 py-2.5 text-right whitespace-nowrap font-semibold text-emerald-700">
                                                 {formatRupiah(r.revenue_realisasi)}
                                             </td>
+                                            <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                                                {(() => {
+                                                    const rpt = perTitik(r.revenue_realisasi, r.titik_eksekusi);
+                                                    const kpt = perTitik(r.revenue_komitmen, r.titik_eksekusi);
+                                                    if (rpt === null && kpt === null) {
+                                                        return (
+                                                            <span
+                                                                className="text-xs text-gray-300"
+                                                                title="Belum ada titik eksekusi — nilai per titik tidak bisa dihitung"
+                                                            >
+                                                                —
+                                                            </span>
+                                                        );
+                                                    }
+                                                    return (
+                                                        <div
+                                                            title={`Realisasi ${formatRupiah(r.revenue_realisasi)} dibagi ${r.titik_eksekusi} titik eksekusi`}
+                                                        >
+                                                            <div className="text-sm font-semibold text-emerald-700">
+                                                                {rpt === null ? '—' : perUnitRupiah(rpt)}
+                                                            </div>
+                                                            <div className="text-[10px] leading-tight text-gray-400">
+                                                                K {kpt === null ? '—' : perUnitRupiah(kpt)}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </td>
                                             <td className="px-3 py-2.5 text-center">
                                                 <CapaianBadge
                                                     komitmen={r.revenue_komitmen}
                                                     realisasi={r.revenue_realisasi}
                                                 />
-                                                {showAvgFor(r) && (
-                                                    <div
-                                                        className="text-[10px] text-gray-400 leading-tight mt-0.5"
-                                                        title={`Rata-rata capaian per kampanye: ${r.avg_capaian_pct}% dari ${r.avg_capaian_n} kampanye yang punya komitmen. Angka besar di atasnya tertimbang nominal.`}
-                                                    >
-                                                        rata² {r.avg_capaian_pct}%
-                                                    </div>
-                                                )}
                                             </td>
                                             <td className="px-3 py-2.5 text-center">
                                                 <RasioBadge cost={r.total_cost} realisasi={r.revenue_realisasi} />
@@ -521,11 +576,11 @@ function RankingCard({ ranking, activeSpeaker, showBranch, onPickSpeaker }) {
                                             {shortRupiah(r.revenue_realisasi)}
                                         </div>
                                         <CapaianBadge komitmen={r.revenue_komitmen} realisasi={r.revenue_realisasi} />
-                                        {showAvgFor(r) && (
-                                            <div className="text-[10px] text-gray-400 leading-tight">
-                                                rata² {r.avg_capaian_pct}%
-                                            </div>
-                                        )}
+                                        <PerTitikPair
+                                            komitmen={r.revenue_komitmen}
+                                            realisasi={r.revenue_realisasi}
+                                            titik={r.titik_eksekusi}
+                                        />
                                     </div>
                                 </div>
                             );
@@ -783,31 +838,29 @@ export default function Index({
     const totalKampanye = summary?.total ?? 0;
     const isKosong = (events?.length ?? 0) === 0;
 
-    // ── Rata-rata capaian per kampanye (dari backend) ─────────
-    // Sengaja TIDAK dihitung ulang di sini. Lihat catatan di kepala file:
-    // `events` ikut filter status, ringkasan tidak -- menghitungnya dari
-    // `events` membuat rata-rata dan agregat datang dari populasi berbeda.
-    const avgCapaian = summary?.avg_capaian_pct ?? null;
-    const avgCapaianN = Number(summary?.avg_capaian_n ?? 0);
-    const avgCapaianExcluded = Number(summary?.avg_capaian_excluded ?? 0);
-    const avgCapaianMeta = pctMeta(avgCapaian);
+    // ── Nilai per titik eksekusi, level PERIODE ───────────────
+    // Pembilang & penyebut dua-duanya dari `summary` yang sama -> tidak ada
+    // risiko beda scope. Keduanya memakai penyebut titik_eksekusi, jadi
+    // selisih keduanya = gap komitmen-vs-realisasi PER TITIK dalam rupiah.
+    const komitmenPerTitik = perTitik(summary?.revenue_komitmen, titikEksekusi);
+    const realisasiPerTitik = perTitik(summary?.revenue_realisasi, titikEksekusi);
 
-    // Selisih agregat vs rata-rata. Inilah bacaan yang paling berguna:
-    // agregat jauh di ATAS rata-rata = hasil ditopang segelintir kampanye
-    // besar, sementara mayoritas kampanye tertinggal.
-    const capaianGap =
-        summaryPct !== null && avgCapaian !== null ? summaryPct - avgCapaian : null;
+    const gapPerTitik =
+        komitmenPerTitik !== null && realisasiPerTitik !== null
+            ? realisasiPerTitik - komitmenPerTitik
+            : null;
 
-    // Rupiah per titik eksekusi. Boleh dihitung di sini: pembilang dan
-    // penyebut dua-duanya dari `summary` yang sama, jadi tidak ada risiko
-    // beda scope seperti pada rata-rata di atas.
-    const revPerTitik =
-        titikEksekusi > 0 ? Number(summary?.revenue_realisasi ?? 0) / titikEksekusi : null;
+    // Selama masih ada titik deal yang belum dieksekusi, Komitmen/titik
+    // memakai pembilang untuk SELURUH titik deal tapi penyebut yang baru
+    // sebagian -- angkanya jadi tampak tinggi. Bukan bug, tapi harus
+    // dikatakan, kalau tidak angka ini akan dibaca sebagai "komitmen per
+    // titik kita mahal sekali".
+    const eksekusiTertinggal = titikDeal > 0 && titikEksekusi > 0 && titikEksekusi < titikDeal;
 
-    // Rata-rata lintas cabang menyembunyikan sebaran: cabang yang bagus dan
-    // cabang yang jeblok berbaur jadi angka "sedang", dan cabang bermasalah
-    // tidak terlihat. Tidak disembunyikan -- hanya diberi label supaya jelas
-    // ini angka campuran, bukan potret satu cabang.
+    // Nilai per titik lintas cabang menyembunyikan sebaran: cabang yang bagus
+    // dan cabang yang jeblok berbaur jadi angka "sedang", dan cabang
+    // bermasalah tidak terlihat. Tidak disembunyikan -- hanya diberi label
+    // supaya jelas ini angka campuran, bukan potret satu cabang.
     const scopeGabungan = branches.length > 1 && !activeBranch;
 
     // Baris label + isi di kartu filter. Lebar label dikunci di desktop supaya
@@ -949,6 +1002,24 @@ export default function Index({
                             <div className="mt-1 text-[11px] text-gray-400">
                                 {totalKampanye} kampanye pada filter ini
                             </div>
+                            <div className="mt-2 pt-2 border-t border-gray-100">
+                                <div
+                                    className="text-[11px] text-gray-500"
+                                    title={
+                                        komitmenPerTitik === null
+                                            ? 'Belum ada titik eksekusi — nilai per titik tidak bisa dihitung'
+                                            : `${formatRupiah(summary?.revenue_komitmen)} dibagi ${titikEksekusi} titik eksekusi`
+                                    }
+                                >
+                                    <span className="font-bold text-gray-700">
+                                        {komitmenPerTitik === null ? '—' : perUnitRupiah(komitmenPerTitik)}
+                                    </span>{' '}
+                                    / titik eksekusi
+                                    {komitmenPerTitik !== null && (
+                                        <span className="text-gray-300"> &middot; {titikEksekusi} titik</span>
+                                    )}
+                                </div>
+                            </div>
                         </div>
 
                         {/* Realisasi + capaian agregat + rata-rata */}
@@ -986,58 +1057,55 @@ export default function Index({
                                 </div>
                             )}
 
-                            {/* Angka pendamping: rata-rata per kampanye & rupiah per titik.
-                                Sengaja kecil dan di bawah garis -- agregat adalah angka
-                                yang dilaporkan ke atas, ini angka untuk membaca kondisi
-                                dan memperkirakan kebutuhan titik. */}
-                            {(avgCapaian !== null || revPerTitik !== null) && (
-                                <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
-                                    {avgCapaian !== null && (
-                                        <div
-                                            className="text-[11px] text-gray-500"
-                                            title={`Rata-rata dari capaian tiap kampanye (setiap kampanye berbobot sama). Dihitung dari ${avgCapaianN} kampanye yang punya Rev. Komitmen.`}
-                                        >
-                                            Rata-rata per kampanye{' '}
-                                            <span className={`font-bold ${avgCapaianMeta.text}`}>{avgCapaian}%</span>
-                                            <span className="text-gray-300"> &middot; dari {avgCapaianN} kampanye</span>
-                                            {avgCapaianExcluded > 0 && (
-                                                <span className="text-gray-300">
-                                                    {' '}&middot; {avgCapaianExcluded} tanpa komitmen dikecualikan
-                                                </span>
-                                            )}
-                                        </div>
-                                    )}
-
-                                    {revPerTitik !== null && (
-                                        <div
-                                            className="text-[11px] text-gray-500"
-                                            title={`${formatRupiah(summary?.revenue_realisasi)} dibagi ${titikEksekusi} titik eksekusi`}
-                                        >
-                                            ~
-                                            <span className="font-semibold text-gray-700">
-                                                {perUnitRupiah(revPerTitik)}
-                                            </span>{' '}
-                                            / titik eksekusi
-                                            <span className="text-gray-300"> &middot; {titikEksekusi} titik</span>
-                                        </div>
-                                    )}
-
-                                    {capaianGap !== null && Math.abs(capaianGap) >= GAP_NOTE_THRESHOLD && (
-                                        <div className="text-[11px] text-slate-600 bg-slate-50 border border-slate-200 rounded px-2 py-1">
-                                            {capaianGap > 0
-                                                ? 'Agregat jauh di atas rata-rata — hasil ditopang segelintir kampanye bernilai besar.'
-                                                : 'Rata-rata jauh di atas agregat — kampanye bernilai besar tertinggal dari yang kecil.'}
-                                        </div>
-                                    )}
-
-                                    {scopeGabungan && (
-                                        <div className="text-[11px] text-amber-700">
-                                            ⚠️ Gabungan {branches.length} cabang &mdash; sebaran antar-cabang tidak
-                                            terlihat di angka ini. Pilih satu cabang untuk potret yang setara.
-                                        </div>
+                            {/* Nilai per titik: angka perencanaan. Sengaja kecil dan di
+                                bawah garis -- nominal total adalah angka yang dilaporkan
+                                ke atas, ini angka untuk memperkirakan "target Rp X butuh
+                                berapa titik". */}
+                            <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
+                                <div
+                                    className="text-[11px] text-gray-500"
+                                    title={
+                                        realisasiPerTitik === null
+                                            ? 'Belum ada titik eksekusi — nilai per titik tidak bisa dihitung'
+                                            : `${formatRupiah(summary?.revenue_realisasi)} dibagi ${titikEksekusi} titik eksekusi`
+                                    }
+                                >
+                                    <span className="font-bold text-emerald-700">
+                                        {realisasiPerTitik === null ? '—' : perUnitRupiah(realisasiPerTitik)}
+                                    </span>{' '}
+                                    / titik eksekusi
+                                    {realisasiPerTitik !== null && (
+                                        <span className="text-gray-300"> &middot; {titikEksekusi} titik</span>
                                     )}
                                 </div>
-                            )}
+
+                                {gapPerTitik !== null && (
+                                    <div
+                                        className={`text-[11px] ${gapPerTitik >= 0 ? 'text-emerald-700' : 'text-amber-700'}`}
+                                        title="Selisih realisasi dan komitmen untuk setiap titik eksekusi"
+                                    >
+                                        {gapPerTitik >= 0 ? '+' : '−'}
+                                        {perUnitRupiah(Math.abs(gapPerTitik))} / titik{' '}
+                                        <span className="text-gray-400">
+                                            {gapPerTitik >= 0 ? 'di atas komitmen' : 'di bawah komitmen'}
+                                        </span>
+                                    </div>
+                                )}
+
+                                {eksekusiTertinggal && (
+                                    <div className="text-[11px] text-slate-600 bg-slate-50 border border-slate-200 rounded px-2 py-1">
+                                        Baru {titikEksekusi} dari {titikDeal} titik deal yang dieksekusi &mdash;
+                                        Komitmen/titik masih tampak tinggi karena penyebutnya belum lengkap.
+                                    </div>
+                                )}
+
+                                {scopeGabungan && (
+                                    <div className="text-[11px] text-amber-700">
+                                        ⚠️ Gabungan {branches.length} cabang &mdash; sebaran antar-cabang tidak
+                                        terlihat di angka ini. Pilih satu cabang untuk potret yang setara.
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         {/* Cost + rasio */}
@@ -1392,6 +1460,11 @@ export default function Index({
                                             <div className="text-emerald-700 font-medium">
                                                 {formatRupiah(ev.revenue_realisasi)}
                                             </div>
+                                            <PerTitikPair
+                                                komitmen={ev.revenue_komitmen}
+                                                realisasi={ev.revenue_realisasi}
+                                                titik={ev.titik_eksekusi}
+                                            />
                                         </td>
                                         <td className="px-3 py-2.5 text-center whitespace-nowrap">
                                             <CapaianBadge
@@ -1511,6 +1584,32 @@ export default function Index({
                                         <span className="text-gray-500">Capaian</span>
                                         <CapaianBadge komitmen={ev.revenue_komitmen} realisasi={ev.revenue_realisasi} />
                                     </div>
+                                    <div className="flex items-center justify-between text-xs">
+                                        <span className="text-gray-500">Per titik eksekusi</span>
+                                        {perTitik(ev.revenue_realisasi, ev.titik_eksekusi) === null &&
+                                        perTitik(ev.revenue_komitmen, ev.titik_eksekusi) === null ? (
+                                            <span
+                                                className="text-gray-300"
+                                                title="Belum ada titik eksekusi — nilai per titik tidak bisa dihitung"
+                                            >
+                                                —
+                                            </span>
+                                        ) : (
+                                            <span className="font-medium">
+                                                <span className="text-gray-600">
+                                                    {perTitik(ev.revenue_komitmen, ev.titik_eksekusi) === null
+                                                        ? '—'
+                                                        : perUnitRupiah(perTitik(ev.revenue_komitmen, ev.titik_eksekusi))}
+                                                </span>
+                                                <span className="text-gray-300"> &rarr; </span>
+                                                <span className="text-emerald-700">
+                                                    {perTitik(ev.revenue_realisasi, ev.titik_eksekusi) === null
+                                                        ? '—'
+                                                        : perUnitRupiah(perTitik(ev.revenue_realisasi, ev.titik_eksekusi))}
+                                                </span>
+                                            </span>
+                                        )}
+                                    </div>
                                     <div className="h-px bg-gray-200" />
                                     <div className="flex items-center justify-between text-xs">
                                         <span className="text-gray-500">Cost</span>
@@ -1551,7 +1650,7 @@ export default function Index({
                         <span className="font-semibold text-gray-500">Capaian</span> = realisasi &divide; komitmen &middot; makin besar makin baik
                     </span>
                     <span>
-                        <span className="font-semibold text-gray-500">Rata-rata per kampanye</span> = mean capaian tiap kampanye &middot; setiap kampanye berbobot sama &middot; kampanye tanpa komitmen dikecualikan
+                        <span className="font-semibold text-gray-500">K / R per titik</span> = komitmen &amp; realisasi &divide; titik eksekusi &middot; nilai satu titik safari
                     </span>
                     <span>
                         <span className="font-semibold text-gray-500">↓ Rasio Cost</span> = cost &divide; realisasi &middot; makin kecil makin baik
@@ -1872,6 +1971,31 @@ export default function Index({
                                             cost={form.data.total_cost}
                                             realisasi={form.data.revenue_realisasi}
                                         />
+                                    </div>
+                                    <div className="sm:col-span-2 text-xs text-gray-600 bg-white border rounded-lg px-3 py-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                                        🎯 <span className="text-gray-500">Per titik eksekusi:</span>
+                                        <span className="font-medium text-gray-700">
+                                            K{' '}
+                                            {perTitik(form.data.revenue_komitmen, form.data.titik_eksekusi) === null
+                                                ? '—'
+                                                : perUnitRupiah(
+                                                      perTitik(form.data.revenue_komitmen, form.data.titik_eksekusi)
+                                                  )}
+                                        </span>
+                                        <span className="text-gray-300">&middot;</span>
+                                        <span className="font-medium text-emerald-700">
+                                            R{' '}
+                                            {perTitik(form.data.revenue_realisasi, form.data.titik_eksekusi) === null
+                                                ? '—'
+                                                : perUnitRupiah(
+                                                      perTitik(form.data.revenue_realisasi, form.data.titik_eksekusi)
+                                                  )}
+                                        </span>
+                                        {!Number(form.data.titik_eksekusi) && (
+                                            <span className="text-[11px] text-gray-400">
+                                                (isi Titik Eksekusi untuk melihat angkanya)
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                             </div>
