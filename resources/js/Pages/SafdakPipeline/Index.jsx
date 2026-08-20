@@ -4,7 +4,7 @@ import AppLayout from '@/Components/AppLayout';
 
 /**
  * Pipeline Safari Dakwah
- * penanda versi: pipeline-per-titik-20260820
+ * penanda versi: pipeline-per-titik-v2-20260820
  *
  * Ditambahkan 20 Agustus 2026 (sesi rupiah per titik):
  *   Nilai per TITIK EKSEKUSI untuk komitmen DAN realisasi, di tiga level:
@@ -147,6 +147,11 @@ const ALIGN_CLASS = {
 
 // Pasangan K/R per titik dalam satu baris ringkas. Dipakai di tabel daftar,
 // kartu mobile, dan peringkat -- supaya bentuknya seragam di seluruh halaman.
+// Ukuran & kontras: angka per titik dipakai untuk DIBACA dan DIBANDINGKAN,
+// bukan sekadar keterangan tambahan. 10px + gray-400 terlalu redup untuk itu
+// (koreksi 20 Agustus 2026, setelah dilihat di layar desktop). Tetap lebih
+// kecil dari nominal induknya supaya hierarki terjaga, tapi tidak lagi
+// mengharuskan orang menyipitkan mata.
 function PerTitikPair({ komitmen, realisasi, titik, align = 'right' }) {
     const k = perTitik(komitmen, titik);
     const r = perTitik(realisasi, titik);
@@ -157,11 +162,13 @@ function PerTitikPair({ komitmen, realisasi, titik, align = 'right' }) {
 
     return (
         <div
-            className={`text-[10px] leading-tight text-gray-400 ${ALIGN_CLASS[align] || ALIGN_CLASS.right}`}
+            className={`mt-0.5 text-[11px] leading-snug text-gray-500 ${ALIGN_CLASS[align] || ALIGN_CLASS.right}`}
             title={`Per titik eksekusi (${t} titik) — komitmen ${k === null ? '—' : formatRupiah(Math.round(k))}, realisasi ${r === null ? '—' : formatRupiah(Math.round(r))}`}
         >
-            /titik: K {k === null ? '—' : perUnitRupiah(k)} &middot; R{' '}
-            <span className="text-emerald-600">{r === null ? '—' : perUnitRupiah(r)}</span>
+            /titik: K{' '}
+            <span className="font-medium text-gray-700">{k === null ? '—' : perUnitRupiah(k)}</span>{' '}
+            &middot; R{' '}
+            <span className="font-semibold text-emerald-700">{r === null ? '—' : perUnitRupiah(r)}</span>
         </div>
     );
 }
@@ -520,7 +527,7 @@ function RankingCard({ ranking, activeSpeaker, showBranch, onPickSpeaker }) {
                                                             <div className="text-sm font-semibold text-emerald-700">
                                                                 {rpt === null ? '—' : perUnitRupiah(rpt)}
                                                             </div>
-                                                            <div className="text-[10px] leading-tight text-gray-400">
+                                                            <div className="text-[11px] leading-snug text-gray-500">
                                                                 K {kpt === null ? '—' : perUnitRupiah(kpt)}
                                                             </div>
                                                         </div>
@@ -1004,19 +1011,19 @@ export default function Index({
                             </div>
                             <div className="mt-2 pt-2 border-t border-gray-100">
                                 <div
-                                    className="text-[11px] text-gray-500"
+                                    className="text-xs text-gray-500"
                                     title={
                                         komitmenPerTitik === null
                                             ? 'Belum ada titik eksekusi — nilai per titik tidak bisa dihitung'
                                             : `${formatRupiah(summary?.revenue_komitmen)} dibagi ${titikEksekusi} titik eksekusi`
                                     }
                                 >
-                                    <span className="font-bold text-gray-700">
+                                    <span className="text-sm font-bold text-gray-800">
                                         {komitmenPerTitik === null ? '—' : perUnitRupiah(komitmenPerTitik)}
                                     </span>{' '}
                                     / titik eksekusi
                                     {komitmenPerTitik !== null && (
-                                        <span className="text-gray-300"> &middot; {titikEksekusi} titik</span>
+                                        <span className="text-gray-400"> &middot; {titikEksekusi} titik</span>
                                     )}
                                 </div>
                             </div>
@@ -1063,30 +1070,30 @@ export default function Index({
                                 berapa titik". */}
                             <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
                                 <div
-                                    className="text-[11px] text-gray-500"
+                                    className="text-xs text-gray-500"
                                     title={
                                         realisasiPerTitik === null
                                             ? 'Belum ada titik eksekusi — nilai per titik tidak bisa dihitung'
                                             : `${formatRupiah(summary?.revenue_realisasi)} dibagi ${titikEksekusi} titik eksekusi`
                                     }
                                 >
-                                    <span className="font-bold text-emerald-700">
+                                    <span className="text-sm font-bold text-emerald-700">
                                         {realisasiPerTitik === null ? '—' : perUnitRupiah(realisasiPerTitik)}
                                     </span>{' '}
                                     / titik eksekusi
                                     {realisasiPerTitik !== null && (
-                                        <span className="text-gray-300"> &middot; {titikEksekusi} titik</span>
+                                        <span className="text-gray-400"> &middot; {titikEksekusi} titik</span>
                                     )}
                                 </div>
 
                                 {gapPerTitik !== null && (
                                     <div
-                                        className={`text-[11px] ${gapPerTitik >= 0 ? 'text-emerald-700' : 'text-amber-700'}`}
+                                        className={`text-xs font-medium ${gapPerTitik >= 0 ? 'text-emerald-700' : 'text-amber-700'}`}
                                         title="Selisih realisasi dan komitmen untuk setiap titik eksekusi"
                                     >
                                         {gapPerTitik >= 0 ? '+' : '−'}
                                         {perUnitRupiah(Math.abs(gapPerTitik))} / titik{' '}
-                                        <span className="text-gray-400">
+                                        <span className="font-normal text-gray-500">
                                             {gapPerTitik >= 0 ? 'di atas komitmen' : 'di bawah komitmen'}
                                         </span>
                                     </div>
