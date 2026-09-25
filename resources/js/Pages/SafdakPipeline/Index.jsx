@@ -1,10 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Head, router, useForm } from '@inertiajs/react';
 import AppLayout from '@/Components/AppLayout';
 
 /**
  * Pipeline Safari Dakwah
- * penanda versi: pipeline-per-titik-v2-20260820
+ * penanda versi: pipeline-riwayat-20260925 (sebelumnya: pipeline-per-titik-v2-20260820)
+ *
+ * Ditambahkan 25 September 2026 (sesi riwayat update):
+ *   Tombol "Riwayat" per kampanye (desktop & mobile, terlihat juga oleh
+ *   viewer) -> panel timeline siapa / kapan (WITA) / field lama -> baru.
+ *   Data diambil saat panel dibuka dari GET /safdak-events/{id}/revisions.
  *
  * Ditambahkan 20 Agustus 2026 (sesi rupiah per titik):
  *   Nilai per TITIK EKSEKUSI untuk komitmen DAN realisasi, di tiga level:
@@ -623,6 +628,178 @@ function RankingCard({ ranking, activeSpeaker, showBranch, onPickSpeaker }) {
     );
 }
 
+// ── Riwayat Update (25 September 2026) ──────────────────────────
+// Label harus mencakup semua kolom SafdakEvent::TRACKED di model.
+const FIELD_LABELS = {
+    branch_id:         'Cabang',
+    title:             'Judul',
+    start_date:        'Tanggal mulai',
+    end_date:          'Tanggal selesai',
+    custom_dates:      'Tanggal custom',
+    speaker:           'Dai',
+    grade:             'Grade',
+    status:            'Status',
+    titik_deal:        'Titik deal',
+    titik_eksekusi:    'Titik eksekusi',
+    total_cost:        'Cost',
+    revenue_komitmen:  'Rev. komitmen',
+    revenue_realisasi: 'Rev. realisasi',
+    has_mou:           'MoU',
+    notes:             'Catatan',
+};
+
+const ACTION_META = {
+    created: { label: 'Dibuat',        badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+    updated: { label: 'Diedit',        badge: 'bg-blue-50 text-blue-700 border-blue-200' },
+    status:  { label: 'Ganti status',  badge: 'bg-amber-50 text-amber-800 border-amber-200' },
+    deleted: { label: 'Dihapus',       badge: 'bg-rose-50 text-rose-700 border-rose-200' },
+};
+
+const MONEY_FIELDS = ['total_cost', 'revenue_komitmen', 'revenue_realisasi'];
+const DATE_FIELDS = ['start_date', 'end_date'];
+
+const formatRevValue = (field, v) => {
+    if (v === null || v === undefined || v === '') return '—';
+    if (MONEY_FIELDS.includes(field)) return formatRupiah(v);
+    if (DATE_FIELDS.includes(field)) return formatTanggal(v);
+    if (field === 'custom_dates') {
+        if (!Array.isArray(v) || v.length === 0) return '—';
+        return v.length <= 4
+            ? v.map(formatTanggalPendek).join(', ')
+            : `${v.length} tanggal (${formatTanggalPendek(v[0])} – ${formatTanggalPendek(v[v.length - 1])})`;
+    }
+    if (field === 'has_mou') return v ? 'Ada' : 'Tidak';
+    if (field === 'status') return STATUS_META[v]?.label ?? v;
+    return String(v);
+};
+
+// ISO ber-offset dari backend -> selalu WITA, apa pun zona waktu browser
+const formatWaktuWita = (iso) => {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleString('id-ID', {
+        timeZone: 'Asia/Makassar',
+        day: 'numeric', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+    }) + ' WITA';
+};
+
+function RiwayatModal({ event, onClose }) {
+    const [state, setState] = useState({ loading: true, error: null, rows: [] });
+
+    useEffect(() => {
+        let cancelled = false;
+        setState({ loading: true, error: null, rows: [] });
+        fetch(`/safdak-events/${event.id}/revisions`, {
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin',
+        })
+            .then((res) => {
+                if (!res.ok) throw new Error(res.status === 403 ? 'Anda tidak punya akses ke riwayat kampanye ini.' : `Gagal memuat riwayat (HTTP ${res.status}).`);
+                return res.json();
+            })
+            .then((json) => { if (!cancelled) setState({ loading: false, error: null, rows: json.revisions ?? [] }); })
+            .catch((err) => { if (!cancelled) setState({ loading: false, error: err.message, rows: [] }); });
+        return () => { cancelled = true; };
+    }, [event.id]);
+
+    const label = event.title || `SafDak ${event.speaker || ''} ${formatTanggalPendek(event.start_date)}`;
+
+    return (
+        <div
+            className="fixed inset-0 z-50 flex items-start md:items-center justify-center bg-black/40 p-3 overflow-y-auto"
+            onClick={onClose}
+        >
+            <div
+                className="bg-white rounded-xl w-full max-w-lg my-6 p-4 space-y-3 shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex items-start justify-between gap-3">
+                    <div>
+                        <h2 className="text-lg font-bold text-gray-800">🕘 Riwayat Update</h2>
+                        <div className="text-xs text-gray-500">
+                            {label} &middot; {event.branch?.code}
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none" aria-label="Tutup">
+                        &times;
+                    </button>
+                </div>
+
+                {state.loading && <div className="py-8 text-center text-sm text-gray-400">Memuat riwayat…</div>}
+
+                {state.error && (
+                    <div className="py-3 px-3 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700">{state.error}</div>
+                )}
+
+                {!state.loading && !state.error && state.rows.length === 0 && (
+                    <div className="py-8 text-center text-sm text-gray-400">Belum ada riwayat.</div>
+                )}
+
+                {!state.loading && !state.error && state.rows.length > 0 && (
+                    <ol className="relative border-l border-gray-200 ml-2 space-y-4 max-h-[65vh] overflow-y-auto pr-1">
+                        {state.rows.map((r) => {
+                            const meta = ACTION_META[r.action] ?? { label: r.action, badge: 'bg-gray-50 text-gray-600 border-gray-200' };
+                            // Buang baris yang tampil identik (mis. '' -> null pada data lama)
+                            const changes = (r.changes ?? []).filter(
+                                (c) => formatRevValue(c.field, c.old) !== formatRevValue(c.field, c.new),
+                            );
+                            return (
+                                <li key={r.id} className="ml-4">
+                                    <span className="absolute -left-1.5 mt-1.5 w-3 h-3 rounded-full bg-white border-2 border-gray-300" />
+                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium border ${meta.badge}`}>
+                                            {meta.label}
+                                        </span>
+                                        <span className="text-xs font-medium text-gray-700">{r.user ?? 'Sistem'}</span>
+                                        <span className="text-[11px] text-gray-400">{formatWaktuWita(r.created_at)}</span>
+                                    </div>
+
+                                    {r.backfill && (
+                                        <div className="mt-1 text-[11px] text-gray-400 italic">
+                                            Dibuat sebelum riwayat mulai dicatat — isi awal tidak tersimpan.
+                                        </div>
+                                    )}
+
+                                    {changes.length > 0 && (
+                                        <div className="mt-1.5 rounded-lg border border-gray-100 divide-y divide-gray-100 text-xs">
+                                            {changes.map((c) => (
+                                                <div key={c.field} className="grid grid-cols-[7rem_1fr] gap-2 px-2 py-1.5">
+                                                    <span className="text-gray-500">{FIELD_LABELS[c.field] ?? c.field}</span>
+                                                    <span className="min-w-0 break-words">
+                                                        {r.action !== 'created' && (
+                                                            <>
+                                                                <span className="text-gray-400 line-through">{formatRevValue(c.field, c.old)}</span>
+                                                                {r.action !== 'deleted' && <span className="text-gray-400 mx-1">&rarr;</span>}
+                                                            </>
+                                                        )}
+                                                        {r.action !== 'deleted' && (
+                                                            <span className="font-medium text-gray-800">{formatRevValue(c.field, c.new)}</span>
+                                                        )}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </li>
+                            );
+                        })}
+                    </ol>
+                )}
+
+                <div className="flex justify-end pt-1">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="px-4 py-2 text-sm text-gray-600 border rounded-lg hover:bg-gray-50"
+                    >
+                        Tutup
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 const emptyForm = {
     branch_id: '',
     title: '',
@@ -658,6 +835,7 @@ export default function Index({
 }) {
     const [modalOpen, setModalOpen] = useState(false);
     const [editingId, setEditingId] = useState(null);
+    const [historyEvent, setHistoryEvent] = useState(null); // kampanye yang panel Riwayat-nya terbuka
     const [dateMode, setDateMode] = useState('rentang'); // 'rentang' | 'custom'
     const [customDateInput, setCustomDateInput] = useState('');
 
@@ -1391,13 +1569,13 @@ export default function Index({
                                     Capaian
                                 </th>
                                 <th className="px-3 py-2.5 text-center border-l border-gray-200">Status</th>
-                                {canWrite && <th className="px-3 py-2.5 text-right">Aksi</th>}
+                                <th className="px-3 py-2.5 text-right">Aksi</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                             {isKosong && (
                                 <tr>
-                                    <td colSpan={canWrite ? 12 : 11} className="px-3 py-12 text-center">
+                                    <td colSpan={12} className="px-3 py-12 text-center">
                                         <div className="text-4xl mb-2">🗂️</div>
                                         <div className="text-sm font-medium text-gray-700">
                                             Belum ada kampanye pada filter ini
@@ -1487,31 +1665,39 @@ export default function Index({
                                                 {STATUS_META[ev.status]?.label ?? ev.status}
                                             </span>
                                         </td>
-                                        {canWrite && (
-                                            <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                                                {NEXT_STATUS[ev.status] && (
-                                                    <button
-                                                        onClick={() => quickStatus(ev, NEXT_STATUS[ev.status])}
-                                                        className="text-xs text-emerald-700 hover:underline mr-2"
-                                                        title={`Naikkan ke ${STATUS_META[NEXT_STATUS[ev.status]].label}`}
-                                                    >
-                                                        &rarr; {STATUS_META[NEXT_STATUS[ev.status]].label}
-                                                    </button>
-                                                )}
+                                        <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                                            {canWrite && NEXT_STATUS[ev.status] && (
+                                                <button
+                                                    onClick={() => quickStatus(ev, NEXT_STATUS[ev.status])}
+                                                    className="text-xs text-emerald-700 hover:underline mr-2"
+                                                    title={`Naikkan ke ${STATUS_META[NEXT_STATUS[ev.status]].label}`}
+                                                >
+                                                    &rarr; {STATUS_META[NEXT_STATUS[ev.status]].label}
+                                                </button>
+                                            )}
+                                            {canWrite && (
                                                 <button
                                                     onClick={() => openEdit(ev)}
                                                     className="text-xs text-blue-600 hover:underline mr-2"
                                                 >
                                                     Edit
                                                 </button>
+                                            )}
+                                            <button
+                                                onClick={() => setHistoryEvent(ev)}
+                                                className={`text-xs text-gray-600 hover:underline ${canWrite ? 'mr-2' : ''}`}
+                                            >
+                                                Riwayat
+                                            </button>
+                                            {canWrite && (
                                                 <button
                                                     onClick={() => destroy(ev)}
                                                     className="text-xs text-red-600 hover:underline"
                                                 >
                                                     Hapus
                                                 </button>
-                                            </td>
-                                        )}
+                                            )}
+                                        </td>
                                     </tr>
                                 );
                             })}
@@ -1628,24 +1814,29 @@ export default function Index({
                                     </div>
                                 </div>
 
-                                {canWrite && (
-                                    <div className="flex gap-3 pt-0.5">
-                                        {NEXT_STATUS[ev.status] && (
-                                            <button
-                                                onClick={() => quickStatus(ev, NEXT_STATUS[ev.status])}
-                                                className="text-xs text-emerald-700 font-medium"
-                                            >
-                                                &rarr; {STATUS_META[NEXT_STATUS[ev.status]].label}
-                                            </button>
-                                        )}
+                                <div className="flex gap-3 pt-0.5">
+                                    {canWrite && NEXT_STATUS[ev.status] && (
+                                        <button
+                                            onClick={() => quickStatus(ev, NEXT_STATUS[ev.status])}
+                                            className="text-xs text-emerald-700 font-medium"
+                                        >
+                                            &rarr; {STATUS_META[NEXT_STATUS[ev.status]].label}
+                                        </button>
+                                    )}
+                                    {canWrite && (
                                         <button onClick={() => openEdit(ev)} className="text-xs text-blue-600 font-medium">
                                             Edit
                                         </button>
+                                    )}
+                                    <button onClick={() => setHistoryEvent(ev)} className="text-xs text-gray-600 font-medium">
+                                        Riwayat
+                                    </button>
+                                    {canWrite && (
                                         <button onClick={() => destroy(ev)} className="text-xs text-red-600 font-medium">
                                             Hapus
                                         </button>
-                                    </div>
-                                )}
+                                    )}
+                                </div>
                             </div>
                         </div>
                     ))}
@@ -2037,6 +2228,9 @@ export default function Index({
                     </div>
                 </div>
             )}
+
+            {/* ── Panel Riwayat Update ── */}
+            {historyEvent && <RiwayatModal event={historyEvent} onClose={() => setHistoryEvent(null)} />}
         </AppLayout>
     );
 }

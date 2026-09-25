@@ -4,14 +4,24 @@ namespace App\Http\Controllers;
 
 use App\Models\Branch;
 use App\Models\SafdakEvent;
+use App\Models\SafdakEventRevision;
 use App\Models\Speaker;
 use App\Support\PeriodRange;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 /**
- * penanda versi: safdakevent-ctrl-avg-capaian-20260820
+ * penanda versi: pipeline-riwayat-20260925 (sebelumnya: safdakevent-ctrl-avg-capaian-20260820)
+ *
+ * RIWAYAT UPDATE (25 September 2026): store / update / updateStatus / destroy
+ * masing-masing menulis satu baris ke safdak_event_revisions, di dalam
+ * transaksi yang sama dengan perubahannya. Simpan tanpa perubahan nilai
+ * TIDAK menulis riwayat. Dibaca lewat revisions() sebagai JSON.
+ *
+ * CATATAN: blok avg_capaian_* di index() masih dihitung tapi tidak lagi
+ * dibaca frontend (dibatalkan 20 Agustus). Dibiarkan -- backlog pembersihan.
  */
 class SafdakEventController extends Controller
 {
@@ -344,7 +354,10 @@ class SafdakEventController extends Controller
 
         $data = $this->validateEvent($request);
 
-        SafdakEvent::create($data);
+        DB::transaction(function () use ($request, $data) {
+            $event = SafdakEvent::create($data);
+            $this->logRevision($request, $event->id, 'created', $this->snapshot($event, true));
+        });
 
         return back()->with('success', 'Kampanye Safari Dakwah berhasil ditambahkan.');
     }
@@ -360,7 +373,15 @@ class SafdakEventController extends Controller
 
         $data = $this->validateEvent($request);
 
-        $event->update($data);
+        DB::transaction(function () use ($request, $event, $data) {
+            $event->fill($data);
+            $changes = $this->diff($event);   // WAJIB sebelum save(): getDirty() kosong setelahnya
+            $event->save();
+
+            if ($changes) {
+                $this->logRevision($request, $event->id, 'updated', $changes);
+            }
+        });
 
         return back()->with('success', 'Kampanye Safari Dakwah berhasil diperbarui.');
     }
@@ -376,7 +397,15 @@ class SafdakEventController extends Controller
             'status' => ['required', Rule::in(SafdakEvent::STATUSES)],
         ]);
 
-        $event->update($validated);
+        DB::transaction(function () use ($request, $event, $validated) {
+            $event->fill($validated);
+            $changes = $this->diff($event);
+            $event->save();
+
+            if ($changes) {
+                $this->logRevision($request, $event->id, 'status', $changes);
+            }
+        });
 
         return back()->with('success', 'Status kampanye diperbarui.');
     }
@@ -385,12 +414,128 @@ class SafdakEventController extends Controller
     {
         $this->authorizeWrite($request, $event->branch_id);
 
-        $event->delete();
+        DB::transaction(function () use ($request, $event) {
+            // Snapshot ditulis SEBELUM delete -- setelahnya nilai sudah hilang
+            $this->logRevision($request, $event->id, 'deleted', $this->snapshot($event, false));
+            $event->delete();
+        });
 
         return back()->with('success', 'Kampanye Safari Dakwah dihapus.');
     }
 
+    /**
+     * Riwayat Update satu kampanye, terbaru di atas. JSON (dimuat saat panel
+     * Riwayat dibuka, bukan ikut prop halaman -- supaya /safari-pipeline tidak
+     * bertambah berat).
+     *
+     * Hak baca = hak lihat halaman pipeline: seesAllBranches() ATAU cabang
+     * kampanye dalam jangkauan user. Viewer boleh membaca.
+     */
+    public function revisions(Request $request, SafdakEvent $event)
+    {
+        $user = $request->user();
+
+        abort_unless($user->seesAllBranches() || $user->canAccessBranch($event->branch), 403);
+
+        // branch_id disimpan sebagai uuid -> tampilkan kode cabang
+        $branchCodes = Branch::pluck('code', 'id');
+
+        $rows = $event->revisions()
+            ->with('user:id,name')
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(function (SafdakEventRevision $r) use ($branchCodes) {
+                $changes = collect($r->changes ?? [])
+                    ->map(function ($pair, $field) use ($branchCodes) {
+                        [$old, $new] = array_pad((array) $pair, 2, null);
+
+                        if ($field === 'branch_id') {
+                            $old = $old ? ($branchCodes[$old] ?? $old) : null;
+                            $new = $new ? ($branchCodes[$new] ?? $new) : null;
+                        }
+
+                        return ['field' => $field, 'old' => $old, 'new' => $new];
+                    })
+                    ->values();
+
+                return [
+                    'id'         => $r->id,
+                    'action'     => $r->action,
+                    'user'       => $r->user?->name,
+                    // ISO ber-offset -> frontend format ke Asia/Makassar
+                    'created_at' => $r->created_at?->toIso8601String(),
+                    // Baris hasil backfill migration: tidak punya isi perubahan
+                    'backfill'   => $r->action === 'created' && $r->changes === null,
+                    'changes'    => $changes,
+                ];
+            });
+
+        return response()->json(['revisions' => $rows]);
+    }
+
     // -- Helpers ------------------------------------------------
+
+    /**
+     * Pasangan [lama, baru] untuk kolom TRACKED yang benar-benar berubah.
+     * Dipanggil setelah fill(), sebelum save(). getDirty() memakai perbandingan
+     * sadar-cast Eloquent: 1500000 vs "1500000.00" (decimal) dan "25" vs 25
+     * (integer) TIDAK dianggap berubah.
+     */
+    private function diff(SafdakEvent $event): array
+    {
+        $changes = [];
+
+        foreach (array_keys($event->getDirty()) as $field) {
+            if (! in_array($field, SafdakEvent::TRACKED, true)) {
+                continue;
+            }
+
+            $changes[$field] = [
+                $this->normalize($event->getOriginal($field)),
+                $this->normalize($event->getAttribute($field)),
+            ];
+        }
+
+        return $changes;
+    }
+
+    /**
+     * Isi kampanye untuk baris 'created' ([null, nilai]) atau 'deleted'
+     * ([nilai, null]). Nilai kosong / false dilewati supaya riwayat tidak
+     * penuh baris "— -> —".
+     */
+    private function snapshot(SafdakEvent $event, bool $asNew): array
+    {
+        $out = [];
+
+        foreach (SafdakEvent::TRACKED as $field) {
+            $value = $this->normalize($event->getAttribute($field));
+
+            if ($value === null || $value === '' || $value === [] || $value === false) {
+                continue;
+            }
+
+            $out[$field] = $asNew ? [null, $value] : [$value, null];
+        }
+
+        return $out;
+    }
+
+    /** Tanggal (Carbon dari cast date:Y-m-d) disimpan sebagai string Y-m-d */
+    private function normalize($value)
+    {
+        return $value instanceof \DateTimeInterface ? $value->format('Y-m-d') : $value;
+    }
+
+    private function logRevision(Request $request, string $eventId, string $action, ?array $changes): void
+    {
+        SafdakEventRevision::create([
+            'event_id' => $eventId,
+            'user_id'  => $request->user()?->id,
+            'action'   => $action,
+            'changes'  => $changes,
+        ]);
+    }
 
     private function authorizeWrite(Request $request, ?string $branchId): void
     {

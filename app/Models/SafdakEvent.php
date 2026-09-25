@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * penanda versi: safdakevent-overlapsrange-20260819
+ * penanda versi: pipeline-riwayat-20260925 (sebelumnya: safdakevent-overlapsrange-20260819)
  */
 class SafdakEvent extends Model
 {
@@ -18,6 +18,18 @@ class SafdakEvent extends Model
     // Rumus target titik per hari safari
     public const TARGET_MIN_PER_DAY   = 2;
     public const TARGET_IDEAL_PER_DAY = 3;
+
+    /**
+     * Kolom yang dicatat di Riwayat Update (safdak_event_revisions).
+     * mou_file_path sengaja tidak ikut: tidak diisi lewat form.
+     * Menambah kolom input baru ke form? Tambahkan juga di sini dan di
+     * FIELD_LABELS pada SafdakPipeline/Index.jsx.
+     */
+    public const TRACKED = [
+        'branch_id', 'title', 'start_date', 'end_date', 'custom_dates',
+        'speaker', 'grade', 'status', 'titik_deal', 'titik_eksekusi',
+        'total_cost', 'revenue_komitmen', 'revenue_realisasi', 'has_mou', 'notes',
+    ];
 
     protected $fillable = [
         'branch_id',
@@ -95,6 +107,12 @@ class SafdakEvent extends Model
     public function logs()
     {
         return $this->hasMany(SafariDakwahLog::class, 'event_id');
+    }
+
+    /** Riwayat Update (append-only) — ditambahkan 25 September 2026 */
+    public function revisions()
+    {
+        return $this->hasMany(SafdakEventRevision::class, 'event_id');
     }
 
     // -- Scopes -------------------------------------------------

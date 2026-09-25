@@ -182,5 +182,10 @@ Route::middleware(['auth'])->group(function () {
 
     Route::delete('/safdak-events/{event}', [SafdakEventController::class, 'destroy'])
         ->name('safdak-events.destroy');
+
+    // Riwayat Update kampanye (JSON, baca saja) — penanda versi: pipeline-riwayat-20260925
+    // Tanpa role-gate: hak baca dicek di controller (scope cabang, viewer boleh)
+    Route::get('/safdak-events/{event}/revisions', [SafdakEventController::class, 'revisions'])
+        ->name('safdak-events.revisions');
     
 });
