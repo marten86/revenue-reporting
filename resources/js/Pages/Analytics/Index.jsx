@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { router } from '@inertiajs/react'
 import AppLayout from '@/Components/AppLayout'
+import { achievementTier, achievementColor as achColor } from '@/Utils/achievement' // v20260925-standar-capaian
 import {
     ComposedChart, BarChart, Bar, PieChart, Pie, Cell,
     Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -120,7 +121,9 @@ export default function AnalyticsIndex({
     const yearOptions = []
     for (let y = 2024; y <= new Date().getFullYear() + 1; y++) yearOptions.push(y)
 
-    const achievementColor = summary.achievement >= 100 ? '#16a34a' : summary.achievement >= 75 ? '#d97706' : '#dc2626'
+    const hasTarget        = (summary.target ?? 0) > 0
+    const achTier          = achievementTier(hasTarget ? summary.achievement : null)
+    const achievementColor = achTier.color
     const growthColor      = (summary.growth ?? 0) >= 0 ? '#16a34a' : '#dc2626'
     const showGrowth       = period === 'yearly'
     const costRatio        = summary.cost_ratio ?? 0
@@ -284,8 +287,11 @@ export default function AnalyticsIndex({
                         value={formatRp(summary.target)}
                         sub={formatRpFull(summary.target)} />
                     <SummaryCard title="Capaian" icon="📊" color={achievementColor}
-                        value={`${summary.achievement}%`}
-                        sub={summary.achievement >= 100 ? '✅ Target tercapai' : `Kurang ${formatRp(summary.target - summary.total_revenue)}`} />
+                        value={hasTarget ? `${summary.achievement}%` : '—'}
+                        sub={!hasTarget ? 'Target belum diset'
+                            : achTier.key === 'tercapai' ? '✅ Target tercapai'
+                            : achTier.key === 'masuk' ? `Masuk target · kurang ${formatRp(summary.target - summary.total_revenue)}`
+                            : `Kurang ${formatRp(summary.target - summary.total_revenue)}`} />
                     {singleChannel ? (
                         <SummaryCard title="Total Biaya" icon="💸"
                             color="#9ca3af"
@@ -424,7 +430,7 @@ export default function AnalyticsIndex({
                                 {byBranch.map((b, i) => {
                                     const branchTarget = b.target || 0
                                     const pct = branchTarget > 0 ? Math.round(b.total / branchTarget * 100) : 0
-                                    const color = pct >= 100 ? '#16a34a' : pct >= 75 ? '#d97706' : '#dc2626'
+                                    const color = achColor(branchTarget > 0 ? pct : null)
                                     return (
                                         <div key={i}>
                                             <div style={{display:'flex',justifyContent:'space-between',marginBottom:4,fontSize:12}}>
@@ -497,7 +503,7 @@ export default function AnalyticsIndex({
                                                     <td key={mi} style={{padding:'6px 6px',textAlign:'right'}}>
                                                         <div style={{color:m.actual>0?'#111827':'#d1d5db'}}>{formatRp(m.actual)}</div>
                                                         {m.target > 0 && (
-                                                            <div style={{fontSize:10,color:m.pct>=100?'#16a34a':m.pct>=75?'#d97706':'#dc2626'}}>{m.pct}%</div>
+                                                            <div style={{fontSize:10,color:achColor(m.pct)}}>{m.pct}%</div>
                                                         )}
                                                         {!singleChannel && m.cost > 0 && (
                                                             <div style={{fontSize:10,color:'#9ca3af'}}>B:{formatRp(m.cost)}</div>

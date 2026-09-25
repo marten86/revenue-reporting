@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, router } from '@inertiajs/react'
 import AppLayout from '../../Components/AppLayout'
+import { achievementTier, achievementColor as achColor } from '../../Utils/achievement' // v20260925-standar-capaian
 import {
     LineChart, Line, BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell,
     XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart,
@@ -24,16 +25,25 @@ const formatRpAxis = (n) => {
     return n
 }
 
+// v20260925-kanal-split — key = nilai kanal mentah dari DashboardController.
+// Label & warna disamakan dengan Analytics/Index.jsx (AnalyticsController::$channelLabels).
 const CHANNEL_LABELS = {
-    presentasi: 'Presentasi', gerai: 'Gerai', wgts: 'WGTS',
-    dfi: 'DFI', dfe: 'DFE', kotak_qris: 'Kotak/QRIS', kantor: 'Kantor',
+    presentasi: 'Presentasi', wgts: 'WGTS', gerai: 'Gerai',
+    dfi: 'DFI (AR)', dfe: 'DFE (AE)',
+    kotak: 'Kotak Infak', qris: 'QRIS',
+    kotak_qris: 'Kotak/QRIS (Lama)', kotak_qris_legacy: 'Kotak/QRIS (Lama)',
+    kantor: 'Kantor',
 }
-
 const CHANNEL_COLORS = {
-    presentasi: '#16a34a', gerai: '#2563eb', wgts: '#9333ea',
-    dfi: '#ea580c', dfe: '#0891b2', kotak_qris: '#d97706', kantor: '#6b7280',
+    presentasi: '#16a34a', wgts: '#2563eb', gerai: '#d97706',
+    dfi: '#dc2626', dfe: '#7c3aed',
+    kotak: '#0891b2', qris: '#0d9488',
+    kotak_qris: '#94a3b8', kotak_qris_legacy: '#94a3b8',
+    kantor: '#be185d',
 }
-
+// Urutan stack chart "Revenue per Cabang per Kanal" — harus cocok dengan key
+// yang dikirim DashboardController::buildChannelPerBranch()
+const STACK_KEYS = ['presentasi', 'wgts', 'gerai', 'dfi', 'dfe', 'kotak', 'qris', 'kantor', 'kotak_qris_legacy']
 const PIE_COLORS = ['#16a34a', '#2563eb', '#9333ea', '#ea580c', '#0891b2', '#d97706', '#6b7280']
 
 // Warna rasio: hijau ≤30%, kuning 31-50%, merah >50%
@@ -103,7 +113,7 @@ const ChartCard = ({ title, subtitle, children, style: extraStyle }) => (
 // ── Area Summary Card (Super Admin) ──
 const AreaSummaryCard = ({ area }) => {
     const pct = area.achievement
-    const color = pct >= 100 ? '#166534' : pct >= 75 ? '#d97706' : pct > 0 ? '#dc2626' : '#9ca3af'
+    const color = achColor(area.total_target > 0 ? pct : null)
     const { status_counts: sc } = area
     const ratio = area.cost_ratio ?? 0
 
@@ -135,7 +145,7 @@ const AreaSummaryCard = ({ area }) => {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 2 }}>Capaian</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, color }}>{pct > 0 ? `${pct}%` : '—'}</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, color }}>{area.total_target > 0 ? `${pct}%` : '—'}</div>
                 </div>
             </div>
 
@@ -326,9 +336,12 @@ export default function AreaDashboard({
                     },
                     {
                         label: 'Capaian Target', icon: '🎯',
-                        value: `${pct.toFixed(1)}%`,
-                        sub: pct >= 85 ? '✓ On track' : `Kurang ${formatRpShort(summary.total_target - summary.total_revenue)}`,
-                        valueColor: pct >= 85 ? '#166534' : pct >= 60 ? '#d97706' : '#dc2626',
+                        value: summary.total_target > 0 ? `${pct.toFixed(1)}%` : '—',
+                        sub: !(summary.total_target > 0) ? 'Target belum diset'
+                            : achievementTier(pct).key === 'tercapai' ? '✅ Target tercapai'
+                            : achievementTier(pct).key === 'masuk' ? `Masuk target · kurang ${formatRpShort(summary.total_target - summary.total_revenue)}`
+                            : `Kurang ${formatRpShort(summary.total_target - summary.total_revenue)}`,
+                        valueColor: achColor(summary.total_target > 0 ? pct : null),
                     },
                     {
                         label: 'Total Biaya', icon: '💸',
@@ -477,9 +490,11 @@ export default function AreaDashboard({
                             <YAxis type="category" dataKey="branch" width={100} tick={{ fontSize: 11, fill: '#374151' }} />
                             <Tooltip content={<CustomTooltip />} />
                             <Legend wrapperStyle={{ fontSize: 11 }} />
-                            {Object.entries(CHANNEL_COLORS).map(([ch, color]) => (
-                                <Bar key={ch} dataKey={ch} name={CHANNEL_LABELS[ch]} stackId="stack" fill={color} />
-                            ))}
+                            {STACK_KEYS
+                                .filter(ch => (channelPerBranch ?? []).some(r => (r[ch] ?? 0) > 0))
+                                .map(ch => (
+                                    <Bar key={ch} dataKey={ch} name={CHANNEL_LABELS[ch]} stackId="stack" fill={CHANNEL_COLORS[ch]} />
+                                ))}
                         </BarChart>
                     </ResponsiveContainer>
                 ) : (
@@ -517,8 +532,8 @@ export default function AreaDashboard({
                                         <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12, fontWeight: 500 }}>
                                             {b.total_revenue ? formatRpShort(b.total_revenue) : <span style={{ color: '#d1d5db' }}>—</span>}
                                         </td>
-                                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 600, fontSize: 12, color: b.achievement_pct >= 85 ? '#166534' : b.achievement_pct >= 60 ? '#d97706' : b.total_revenue ? '#dc2626' : '#d1d5db' }}>
-                                            {b.total_revenue ? `${b.achievement_pct.toFixed(1)}%` : '—'}
+                                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 600, fontSize: 12, color: b.target_amount > 0 && b.total_revenue ? achColor(b.achievement_pct) : '#d1d5db' }}>
+                                            {b.target_amount > 0 && b.total_revenue ? `${b.achievement_pct.toFixed(1)}%` : '—'}
                                         </td>
                                         <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>
                                             {b.total_cost > 0 ? formatRpShort(b.total_cost) : <span style={{ color: '#d1d5db' }}>—</span>}
