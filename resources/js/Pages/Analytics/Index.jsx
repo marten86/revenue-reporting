@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { router } from '@inertiajs/react'
 import AppLayout from '@/Components/AppLayout'
 import { achievementTier, achievementColor as achColor } from '@/Utils/achievement' // v20260925-standar-capaian
+import { CHANNEL_COLORS_BY_LABEL as CHANNEL_COLORS } from '@/Utils/channels' // v20260926-channels-sot
 import {
     ComposedChart, BarChart, Bar, PieChart, Pie, Cell,
     Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -10,18 +11,8 @@ import {
 
 const COLORS = ['#16a34a','#2563eb','#d97706','#dc2626','#7c3aed','#0891b2','#be185d']
 
-// Key HARUS sama persis dengan AnalyticsController::$channelLabels
-const CHANNEL_COLORS = {
-    'Presentasi':          '#16a34a',
-    'WGTS':                '#2563eb',
-    'Gerai':               '#d97706',
-    'DFI (AR)':            '#dc2626',
-    'DFE (AE)':            '#7c3aed',
-    'Kotak Infak':         '#0891b2',
-    'QRIS':                '#0d9488',
-    'Kotak/QRIS (Lama)':   '#94a3b8',
-    'Kantor':              '#be185d',
-}
+// v20260926-channels-sot — CHANNEL_COLORS (per label) kini dari Utils/channels.js
+// Label HARUS sama persis dengan AnalyticsController::$channelLabels
 
 const PERIOD_OPTIONS = [
     { value: 'weekly',    label: 'Mingguan' },

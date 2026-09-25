@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, router } from '@inertiajs/react'
 import AppLayout from '../../Components/AppLayout'
 import { achievementTier, achievementColor as achColor } from '../../Utils/achievement' // v20260925-standar-capaian
+import { CHANNEL_LABELS, CHANNEL_COLORS, STACK_KEYS } from '../../Utils/channels' // v20260926-channels-sot
 import {
     LineChart, Line, BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell,
     XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart,
@@ -81,25 +82,7 @@ const formatRpAxis = (n) => {
     return n
 }
 
-// v20260925-kanal-split — key = nilai kanal mentah dari DashboardController.
-// Label & warna disamakan dengan Analytics/Index.jsx (AnalyticsController::$channelLabels).
-const CHANNEL_LABELS = {
-    presentasi: 'Presentasi', wgts: 'WGTS', gerai: 'Gerai',
-    dfi: 'DFI (AR)', dfe: 'DFE (AE)',
-    kotak: 'Kotak Infak', qris: 'QRIS',
-    kotak_qris: 'Kotak/QRIS (Lama)', kotak_qris_legacy: 'Kotak/QRIS (Lama)',
-    kantor: 'Kantor',
-}
-const CHANNEL_COLORS = {
-    presentasi: '#16a34a', wgts: '#2563eb', gerai: '#d97706',
-    dfi: '#dc2626', dfe: '#7c3aed',
-    kotak: '#0891b2', qris: '#0d9488',
-    kotak_qris: '#94a3b8', kotak_qris_legacy: '#94a3b8',
-    kantor: '#be185d',
-}
-// Urutan stack chart "Revenue per Cabang per Kanal" — harus cocok dengan key
-// yang dikirim DashboardController::buildChannelPerBranch()
-const STACK_KEYS = ['presentasi', 'wgts', 'gerai', 'dfi', 'dfe', 'kotak', 'qris', 'kantor', 'kotak_qris_legacy']
+// v20260926-channels-sot — CHANNEL_LABELS, CHANNEL_COLORS, STACK_KEYS kini dari Utils/channels.js
 const PIE_COLORS = ['#16a34a', '#2563eb', '#9333ea', '#ea580c', '#0891b2', '#d97706', '#6b7280']
 
 // Warna rasio: hijau ≤30%, kuning 31-50%, merah >50%
