@@ -1,5 +1,7 @@
 import { Link, router } from '@inertiajs/react'
 import AppLayout from '../../Components/AppLayout'
+import { achievementTier, achievementColor as achColor } from '../../Utils/achievement' // v20260926-branch-standar
+import { channelLabel, channelColor } from '../../Utils/channels' // v20260926-channels-sot
 import {
     ComposedChart, LineChart, Line, BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell,
     XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -26,17 +28,14 @@ const formatRpAxis = (n) => {
     return n
 }
 
-const CHANNEL_LABELS = {
-    presentasi: 'Presentasi', gerai: 'Gerai', wgts: 'WGTS',
-    dfi: 'DFI', dfe: 'DFE', kotak_qris: 'Kotak/QRIS', kantor: 'Kantor',
-}
+// v20260926-channels-sot — label & warna kanal dari Utils/channels.js
 
-const CHANNEL_COLORS = {
-    presentasi: '#16a34a', gerai: '#2563eb', wgts: '#9333ea',
-    dfi: '#ea580c', dfe: '#0891b2', kotak_qris: '#d97706', kantor: '#6b7280',
+// v20260926-branch-null — persen porsi: <1% untuk nilai kecil yang bukan nol
+const fmtShare = (value, total) => {
+    if (!total || !value) return '0%'
+    const p = value / total * 100
+    return p < 1 ? '<1%' : `${p.toFixed(0)}%`
 }
-
-const PIE_COLORS = ['#16a34a', '#2563eb', '#9333ea', '#ea580c', '#0891b2', '#d97706', '#6b7280']
 
 const ratioColor = (r) => r <= 30 ? '#166534' : r <= 50 ? '#d97706' : '#dc2626'
 const ratioLabel = (r) => r <= 30 ? 'Sehat' : r <= 50 ? 'Perhatian' : 'Tinggi'
@@ -84,7 +83,7 @@ const CustomTooltip = ({ active, payload, label }) => {
                     <div style={{ width: 8, height: 8, borderRadius: 2, background: entry.color }} />
                     <span style={{ color: '#6b7280' }}>{entry.name}:</span>
                     <span style={{ fontWeight: 600, fontFamily: 'monospace' }}>
-                        {entry.name === 'Rasio %' ? `${entry.value}%` : formatRpShort(entry.value)}
+                        {entry.name === 'Rasio %' ? (entry.value == null ? '—' : `${entry.value}%`) : formatRpShort(entry.value)}
                     </span>
                 </div>
             ))}
@@ -109,9 +108,13 @@ export default function BranchDashboard({
 }) {
     const totalRevenue = report?.total_revenue ?? 0
     const targetAmt    = target?.target_total ?? 0
-    const pct          = targetAmt > 0 ? (totalRevenue / targetAmt * 100) : 0
+    // v20260926-branch-standar — tanpa target: pct null (UI "—"), standar 80/100
+    const hasTarget    = targetAmt > 0
+    const pct          = hasTarget ? (totalRevenue / targetAmt * 100) : null
+    const tierKey      = hasTarget ? achievementTier(pct).key : null
     const totalCost    = costData?.total_cost ?? 0
-    const costRatio    = totalRevenue > 0 ? parseFloat((totalCost / totalRevenue * 100).toFixed(1)) : 0
+    // v20260926-branch-null — rasio dari backend; null bila revenue 0
+    const costRatio    = costData?.cost_ratio ?? null
     const periodLabel  = new Date(currentMonth + 'T00:00:00')
         .toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
 
@@ -122,10 +125,10 @@ export default function BranchDashboard({
         })
     }
 
-    const pieData = (channelBreakdown ?? []).map((item, i) => ({
-        name: CHANNEL_LABELS[item.channel] ?? item.channel,
+    const pieData = (channelBreakdown ?? []).map((item) => ({
+        name: channelLabel(item.channel),
         value: item.total,
-        color: CHANNEL_COLORS[item.channel] ?? PIE_COLORS[i % PIE_COLORS.length],
+        color: channelColor(item.channel),
     }))
     const pieTotal = pieData.reduce((s, d) => s + d.value, 0)
 
@@ -189,15 +192,19 @@ export default function BranchDashboard({
                     },
                     {
                         label: 'Capaian Target', icon: '🎯',
-                        value: `${pct.toFixed(1)}%`,
-                        sub: pct >= 85 ? '✓ On track' : 'Perlu ditingkatkan',
-                        valueColor: pct >= 85 ? '#166534' : pct >= 60 ? '#d97706' : '#dc2626',
+                        value: hasTarget ? `${pct.toFixed(1)}%` : '—',
+                        sub: !hasTarget ? 'Target belum diset'
+                            : tierKey === 'tercapai' ? '✅ Target tercapai'
+                            : tierKey === 'masuk' ? 'Masuk target'
+                            : 'Di bawah 80%',
+                        valueColor: achColor(pct),
                     },
                     {
                         label: 'Selisih', icon: '📊',
-                        value: formatRpShort(totalRevenue - targetAmt),
-                        sub: totalRevenue >= targetAmt ? 'Melebihi target' : 'Di bawah target',
-                        valueColor: totalRevenue >= targetAmt ? '#166534' : '#dc2626',
+                        value: hasTarget ? formatRpShort(totalRevenue - targetAmt) : '—',
+                        sub: !hasTarget ? 'Target belum diset'
+                            : totalRevenue >= targetAmt ? 'Melebihi target' : 'Di bawah target',
+                        valueColor: !hasTarget ? '#9ca3af' : totalRevenue >= targetAmt ? '#166534' : '#dc2626',
                     },
                     {
                         label: 'Total Biaya', icon: '💸',
@@ -206,9 +213,10 @@ export default function BranchDashboard({
                     },
                     {
                         label: 'Rasio Biaya', icon: '📉',
-                        value: totalRevenue > 0 && totalCost > 0 ? `${costRatio}%` : '—',
-                        sub: totalCost > 0 ? ratioLabel(costRatio) : 'Belum ada data',
-                        valueColor: totalCost > 0 ? ratioColor(costRatio) : '#9ca3af',
+                        value: costRatio != null && totalCost > 0 ? `${costRatio}%` : '—',
+                        sub: costRatio == null ? 'Belum ada revenue'
+                            : totalCost > 0 ? ratioLabel(costRatio) : 'Belum ada data biaya',
+                        valueColor: costRatio != null && totalCost > 0 ? ratioColor(costRatio) : '#9ca3af',
                     },
                     {
                         label: 'Status Laporan', icon: '📋',
@@ -242,7 +250,7 @@ export default function BranchDashboard({
                                 <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
                                 <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#9ca3af' }} />
                                 <YAxis yAxisId="left" tickFormatter={formatRpAxis} tick={{ fontSize: 11, fill: '#9ca3af' }} />
-                                <YAxis yAxisId="right" orientation="right" tickFormatter={v => `${v}%`} tick={{ fontSize: 11, fill: '#9ca3af' }} domain={[0, 100]} />
+                                <YAxis yAxisId="right" orientation="right" tickFormatter={v => `${v}%`} tick={{ fontSize: 11, fill: '#9ca3af' }} domain={[0, (max) => Number.isFinite(max) ? Math.max(100, Math.ceil(max)) : 100]} />
                                 <Tooltip content={<CustomTooltip />} />
                                 <Legend wrapperStyle={{ fontSize: 12 }} />
                                 <Area yAxisId="left" type="monotone" dataKey="revenue" name="Revenue" stroke="#16a34a" strokeWidth={2.5} fill="url(#gradBranchRevenue)" />
@@ -273,7 +281,7 @@ export default function BranchDashboard({
                                         <div style={{ width: 8, height: 8, borderRadius: 2, background: d.color }} />
                                         <span style={{ color: '#6b7280' }}>{d.name}</span>
                                         <span style={{ color: '#9ca3af' }}>{formatRpShort(d.value)}</span>
-                                        <span style={{ fontWeight: 600, color: '#374151' }}>{pieTotal > 0 ? `${(d.value / pieTotal * 100).toFixed(0)}%` : ''}</span>
+                                        <span style={{ fontWeight: 600, color: '#374151' }}>{pieTotal > 0 ? fmtShare(d.value, pieTotal) : ''}</span>
                                     </div>
                                 ))}
                             </div>
@@ -313,13 +321,13 @@ export default function BranchDashboard({
                 <ChartCard title="Revenue per Kanal" subtitle={periodLabel}>
                     {(channelBreakdown ?? []).length > 0 ? (
                         <ResponsiveContainer width="100%" height={260}>
-                            <BarChart data={(channelBreakdown ?? []).map(d => ({ name: CHANNEL_LABELS[d.channel] ?? d.channel, total: d.total }))} layout="vertical">
+                            <BarChart data={(channelBreakdown ?? []).map(d => ({ name: channelLabel(d.channel), total: d.total }))} layout="vertical">
                                 <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
                                 <XAxis type="number" tickFormatter={formatRpAxis} tick={{ fontSize: 11, fill: '#9ca3af' }} />
                                 <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 11, fill: '#374151' }} />
                                 <Tooltip content={<CustomTooltip />} />
                                 <Bar dataKey="total" name="Revenue" radius={[0, 4, 4, 0]}>
-                                    {(channelBreakdown ?? []).map((d, i) => <Cell key={i} fill={CHANNEL_COLORS[d.channel] ?? '#6b7280'} />)}
+                                    {(channelBreakdown ?? []).map((d, i) => <Cell key={i} fill={channelColor(d.channel)} />)}
                                 </Bar>
                             </BarChart>
                         </ResponsiveContainer>
@@ -354,8 +362,8 @@ export default function BranchDashboard({
                                         </td>
                                         <td style={{ padding: '9px 14px', fontWeight: 500 }}>{p.source_label}</td>
                                         <td style={{ padding: '9px 14px' }}>
-                                            <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 500, background: CHANNEL_COLORS[p.channel] ? `${CHANNEL_COLORS[p.channel]}15` : '#f3f4f6', color: CHANNEL_COLORS[p.channel] ?? '#6b7280' }}>
-                                                {CHANNEL_LABELS[p.channel] ?? p.channel}
+                                            <span style={{ padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 500, background: `${channelColor(p.channel)}15`, color: channelColor(p.channel) }}>
+                                                {channelLabel(p.channel)}
                                             </span>
                                         </td>
                                         <td style={{ padding: '9px 14px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{formatRpShort(p.total)}</td>
@@ -383,13 +391,13 @@ export default function BranchDashboard({
                                 <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>Belum ada histori.</td></tr>
                             )}
                             {recentMonths?.map(r => {
-                                const p = r.target_amount > 0 ? (r.total_revenue / r.target_amount * 100) : 0
+                                const p = r.target_amount > 0 ? (r.total_revenue / r.target_amount * 100) : null // v20260926-branch-standar
                                 return (
                                     <tr key={r.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
                                         <td style={{ padding: '10px 14px' }}>{new Date(r.period_month).toLocaleDateString('id-ID', { month: 'short', year: 'numeric' })}</td>
                                         <td style={{ padding: '10px 14px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>{formatRpShort(r.target_amount)}</td>
                                         <td style={{ padding: '10px 14px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12, fontWeight: 500 }}>{formatRpShort(r.total_revenue)}</td>
-                                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, fontSize: 12, color: p >= 85 ? '#166534' : p >= 60 ? '#d97706' : '#dc2626' }}>{p.toFixed(1)}%</td>
+                                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, fontSize: 12, color: achColor(p) }}>{p == null ? '—' : `${p.toFixed(1)}%`}</td>
                                         <td style={{ padding: '10px 14px' }}>
                                             <StatusBadge status={r.status} />
                                         </td>

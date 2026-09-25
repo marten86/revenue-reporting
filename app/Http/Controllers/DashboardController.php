@@ -227,7 +227,8 @@ class DashboardController extends Controller
         $totalRevenue = $report?->total_revenue ?? 0;
         $targetAmount = $target?->target_total ?? 0;
         $totalCost    = $cost?->total_cost ?? 0;
-        $costRatio    = $totalRevenue > 0 ? round($totalCost / $totalRevenue * 100, 1) : 0;
+        // v20260926-branch-null: rasio tanpa revenue = null (UI "—"), bukan 0 ("Sehat")
+        $costRatio    = $totalRevenue > 0 ? round($totalCost / $totalRevenue * 100, 1) : null;
 
         $recentMonths = MonthlyReport::where('branch_id', $branch->id)
             ->orderByDesc('period_month')
@@ -560,7 +561,8 @@ class DashboardController extends Controller
                 'revenue'    => $revenue,
                 'target'     => (int) ($target ?? 0),
                 'cost'       => $costTotal,
-                'cost_ratio' => $revenue > 0 ? round($costTotal / $revenue * 100, 1) : 0,
+                // v20260926-branch-null: bulan tanpa revenue → null (celah di garis, bukan 0%)
+                'cost_ratio' => $revenue > 0 ? round($costTotal / $revenue * 100, 1) : null,
             ];
         }
 
