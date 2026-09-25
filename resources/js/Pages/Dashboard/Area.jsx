@@ -25,6 +25,55 @@ const fmtShare = (value, total) => {
     return p < 1 ? '<1%' : `${p.toFixed(0)}%`
 }
 
+// v20260925-proyeksi — "23 Sep"
+const fmtDayMonth = (d) => d
+    ? new Date(d + 'T00:00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
+    : ''
+
+const buildProjectionCard = (projection) => {
+    if (!projection) {
+        return { label: 'Proyeksi Akhir Bulan', icon: '🔭', value: '—', sub: 'Belum ada data bulan ini', valueColor: '#9ca3af' }
+    }
+    const p = projection
+    const hasTarget = p.projected_pct != null
+    return {
+        label: 'Proyeksi Akhir Bulan', icon: '🔭',
+        value: hasTarget ? `${p.projected_pct.toFixed(1)}%` : formatRpShort(p.projected),
+        valueColor: hasTarget ? achColor(p.projected_pct) : '#111827',
+        sub: (
+            <>
+                <div>≈ {formatRpShort(p.projected)} · data s.d. {fmtDayMonth(p.data_until)}</div>
+                <div style={{ marginTop: 2 }}>
+                    {!hasTarget ? 'Target belum diset'
+                        : p.target_met ? '✅ Target sudah tercapai'
+                        : p.need_per_day != null ? `Perlu ${formatRpShort(p.need_per_day)}/hari untuk 100%`
+                        : 'Tidak ada sisa hari'}
+                </div>
+            </>
+        ),
+    }
+}
+
+const buildInputStatusCard = (st) => {
+    if (!st) return null
+    const allFresh = st.fresh === st.total
+    const shown = st.stale.slice(0, 3)
+        .map(x => `${x.code} ${x.days_since == null ? 'belum ada' : `${x.days_since} hr`}`)
+        .join(', ')
+    const more = st.stale.length > 3 ? ` +${st.stale.length - 3}` : ''
+    return {
+        label: 'Status Input', icon: '🕒',
+        value: `${st.fresh} / ${st.total}`,
+        valueColor: allFresh ? '#16a34a' : st.fresh === 0 ? '#dc2626' : '#d97706',
+        sub: (
+            <>
+                <div>Update ≤{st.fresh_days} hari terakhir</div>
+                <div style={{ marginTop: 2 }}>{allFresh ? 'Semua cabang up to date ✓' : `Tertinggal: ${shown}${more}`}</div>
+            </>
+        ),
+    }
+}
+
 const formatRpAxis = (n) => {
     if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(0)}M`
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(0)}jt`
@@ -204,6 +253,7 @@ export default function AreaDashboard({
     branches, summary, areaSummary, areaLabel, isSuperAdmin,
     currentMonth, monthlyTrend, channelBreakdown, dailyProgress,
     topPerformers, channelPerBranch, availableMonths,
+    isCurrentMonth, projection, inputStatus,
 }) {
     const pct         = summary.achievement_pct ?? 0
     const costRatio   = summary.cost_ratio
@@ -350,6 +400,7 @@ export default function AreaDashboard({
                             : `Kurang ${formatRpShort(summary.total_target - summary.total_revenue)}`,
                         valueColor: achColor(summary.total_target > 0 ? pct : null),
                     },
+                    isCurrentMonth ? buildProjectionCard(projection) : null,
                     {
                         label: 'Total Biaya', icon: '💸',
                         value: formatRpShort(summary.total_cost),
@@ -361,19 +412,20 @@ export default function AreaDashboard({
                         sub: costRatio == null ? 'Belum ada revenue' : ratioLabel(costRatio),
                         valueColor: costRatio == null ? '#9ca3af' : ratioColor(costRatio),
                     },
-                    {
+                    // Bulan berjalan: Status Input menggantikan Laporan Masuk & Cabang
+                    isCurrentMonth ? buildInputStatusCard(inputStatus) : {
                         label: 'Laporan Masuk', icon: '📋',
                         value: `${summary.reports_submitted} / ${summary.reports_total}`,
                         sub: summary.reports_submitted < summary.reports_total
                             ? `${summary.reports_total - summary.reports_submitted} belum submit`
                             : 'Semua sudah submit ✓',
                     },
-                    {
+                    isCurrentMonth ? null : {
                         label: 'Cabang', icon: '🏢',
                         value: summary.reports_total,
                         sub: areaLabel,
                     },
-                ].map((m, i) => (
+                ].filter(Boolean).map((m, i) => (
                     <div key={i} className="metric-card" style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: '14px 16px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                             <div style={{ fontSize: 10, fontWeight: 500, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em' }}>{m.label}</div>

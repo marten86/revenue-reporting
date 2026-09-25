@@ -92,6 +92,12 @@ class DashboardController extends Controller
         $topPerformers    = $this->buildTopPerformers($periodMonth, 10, $branchIds);
         $channelPerBranch = $this->buildChannelPerBranch($periodMonth, $branchIds);
 
+        // v20260925-proyeksi: kartu Proyeksi + Status Input (hanya bulan berjalan)
+        $isCurrentMonth = Carbon::parse($periodMonth)->format('Y-m') === Carbon::today()->format('Y-m');
+        [$projection, $inputStatus] = $isCurrentMonth
+            ? $this->buildPacing($periodMonth, $branches, (int) $summary['total_revenue'], (int) $summary['total_target'])
+            : [null, null];
+
         $availableMonths = MonthlyReport::whereIn('branch_id', $branchIds)
             ->select('period_month')
             ->distinct()
@@ -113,7 +119,85 @@ class DashboardController extends Controller
             'topPerformers'    => $topPerformers,
             'channelPerBranch' => $channelPerBranch,
             'availableMonths'  => $availableMonths,
+            'isCurrentMonth'   => $isCurrentMonth,
+            'projection'       => $projection,
+            'inputStatus'      => $inputStatus,
         ]);
+    }
+
+    /**
+     * Proyeksi akhir bulan + status input per cabang — v20260925-proyeksi
+     *
+     * N (pembagi) = tanggal data terakhir yang masuk di area (opsi B), bukan hari ini,
+     * agar keterlambatan input tidak menekan proyeksi.
+     * "Data terakhir" = MAX(daily_revenues.date) dengan total_daily > 0.
+     * Semua turunan dihitung di sini; JSX hanya menampilkan.
+     */
+    private function buildPacing(string $periodMonth, $branches, int $totalRevenue, int $totalTarget): array
+    {
+        $freshDays   = 2;
+        $branchIds   = $branches->pluck('id')->toArray();
+        $monthStart  = Carbon::parse($periodMonth)->startOfMonth();
+        $daysInMonth = $monthStart->daysInMonth;
+        $today       = Carbon::today();
+
+        $lastDates = DB::table('daily_revenues')
+            ->join('monthly_reports', 'daily_revenues.monthly_report_id', '=', 'monthly_reports.id')
+            ->whereIn('monthly_reports.branch_id', $branchIds)
+            ->where('monthly_reports.period_month', $monthStart->toDateString())
+            ->whereNull('monthly_reports.deleted_at')
+            ->where('daily_revenues.total_daily', '>', 0)
+            ->groupBy('monthly_reports.branch_id')
+            ->select('monthly_reports.branch_id', DB::raw('MAX(daily_revenues.date) as last_date'))
+            ->pluck('last_date', 'monthly_reports.branch_id');
+
+        // - Status input per cabang -
+        $fresh = 0;
+        $stale = [];
+        foreach ($branches as $b) {
+            $last = $lastDates->get($b->id);
+            $days = $last ? (int) Carbon::parse($last)->startOfDay()->diffInDays($today) : null;
+            if ($days !== null && $days <= $freshDays) {
+                $fresh++;
+            } else {
+                $stale[] = ['code' => $b->code, 'days_since' => $days];
+            }
+        }
+        // Paling lama tertinggal di depan; "belum ada data" (null) paling depan
+        usort($stale, fn($a, $b) => ($b['days_since'] ?? PHP_INT_MAX) <=> ($a['days_since'] ?? PHP_INT_MAX));
+
+        $inputStatus = [
+            'fresh'      => $fresh,
+            'total'      => count($branches),
+            'fresh_days' => $freshDays,
+            'stale'      => $stale,
+        ];
+
+        // - Proyeksi -
+        $maxDate = $lastDates->max();
+        if (!$maxDate || $totalRevenue <= 0) {
+            return [null, $inputStatus];
+        }
+
+        $dataUntil    = Carbon::parse($maxDate);
+        $n            = $dataUntil->day;
+        $projected    = (int) round($totalRevenue / $n * $daysInMonth);
+        $remainingDay = $daysInMonth - $n;
+        $shortfall    = $totalTarget - $totalRevenue;
+
+        $projection = [
+            'projected'     => $projected,
+            'projected_pct' => $totalTarget > 0 ? round($projected / $totalTarget * 100, 1) : null,
+            'need_per_day'  => ($totalTarget > 0 && $shortfall > 0 && $remainingDay > 0)
+                ? (int) ceil($shortfall / $remainingDay)
+                : null,
+            'target_met'    => $totalTarget > 0 && $shortfall <= 0,
+            'data_until'    => $dataUntil->toDateString(),
+            'days_elapsed'  => $n,
+            'days_in_month' => $daysInMonth,
+        ];
+
+        return [$projection, $inputStatus];
     }
 
     // -
