@@ -6,9 +6,13 @@ use App\Models\Branch;
 use App\Models\CostDetail;
 use App\Models\MonthlyCost;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 use Inertia\Response;
 
+/**
+ * penanda versi: costs-lastedited-20260925
+ */
 class CostController extends Controller
 {
     // ── Index ────────────────────────────────────────────────────────────────
@@ -23,6 +27,7 @@ class CostController extends Controller
         $costs = MonthlyCost::with(['branch.area'])
             ->withCount('costDetails')
             ->withCount(['costDetails as filled_details_count' => fn($q) => $q->where('amount', '>', 0)])
+            ->withMax('costDetails', 'updated_at') // ⬅ NEW: dasar "Terakhir Diedit"
             ->whereIn('branch_id', $branchIds)
             ->where('period_month', $month)
             ->orderByRaw("CASE status
@@ -30,7 +35,8 @@ class CostController extends Controller
                 WHEN 'approved'  THEN 2
                 WHEN 'draft'     THEN 3
                 ELSE 4 END")
-            ->get();
+            ->get()
+            ->each(fn($c) => $c->last_edited_at = self::toIso($c->cost_details_max_updated_at)); // ⬅ NEW
 
         return Inertia::render('Costs/Index', [
             'costs'        => $costs,
@@ -142,6 +148,7 @@ class CostController extends Controller
             'canApprove' => $canManage && $cost->isSubmitted(),
             'canRevise'  => $canManage && $cost->isSubmitted(),
             'isReadOnly' => $user->isReadOnly(), // ⬅ NEW: frontend sembunyikan grid input biaya utk viewer
+            'lastEditedAt' => self::toIso($cost->costDetails()->max('updated_at')), // ⬅ NEW 20260925
         ]);
     }
 
@@ -226,5 +233,21 @@ class CostController extends Controller
         $cost->revise($user, $request->revision_notes);
 
         return back()->with('success', 'Laporan dikembalikan untuk revisi.');
+    }
+
+    // ── Helper ───────────────────────────────────────────────────────────────
+
+    /**
+     * "Terakhir Diedit" = MAX(cost_details.updated_at) — perubahan DATA biaya.
+     * Sengaja tidak memakai monthly_costs.updated_at: kolom itu ikut bergeser
+     * saat submit/approve/revisi, sehingga approve akan tampil sebagai "edit".
+     *
+     * Nilai mentah dari aggregate (withMax / max) tidak melewati cast Eloquent
+     * dan tidak membawa zona waktu → di-parse dengan app.timezone lalu dikirim
+     * sebagai ISO 8601 ber-offset. Frontend memformatnya ke Asia/Makassar.
+     */
+    private static function toIso(?string $raw): ?string
+    {
+        return $raw ? Carbon::parse($raw, config('app.timezone'))->toIso8601String() : null;
     }
 }

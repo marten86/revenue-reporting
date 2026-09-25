@@ -9,6 +9,17 @@ const formatRpShort = (n) => {
     return `Rp ${(n / 1_000).toFixed(0)} rb`
 }
 
+// penanda versi: costs-lastedited-20260925
+// ISO ber-offset dari backend → selalu tampil dalam WITA, apa pun zona waktu browser
+const formatEdited = (iso, withYear = false) => {
+    if (!iso) return '—'
+    return new Date(iso).toLocaleString('id-ID', {
+        timeZone: 'Asia/Makassar',
+        day: 'numeric', month: 'short', ...(withYear ? { year: 'numeric' } : {}),
+        hour: '2-digit', minute: '2-digit',
+    }) + ' WITA'
+}
+
 const StatusBadge = ({ status }) => {
     const map = {
         draft:     { label: 'Draft',     bg: '#f3f4f6', color: '#6b7280' },
@@ -52,14 +63,14 @@ export default function CostsIndex({ costs, currentMonth }) {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
                         <tr style={{ background: '#f9fafb' }}>
-                            {['Cabang', 'Periode', 'Total Biaya', 'Jumlah Item', 'Status', 'Disubmit', ''].map(h => (
+                            {['Cabang', 'Periode', 'Total Biaya', 'Jumlah Item', 'Status', 'Disubmit', 'Terakhir Diedit', ''].map(h => (
                                 <th key={h} style={{ padding: '9px 14px', textAlign: 'left', fontSize: 11, fontWeight: 500, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid #e5e7eb', whiteSpace: 'nowrap' }}>{h}</th>
                             ))}
                         </tr>
                     </thead>
                     <tbody>
                         {costs.length === 0 && (
-                            <tr><td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: '#9ca3af' }}>
+                            <tr><td colSpan={8} style={{ padding: '32px', textAlign: 'center', color: '#9ca3af' }}>
                                 Belum ada laporan biaya untuk periode ini.
                             </td></tr>
                         )}
@@ -83,6 +94,9 @@ export default function CostsIndex({ costs, currentMonth }) {
                                 <td style={{ padding: '10px 14px' }}><StatusBadge status={c.status} /></td>
                                 <td style={{ padding: '10px 14px', fontSize: 12, color: '#9ca3af' }}>
                                     {c.submitted_at ? new Date(c.submitted_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }) : '—'}
+                                </td>
+                                <td style={{ padding: '10px 14px', fontSize: 12, color: '#6b7280', whiteSpace: 'nowrap' }}>
+                                    {formatEdited(c.last_edited_at)}
                                 </td>
                                 <td style={{ padding: '10px 14px' }}>
                                     <Link href={`/costs/${c.id}`} style={{ fontSize: 12, color: '#166534', textDecoration: 'none', fontWeight: 500 }}>Buka →</Link>

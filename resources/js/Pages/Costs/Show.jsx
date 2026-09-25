@@ -12,6 +12,17 @@ const formatRpShort = (n) => {
 
 const parseAmount = (str) => parseInt(String(str).replace(/[^0-9]/g, '')) || 0
 
+// penanda versi: costs-lastedited-20260925
+// ISO ber-offset dari backend → selalu tampil dalam WITA, apa pun zona waktu browser
+const formatEdited = (iso, withYear = false) => {
+    if (!iso) return '—'
+    return new Date(iso).toLocaleString('id-ID', {
+        timeZone: 'Asia/Makassar',
+        day: 'numeric', month: 'short', ...(withYear ? { year: 'numeric' } : {}),
+        hour: '2-digit', minute: '2-digit',
+    }) + ' WITA'
+}
+
 const StatusBadge = ({ status }) => {
     const map = {
         draft:     { label: 'Draft',     bg: '#f3f4f6', color: '#6b7280' },
@@ -22,7 +33,7 @@ const StatusBadge = ({ status }) => {
     return <span style={{ background: s.bg, color: s.color, padding: '3px 10px', borderRadius: 99, fontSize: 12, fontWeight: 500 }}>{s.label}</span>
 }
 
-export default function CostsShow({ cost, categories, canSubmit, canApprove, canRevise, isReadOnly = false }) { // ⬅ +isReadOnly
+export default function CostsShow({ cost, categories, canSubmit, canApprove, canRevise, isReadOnly = false, lastEditedAt = null }) { // ⬅ +isReadOnly
     const [activeTab, setActiveTab]         = useState('grid')
     const [saving, setSaving]               = useState(false)
     const [showApproveModal, setShowApproveModal] = useState(false)
@@ -132,6 +143,9 @@ export default function CostsShow({ cost, categories, canSubmit, canApprove, can
                     </div>
                     <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>
                         Laporan Biaya · {periodLabel} · {cost.branch?.area?.name}
+                    </p>
+                    <p style={{ fontSize: 12, color: '#9ca3af', margin: '4px 0 0' }}>
+                        Terakhir diedit: {formatEdited(lastEditedAt, true)}
                     </p>
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
