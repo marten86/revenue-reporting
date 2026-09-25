@@ -18,6 +18,13 @@ const formatRpShort = (n) => {
     return `Rp ${(n / 1_000).toFixed(0)} rb`
 }
 
+// v20260925-dashboard-null — persen porsi: <1% untuk nilai kecil yang bukan nol
+const fmtShare = (value, total) => {
+    if (!total || !value) return '0%'
+    const p = value / total * 100
+    return p < 1 ? '<1%' : `${p.toFixed(0)}%`
+}
+
 const formatRpAxis = (n) => {
     if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(0)}M`
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(0)}jt`
@@ -92,7 +99,7 @@ const CustomTooltip = ({ active, payload, label }) => {
                     <div style={{ width: 8, height: 8, borderRadius: 2, background: entry.color }} />
                     <span style={{ color: '#6b7280' }}>{entry.name}:</span>
                     <span style={{ fontWeight: 600, fontFamily: 'monospace' }}>
-                        {entry.name === 'Rasio' ? `${entry.value}%` : formatRpShort(entry.value)}
+                        {entry.name === 'Rasio' ? (entry.value == null ? '—' : `${entry.value}%`) : formatRpShort(entry.value)}
                     </span>
                 </div>
             ))}
@@ -115,7 +122,7 @@ const AreaSummaryCard = ({ area }) => {
     const pct = area.achievement
     const color = achColor(area.total_target > 0 ? pct : null)
     const { status_counts: sc } = area
-    const ratio = area.cost_ratio ?? 0
+    const ratio = area.cost_ratio
 
     return (
         <div style={{
@@ -161,8 +168,8 @@ const AreaSummaryCard = ({ area }) => {
                 <div style={{ fontSize: 11, color: '#9ca3af' }}>
                     Biaya: {formatRpShort(area.total_cost)}
                 </div>
-                <span style={{ background: ratioBg(ratio), color: ratioColor(ratio), padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600 }}>
-                    Rasio {ratio > 0 ? `${ratio}%` : '—'}
+                <span style={{ background: ratio == null ? '#f3f4f6' : ratioBg(ratio), color: ratio == null ? '#9ca3af' : ratioColor(ratio), padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600 }}>
+                    Rasio {ratio == null ? '—' : `${ratio}%`}
                 </span>
             </div>
 
@@ -199,7 +206,7 @@ export default function AreaDashboard({
     topPerformers, channelPerBranch, availableMonths,
 }) {
     const pct         = summary.achievement_pct ?? 0
-    const costRatio   = summary.cost_ratio ?? 0
+    const costRatio   = summary.cost_ratio
     const periodLabel = new Date(currentMonth + 'T00:00:00')
         .toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
 
@@ -350,9 +357,9 @@ export default function AreaDashboard({
                     },
                     {
                         label: 'Rasio Biaya', icon: '📉',
-                        value: summary.total_revenue > 0 ? `${costRatio}%` : '—',
-                        sub: ratioLabel(costRatio),
-                        valueColor: ratioColor(costRatio),
+                        value: costRatio == null ? '—' : `${costRatio}%`,
+                        sub: costRatio == null ? 'Belum ada revenue' : ratioLabel(costRatio),
+                        valueColor: costRatio == null ? '#9ca3af' : ratioColor(costRatio),
                     },
                     {
                         label: 'Laporan Masuk', icon: '📋',
@@ -424,7 +431,7 @@ export default function AreaDashboard({
                                         <div style={{ width: 8, height: 8, borderRadius: 2, background: d.color }} />
                                         <span style={{ color: '#6b7280' }}>{d.name}</span>
                                         <span style={{ color: '#9ca3af' }}>{formatRpShort(d.value)}</span>
-                                        <span style={{ fontWeight: 600, color: '#374151' }}>{pieTotal > 0 ? `${(d.value / pieTotal * 100).toFixed(0)}%` : ''}</span>
+                                        <span style={{ fontWeight: 600, color: '#374151' }}>{pieTotal > 0 ? fmtShare(d.value, pieTotal) : ''}</span>
                                     </div>
                                 ))}
                             </div>
@@ -539,7 +546,7 @@ export default function AreaDashboard({
                                             {b.total_cost > 0 ? formatRpShort(b.total_cost) : <span style={{ color: '#d1d5db' }}>—</span>}
                                         </td>
                                         <td style={{ padding: '10px 12px', textAlign: 'right' }}>
-                                            {b.total_cost > 0 ? (
+                                            {b.total_cost > 0 && b.cost_ratio != null ? (
                                                 <span style={{ background: ratioBg(b.cost_ratio), color: ratioColor(b.cost_ratio), padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600 }}>
                                                     {b.cost_ratio}%
                                                 </span>

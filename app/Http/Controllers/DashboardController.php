@@ -18,6 +18,7 @@ class DashboardController extends Controller
 {
     // -
     // Dashboard Area Manager
+    // v20260925-dashboard-null: capaian tanpa target & rasio tanpa revenue = null (UI "—")
     // -
 
     public function area(Request $request): Response
@@ -38,7 +39,7 @@ class DashboardController extends Controller
             $targetAmount = $target?->target_total ?? 0;
             $totalRevenue = $report?->total_revenue ?? 0;
             $totalCost    = $cost?->total_cost ?? 0;
-            $costRatio    = $totalRevenue > 0 ? round($totalCost / $totalRevenue * 100, 1) : 0;
+            $costRatio    = $totalRevenue > 0 ? round($totalCost / $totalRevenue * 100, 1) : null;
 
             return [
                 'id'              => $b->id,
@@ -53,13 +54,13 @@ class DashboardController extends Controller
                 'cost_ratio'      => $costRatio,
                 'achievement_pct' => $targetAmount > 0
                     ? round($totalRevenue / $targetAmount * 100, 2)
-                    : 0,
+                    : null,
             ];
         })->sortByDesc('total_revenue')->values();
 
         $totalRevenue = $branchData->sum('total_revenue');
         $totalCost    = $branchData->sum('total_cost');
-        $costRatio    = $totalRevenue > 0 ? round($totalCost / $totalRevenue * 100, 1) : 0;
+        $costRatio    = $totalRevenue > 0 ? round($totalCost / $totalRevenue * 100, 1) : null;
 
         $summary = [
             'total_revenue'     => $totalRevenue,
@@ -68,7 +69,7 @@ class DashboardController extends Controller
             'cost_ratio'        => $costRatio,
             'achievement_pct'   => $branchData->sum('target_amount') > 0
                 ? round($totalRevenue / $branchData->sum('target_amount') * 100, 2)
-                : 0,
+                : null,
             'reports_submitted' => $branchData->whereNotIn('status', ['no_report', 'draft'])->count(),
             'reports_total'     => $branches->count(),
         ];
@@ -262,11 +263,11 @@ class DashboardController extends Controller
 
             $achievement = $totalTarget > 0
                 ? round($totalRevenue / $totalTarget * 100, 1)
-                : 0;
+                : null;
 
             $costRatio = $totalRevenue > 0
                 ? round($totalCost / $totalRevenue * 100, 1)
-                : 0;
+                : null;
 
             return [
                 'id'             => $area->id,
@@ -315,7 +316,7 @@ class DashboardController extends Controller
                 'revenue'    => $revenue,
                 'target'     => (int) $targetQuery->sum('target_total'),
                 'cost'       => $cost,
-                'cost_ratio' => $revenue > 0 ? round($cost / $revenue * 100, 1) : 0,
+                'cost_ratio' => $revenue > 0 ? round($cost / $revenue * 100, 1) : null,
             ];
         }
 
