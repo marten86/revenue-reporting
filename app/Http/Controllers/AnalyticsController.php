@@ -13,6 +13,10 @@ use Carbon\Carbon;
 
 class AnalyticsController extends Controller
 {
+    // v20260925-growth-setara
+    // Growth periode berjalan dibandingkan periode lalu s.d. hari ke-N yang sama
+    // (mis. 1-25 Sep vs 1-25 Agu). Periode selesai: penuh vs penuh.
+    // Capaian tanpa target & rasio tanpa revenue dikirim null (UI tampil "—").
     // Key = nilai kanal canonical (sama dengan MonthlyReport::CHANNELS & kolom daily_revenues)
     // kotak_qris tetap ada untuk backward compat data historis
     private array $channelColumns = [
@@ -89,7 +93,7 @@ class AnalyticsController extends Controller
         }
 
         $empty = [
-            'summary'   => ['total_revenue' => 0, 'target' => 0, 'achievement' => 0, 'growth' => null, 'total_cost' => 0, 'cost_ratio' => 0],
+            'summary'   => ['total_revenue' => 0, 'target' => 0, 'achievement' => null, 'growth' => null, 'growth_label' => null, 'total_cost' => 0, 'cost_ratio' => null],
             'chartMain' => [],
             'byChannel' => [],
             'byBranch'  => [],
@@ -125,7 +129,7 @@ class AnalyticsController extends Controller
         [$costStart, $costEnd] = $this->getCostDateRange($period, $year, $month, $quarter, $semester);
         $totalCost = $this->getTotalCost($costStart, $costEnd, $branchIds);
         $totalRevenue = $data['summary']['total_revenue'];
-        $costRatio = $totalRevenue > 0 ? round($totalCost / $totalRevenue * 100, 1) : 0;
+        $costRatio = $totalRevenue > 0 ? round($totalCost / $totalRevenue * 100, 1) : null;
 
         $data['summary']['total_cost']  = $totalCost;
         $data['summary']['cost_ratio']  = $costRatio;
@@ -321,18 +325,11 @@ class AnalyticsController extends Controller
         $prevStart   = Carbon::create($prevYear, $prevMonths[0], 1)->startOfMonth()->toDateString();
         $prevEnd     = Carbon::create($prevYear, $prevMonths[2], 1)->endOfMonth()->toDateString();
 
-        $prevActual = (float) DB::table('daily_revenues')
-            ->join('monthly_reports', 'daily_revenues.monthly_report_id', '=', 'monthly_reports.id')
-            ->whereIn('monthly_reports.branch_id', $branchIds)
-            ->whereNull('monthly_reports.deleted_at')
-            ->whereBetween('daily_revenues.date', [$prevStart, $prevEnd])
-            ->sum("daily_revenues.$col");
-
-        $growth = $prevActual > 0 ? round(($actualTotal - $prevActual) / $prevActual * 100, 1) : null;
-        $pct    = $targetTotal > 0 ? round($actualTotal / $targetTotal * 100, 1) : 0;
+        [$growth, $growthLabel] = $this->growthSetara($start, $end, $prevStart, $prevEnd, (float) $actualTotal, $branchIds, $col);
+        $pct    = $targetTotal > 0 ? round($actualTotal / $targetTotal * 100, 1) : null;
 
         return [
-            'summary'   => ['total_revenue' => (int) $actualTotal, 'target' => (int) $targetTotal, 'achievement' => $pct, 'growth' => $growth],
+            'summary'   => ['total_revenue' => (int) $actualTotal, 'target' => (int) $targetTotal, 'achievement' => $pct, 'growth' => $growth, 'growth_label' => $growthLabel],
             'chartMain' => $chartMain,
             'byChannel' => $this->getByChannel($start, $end, $branchIds),
             'byBranch'  => $this->getByBranch($start, $end, $branchIds, $channel),
@@ -374,18 +371,11 @@ class AnalyticsController extends Controller
         $prevStart    = Carbon::create($prevYear, $prevMonths[0], 1)->startOfMonth()->toDateString();
         $prevEnd      = Carbon::create($prevYear, $prevMonths[1], 1)->endOfMonth()->toDateString();
 
-        $prevActual = (float) DB::table('daily_revenues')
-            ->join('monthly_reports', 'daily_revenues.monthly_report_id', '=', 'monthly_reports.id')
-            ->whereIn('monthly_reports.branch_id', $branchIds)
-            ->whereNull('monthly_reports.deleted_at')
-            ->whereBetween('daily_revenues.date', [$prevStart, $prevEnd])
-            ->sum("daily_revenues.$col");
-
-        $growth = $prevActual > 0 ? round(($actualTotal - $prevActual) / $prevActual * 100, 1) : null;
-        $pct    = $targetTotal > 0 ? round($actualTotal / $targetTotal * 100, 1) : 0;
+        [$growth, $growthLabel] = $this->growthSetara($start, $end, $prevStart, $prevEnd, (float) $actualTotal, $branchIds, $col);
+        $pct    = $targetTotal > 0 ? round($actualTotal / $targetTotal * 100, 1) : null;
 
         return [
-            'summary'   => ['total_revenue' => (int) $actualTotal, 'target' => (int) $targetTotal, 'achievement' => $pct, 'growth' => $growth],
+            'summary'   => ['total_revenue' => (int) $actualTotal, 'target' => (int) $targetTotal, 'achievement' => $pct, 'growth' => $growth, 'growth_label' => $growthLabel],
             'chartMain' => $chartMain,
             'byChannel' => $this->getByChannel($start, $end, $branchIds),
             'byBranch'  => $this->getByBranch($start, $end, $branchIds, $channel),
@@ -423,18 +413,11 @@ class AnalyticsController extends Controller
             if ($actual > 0) $prevMonthly = $actual;
         }
 
-        $prevYearTotal = (float) DB::table('daily_revenues')
-            ->join('monthly_reports', 'daily_revenues.monthly_report_id', '=', 'monthly_reports.id')
-            ->whereIn('monthly_reports.branch_id', $branchIds)
-            ->whereNull('monthly_reports.deleted_at')
-            ->whereBetween('daily_revenues.date', [($year - 1) . '-01-01', ($year - 1) . '-12-31'])
-            ->sum("daily_revenues.$col");
-
-        $yoyGrowth = $prevYearTotal > 0 ? round(($actualTotal - $prevYearTotal) / $prevYearTotal * 100, 1) : null;
-        $pct       = $targetTotal > 0 ? round($actualTotal / $targetTotal * 100, 1) : 0;
+        [$yoyGrowth, $growthLabel] = $this->growthSetara($start, $end, ($year - 1) . '-01-01', ($year - 1) . '-12-31', (float) $actualTotal, $branchIds, $col);
+        $pct       = $targetTotal > 0 ? round($actualTotal / $targetTotal * 100, 1) : null;
 
         return [
-            'summary'   => ['total_revenue' => (int) $actualTotal, 'target' => (int) $targetTotal, 'achievement' => $pct, 'growth' => $yoyGrowth],
+            'summary'   => ['total_revenue' => (int) $actualTotal, 'target' => (int) $targetTotal, 'achievement' => $pct, 'growth' => $yoyGrowth, 'growth_label' => $growthLabel],
             'chartMain' => $chartMain,
             'byChannel' => $this->getByChannel($start, $end, $branchIds),
             'byBranch'  => $this->getByBranch($start, $end, $branchIds, $channel),
@@ -443,6 +426,73 @@ class AnalyticsController extends Controller
     }
 
     // HELPERS
+
+    /**
+     * Growth "setara" — v20260925-growth-setara
+     *
+     * - Periode sedang berjalan (hari ini di dalam [curStart, curEnd]):
+     *   realisasi s.d. hari ini vs periode lalu s.d. hari ke-N yang sama
+     *   (dibatasi prevEnd bila periode lalu lebih pendek).
+     * - Periode sudah selesai: penuh vs penuh.
+     * - Periode belum mulai: null.
+     *
+     * @return array{0: float|null, 1: string|null} [growth %, label pembanding]
+     */
+    private function growthSetara(string $curStart, string $curEnd, string $prevStart, string $prevEnd, float $actualTotal, array $branchIds, string $col): array
+    {
+        $today = Carbon::today();
+        $cS    = Carbon::parse($curStart)->startOfDay();
+        $cE    = Carbon::parse($curEnd)->startOfDay();
+        $pS    = Carbon::parse($prevStart)->startOfDay();
+        $pE    = Carbon::parse($prevEnd)->startOfDay();
+
+        if ($today->lt($cS)) {
+            return [null, 'Periode belum berjalan'];
+        }
+
+        $actual = $actualTotal;
+        if ($today->lte($cE)) {
+            // Periode berjalan: potong kedua sisi di hari ke-N yang sama
+            $elapsed = (int) $cS->diffInDays($today);
+            $pCut    = $pS->copy()->addDays($elapsed);
+            if ($pCut->gt($pE)) $pCut = $pE->copy();
+            $pE = $pCut;
+
+            $actual = (float) $this->sumRange($cS->toDateString(), $today->toDateString(), $branchIds, $col);
+        }
+
+        $prevActual = (float) $this->sumRange($pS->toDateString(), $pE->toDateString(), $branchIds, $col);
+        $label      = 'vs ' . $this->rangeLabel($pS, $pE);
+
+        if ($prevActual <= 0) {
+            return [null, $label];
+        }
+
+        return [round(($actual - $prevActual) / $prevActual * 100, 1), $label];
+    }
+
+    private function sumRange(string $start, string $end, array $branchIds, string $col): float
+    {
+        return (float) DB::table('daily_revenues')
+            ->join('monthly_reports', 'daily_revenues.monthly_report_id', '=', 'monthly_reports.id')
+            ->whereIn('monthly_reports.branch_id', $branchIds)
+            ->whereNull('monthly_reports.deleted_at')
+            ->whereBetween('daily_revenues.date', [$start, $end])
+            ->sum("daily_revenues.$col");
+    }
+
+    // "1-25 Agu" | "1 Apr-25 Jun" | "1 Jan-25 Sep 2025" (tahun tampil bila bukan tahun berjalan)
+    private function rangeLabel(Carbon $s, Carbon $e): string
+    {
+        $mS   = $this->monthNames[$s->month - 1];
+        $mE   = $this->monthNames[$e->month - 1];
+        $year = $e->year !== Carbon::today()->year ? ' ' . $e->year : '';
+
+        if ($s->year === $e->year && $s->month === $e->month) {
+            return $s->day . '–' . $e->day . ' ' . $mE . $year;
+        }
+        return $s->day . ' ' . $mS . '–' . $e->day . ' ' . $mE . $year;
+    }
 
     private function revenueCol(string $channel): string
     {
@@ -471,7 +521,7 @@ class AnalyticsController extends Controller
 
     private function buildSummaryMonthly(float $actual, float $target, int $year, int $month, array $branchIds, string $channel): array
     {
-        $pct       = $target > 0 ? round($actual / $target * 100, 1) : 0;
+        $pct       = $target > 0 ? round($actual / $target * 100, 1) : null;
         $prevMonth = $month === 1 ? 12 : $month - 1;
         $prevYear  = $month === 1 ? $year - 1 : $year;
         $col       = $this->revenueCol($channel);
@@ -479,16 +529,12 @@ class AnalyticsController extends Controller
         $pStart = Carbon::create($prevYear, $prevMonth, 1)->startOfMonth()->toDateString();
         $pEnd   = Carbon::create($prevYear, $prevMonth, 1)->endOfMonth()->toDateString();
 
-        $prevActual = (float) DB::table('daily_revenues')
-            ->join('monthly_reports', 'daily_revenues.monthly_report_id', '=', 'monthly_reports.id')
-            ->whereIn('monthly_reports.branch_id', $branchIds)
-            ->whereNull('monthly_reports.deleted_at')
-            ->whereBetween('daily_revenues.date', [$pStart, $pEnd])
-            ->sum("daily_revenues.$col");
+        $cStart = Carbon::create($year, $month, 1)->startOfMonth()->toDateString();
+        $cEnd   = Carbon::create($year, $month, 1)->endOfMonth()->toDateString();
 
-        $growth = $prevActual > 0 ? round(($actual - $prevActual) / $prevActual * 100, 1) : null;
+        [$growth, $growthLabel] = $this->growthSetara($cStart, $cEnd, $pStart, $pEnd, $actual, $branchIds, $col);
 
-        return ['total_revenue' => (int) $actual, 'target' => (int) $target, 'achievement' => $pct, 'growth' => $growth];
+        return ['total_revenue' => (int) $actual, 'target' => (int) $target, 'achievement' => $pct, 'growth' => $growth, 'growth_label' => $growthLabel];
     }
 
     private function getByChannel(string $start, string $end, array $branchIds): array

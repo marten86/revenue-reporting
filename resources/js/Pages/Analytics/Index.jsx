@@ -184,7 +184,18 @@ export default function AnalyticsIndex({
 
     return (
         <AppLayout title="Analytics">
-            <div style={{padding:'24px 32px',maxWidth:1400,margin:'0 auto'}}>
+            {/* v20260925-analytics-mobile — layout responsif (pola sama dengan Dashboard/Area.jsx) */}
+            <style>{`
+                .an-page { padding: 24px 32px; max-width: 1400px; margin: 0 auto; }
+                .an-grid-2 > * { min-width: 0; }
+                @media (max-width: 768px) {
+                    .an-page { padding: 16px 12px; }
+                    .an-grid-2 { grid-template-columns: 1fr !important; }
+                    .an-cards > * { min-width: calc(50% - 6px) !important; }
+                    .an-filter > div, .an-filter select { flex: 1 1 140px; min-width: 0 !important; width: 100%; }
+                }
+            `}</style>
+            <div className="an-page">
 
                 {/* Header */}
                 <div style={{marginBottom:24}}>
@@ -200,7 +211,7 @@ export default function AnalyticsIndex({
                 </div>
 
                 {/* Filter Bar */}
-                <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:12,padding:'16px 20px',marginBottom:24,display:'flex',flexWrap:'wrap',gap:12,alignItems:'flex-end'}}>
+                <div className="an-filter" style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:12,padding:'16px 20px',marginBottom:24,display:'flex',flexWrap:'wrap',gap:12,alignItems:'flex-end'}}>
                     <div>
                         <label style={{fontSize:11,color:'#6b7280',display:'block',marginBottom:4}}>Periode</label>
                         <select value={localPeriod} onChange={e => setLocalPeriod(e.target.value)}
@@ -279,7 +290,7 @@ export default function AnalyticsIndex({
                 </div>
 
                 {/* Summary Cards — 6 cards */}
-                <div style={{display:'flex',gap:12,marginBottom:24,flexWrap:'wrap'}}>
+                <div className="an-cards" style={{display:'flex',gap:12,marginBottom:24,flexWrap:'wrap'}}>
                     <SummaryCard title="Total Revenue" icon="💰"
                         value={formatRp(summary.total_revenue)}
                         sub={formatRpFull(summary.total_revenue)} />
@@ -314,13 +325,15 @@ export default function AnalyticsIndex({
                             sub={summary.total_revenue > 0 ? ratioLabel(costRatio) : 'Belum ada data'} />
                     )}
                     <SummaryCard title="Growth vs Lalu" icon="📈"
-                        color={summary.growth !== null ? growthColor : '#6b7280'}
-                        value={summary.growth !== null ? `${summary.growth > 0 ? '+' : ''}${summary.growth}%` : '—'}
-                        sub={summary.growth !== null ? (summary.growth >= 0 ? 'Naik dari periode lalu' : 'Turun dari periode lalu') : 'Data tidak cukup'} />
+                        color={summary.growth != null ? growthColor : '#6b7280'}
+                        value={summary.growth != null ? `${summary.growth > 0 ? '+' : ''}${summary.growth}%` : '—'}
+                        sub={summary.growth != null
+                            ? `${summary.growth >= 0 ? 'Naik' : 'Turun'} · ${summary.growth_label ?? 'vs periode lalu'}`
+                            : (summary.growth_label ?? 'Data tidak cukup')} />
                 </div>
 
                 {/* Row 1: Chart Utama + Pie */}
-                <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:20,marginBottom:20}}>
+                <div className="an-grid-2" style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:20,marginBottom:20}}>
                     <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:12,padding:20}}>
                         <h3 style={{margin:'0 0 16px',fontSize:15,fontWeight:600,color:'#374151'}}>{chartTitle}</h3>
                         <ResponsiveContainer width="100%" height={300}>
@@ -378,7 +391,7 @@ export default function AnalyticsIndex({
                 </div>
 
                 {/* Row 2: Chart kiri kondisional + Capaian per Cabang */}
-                <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:20,marginBottom:20}}>
+                <div className="an-grid-2" style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:20,marginBottom:20}}>
                     <div style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:12,padding:20}}>
                         {showTopPerformer ? (
                             <>
