@@ -1,13 +1,8 @@
 import { useState } from 'react'
 import { Link, router } from '@inertiajs/react'
 import AppLayout from '../../Components/AppLayout'
-
-const formatRpShort = (n) => {
-    if (!n) return '—'
-    if (n >= 1_000_000_000) return `Rp ${(n / 1_000_000_000).toFixed(1)} M`
-    if (n >= 1_000_000) return `Rp ${(n / 1_000_000).toFixed(1)} jt`
-    return `Rp ${(n / 1_000).toFixed(0)} rb`
-}
+// v20260926-rupiah — format dari Utils/rupiah.js
+import { formatRpShort } from '../../Utils/rupiah'
 
 // penanda versi: costs-lastedited-20260925
 // ISO ber-offset dari backend → selalu tampil dalam WITA, apa pun zona waktu browser
@@ -84,7 +79,7 @@ export default function CostsIndex({ costs, currentMonth }) {
                                     {new Date(c.period_month).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}
                                 </td>
                                 <td style={{ padding: '10px 14px', fontFamily: 'monospace', fontSize: 12, fontWeight: 500 }}>
-                                    {formatRpShort(c.total_cost)}
+                                    {formatRpShort(c.total_cost, { zero: '—' })}
                                 </td>
                                 <td style={{ padding: '10px 14px', fontSize: 12, color: '#6b7280' }}>
                                     {c.cost_details_count > 0

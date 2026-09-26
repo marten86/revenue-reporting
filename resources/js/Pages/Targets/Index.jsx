@@ -2,10 +2,8 @@ import { useState } from 'react'
 import { Link, router, useForm } from '@inertiajs/react'
 import AppLayout from '../../Components/AppLayout'
 import React from 'react'
-
-const formatRp = (n) => new Intl.NumberFormat('id-ID', {
-    style: 'currency', currency: 'IDR', maximumFractionDigits: 0
-}).format(n ?? 0)
+// v20260926-rupiah — format dari Utils/rupiah.js
+import { formatRp } from '../../Utils/rupiah'
 
 export default function TargetsIndex({ branches, currentMonth }) {
     const [month, setMonth] = useState(currentMonth.slice(0, 7))

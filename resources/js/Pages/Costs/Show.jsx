@@ -1,14 +1,8 @@
 import { useState, useRef } from 'react'
 import { router } from '@inertiajs/react'
 import AppLayout from '../../Components/AppLayout'
-
-const formatRp = (n) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n ?? 0)
-const formatRpShort = (n) => {
-    if (!n) return 'Rp 0'
-    if (n >= 1_000_000_000) return `Rp ${(n / 1_000_000_000).toFixed(1)} M`
-    if (n >= 1_000_000) return `Rp ${(n / 1_000_000).toFixed(1)} jt`
-    return `Rp ${(n / 1_000).toFixed(0)} rb`
-}
+// v20260926-rupiah — format dari Utils/rupiah.js (formatRpShort lama tidak terpakai, dibuang)
+import { formatRp } from '../../Utils/rupiah'
 
 const parseAmount = (str) => parseInt(String(str).replace(/[^0-9]/g, '')) || 0
 

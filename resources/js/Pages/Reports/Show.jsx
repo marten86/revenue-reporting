@@ -2,6 +2,8 @@ import { useState, useMemo, useEffect } from 'react'
 import { router, useForm, usePage } from '@inertiajs/react'
 import React from 'react'
 import AppLayout from '../../Components/AppLayout'
+// v20260926-rupiah — format dari Utils/rupiah.js
+import { formatRp, formatRpShort as rpShort } from '../../Utils/rupiah'
 
 function useIsMobile(breakpoint = 768) {
     const [isMobile, setIsMobile] = useState(
@@ -15,16 +17,8 @@ function useIsMobile(breakpoint = 768) {
     return isMobile
 }
 
-const formatRp = (n) => new Intl.NumberFormat('id-ID', {
-    style: 'currency', currency: 'IDR', maximumFractionDigits: 0
-}).format(n ?? 0)
-
-const formatRpShort = (n) => {
-    if (!n) return '—'
-    if (n >= 1_000_000_000) return `Rp ${(n / 1_000_000_000).toFixed(1)} M`
-    if (n >= 1_000_000) return `Rp ${(n / 1_000_000).toFixed(1)} jt`
-    return `Rp ${(n / 1_000).toFixed(0)} rb`
-}
+// Halaman ini menampilkan nol ringkas sebagai '—' (perilaku lama dipertahankan)
+const formatRpShort = (n) => rpShort(n, { zero: '—' })
 
 // Kanal aktif (ke depan)
 const CHANNELS = [

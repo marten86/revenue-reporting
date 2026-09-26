@@ -1,13 +1,8 @@
 import { useState } from 'react'
 import { Link, router } from '@inertiajs/react'
 import AppLayout from '../../Components/AppLayout'
-
-const formatRpShort = (n) => {
-    if (!n) return '—'
-    if (n >= 1_000_000_000) return `Rp ${(n / 1_000_000_000).toFixed(1)} M`
-    if (n >= 1_000_000) return `Rp ${(n / 1_000_000).toFixed(1)} jt`
-    return `Rp ${(n / 1_000).toFixed(0)} rb`
-}
+// v20260926-rupiah — format dari Utils/rupiah.js
+import { formatRpShort } from '../../Utils/rupiah'
 
 const StatusBadge = ({ status }) => {
     const map = {
@@ -116,8 +111,8 @@ export default function ReportsIndex({ reports, currentMonth }) {
                                     <td style={{ padding: '10px 14px', fontSize: 12 }}>
                                         {new Date(r.period_month).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}
                                     </td>
-                                    <td style={{ padding: '10px 14px', fontFamily: 'monospace', fontSize: 12 }}>{formatRpShort(r.target_amount)}</td>
-                                    <td style={{ padding: '10px 14px', fontFamily: 'monospace', fontSize: 12, fontWeight: 500 }}>{formatRpShort(r.total_revenue)}</td>
+                                    <td style={{ padding: '10px 14px', fontFamily: 'monospace', fontSize: 12 }}>{formatRpShort(r.target_amount, { zero: '—' })}</td>
+                                    <td style={{ padding: '10px 14px', fontFamily: 'monospace', fontSize: 12, fontWeight: 500 }}>{formatRpShort(r.total_revenue, { zero: '—' })}</td>
                                     <td style={{ padding: '10px 14px', fontWeight: 600, fontSize: 12, color: pct >= 85 ? '#166534' : pct >= 60 ? '#d97706' : '#dc2626' }}>
                                         {r.target_amount > 0 ? `${pct.toFixed(1)}%` : '—'}
                                     </td>
