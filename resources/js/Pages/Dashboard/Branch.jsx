@@ -6,27 +6,8 @@ import {
     ComposedChart, LineChart, Line, BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell,
     XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
-
-const formatRp = (n) => new Intl.NumberFormat('id-ID', {
-    style: 'currency', currency: 'IDR', maximumFractionDigits: 0
-}).format(n ?? 0)
-
-const formatRpShort = (n) => {
-    if (!n) return 'Rp 0'
-    const abs = Math.abs(n)
-    const sign = n < 0 ? '-' : ''
-    if (abs >= 1_000_000_000) return `${sign}Rp ${(abs / 1_000_000_000).toFixed(1)} M`
-    if (abs >= 1_000_000) return `${sign}Rp ${(abs / 1_000_000).toFixed(1)} jt`
-    if (abs >= 1_000) return `${sign}Rp ${(abs / 1_000).toFixed(0)} rb`
-    return `${sign}Rp ${abs}`
-}
-
-const formatRpAxis = (n) => {
-    if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(0)}M`
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(0)}jt`
-    if (n >= 1_000) return `${(n / 1_000).toFixed(0)}rb`
-    return n
-}
+// v20260926-rupiah — format dari Utils/rupiah.js
+import { formatRpShort, formatRpAxis } from '../../Utils/rupiah'
 
 // v20260926-channels-sot — label & warna kanal dari Utils/channels.js
 

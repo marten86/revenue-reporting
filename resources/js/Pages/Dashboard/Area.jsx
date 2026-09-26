@@ -7,17 +7,8 @@ import {
     LineChart, Line, BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell,
     XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart,
 } from 'recharts'
-
-const formatRp = (n) => new Intl.NumberFormat('id-ID', {
-    style: 'currency', currency: 'IDR', maximumFractionDigits: 0
-}).format(n ?? 0)
-
-const formatRpShort = (n) => {
-    if (!n) return 'Rp 0'
-    if (n >= 1_000_000_000) return `Rp ${(n / 1_000_000_000).toFixed(1)} M`
-    if (n >= 1_000_000) return `Rp ${(n / 1_000_000).toFixed(1)} jt`
-    return `Rp ${(n / 1_000).toFixed(0)} rb`
-}
+// v20260926-rupiah — format dari Utils/rupiah.js
+import { formatRpShort, formatRpAxis } from '../../Utils/rupiah'
 
 // v20260925-dashboard-null — persen porsi: <1% untuk nilai kecil yang bukan nol
 const fmtShare = (value, total) => {
@@ -73,13 +64,6 @@ const buildInputStatusCard = (st) => {
             </>
         ),
     }
-}
-
-const formatRpAxis = (n) => {
-    if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(0)}M`
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(0)}jt`
-    if (n >= 1_000) return `${(n / 1_000).toFixed(0)}rb`
-    return n
 }
 
 // v20260926-channels-sot — CHANNEL_LABELS, CHANNEL_COLORS, STACK_KEYS kini dari Utils/channels.js

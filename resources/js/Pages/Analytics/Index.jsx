@@ -8,6 +8,8 @@ import {
     Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
     ResponsiveContainer
 } from 'recharts'
+// v20260926-rupiah — format dari Utils/rupiah.js (formatRp lama = ringkas, formatRpFull lama = penuh)
+import { formatRp, formatRpShort, formatRpAxis } from '@/Utils/rupiah'
 
 const COLORS = ['#16a34a','#2563eb','#d97706','#dc2626','#7c3aed','#0891b2','#be185d']
 
@@ -25,16 +27,6 @@ const PERIOD_OPTIONS = [
 
 const MONTH_NAMES = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember']
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des']
-
-const formatRp = (v) => {
-    if (!v || v === 0) return 'Rp 0'
-    if (v >= 1_000_000_000) return `Rp ${(v / 1_000_000_000).toFixed(1)}M`
-    if (v >= 1_000_000)     return `Rp ${(v / 1_000_000).toFixed(1)}jt`
-    if (v >= 1_000)         return `Rp ${(v / 1_000).toFixed(0)}rb`
-    return `Rp ${v}`
-}
-
-const formatRpFull = (v) => 'Rp ' + (v || 0).toLocaleString('id-ID')
 
 const ratioColor = (r) => r <= 30 ? '#166534' : r <= 50 ? '#d97706' : '#dc2626'
 const ratioLabel = (r) => r <= 30 ? 'Sehat' : r <= 50 ? 'Perhatian' : 'Tinggi'
@@ -63,7 +55,7 @@ const CustomTooltip = ({ active, payload, label }) => {
                 <p key={i} style={{color:p.color,fontSize:12,margin:'2px 0'}}>
                     {p.name}: {p.name === 'Growth %' || p.name === 'Rasio %'
                         ? `${p.value}%`
-                        : formatRpFull(p.value)}
+                        : formatRp(p.value)}
                 </p>
             ))}
         </div>
@@ -283,17 +275,17 @@ export default function AnalyticsIndex({
                 {/* Summary Cards — 6 cards */}
                 <div className="an-cards" style={{display:'flex',gap:12,marginBottom:24,flexWrap:'wrap'}}>
                     <SummaryCard title="Total Revenue" icon="💰"
-                        value={formatRp(summary.total_revenue)}
-                        sub={formatRpFull(summary.total_revenue)} />
+                        value={formatRpShort(summary.total_revenue)}
+                        sub={formatRp(summary.total_revenue)} />
                     <SummaryCard title="Target" icon="🎯"
-                        value={formatRp(summary.target)}
-                        sub={formatRpFull(summary.target)} />
+                        value={formatRpShort(summary.target)}
+                        sub={formatRp(summary.target)} />
                     <SummaryCard title="Capaian" icon="📊" color={achievementColor}
                         value={hasTarget ? `${summary.achievement}%` : '—'}
                         sub={!hasTarget ? 'Target belum diset'
                             : achTier.key === 'tercapai' ? '✅ Target tercapai'
-                            : achTier.key === 'masuk' ? `Masuk target · kurang ${formatRp(summary.target - summary.total_revenue)}`
-                            : `Kurang ${formatRp(summary.target - summary.total_revenue)}`} />
+                            : achTier.key === 'masuk' ? `Masuk target · kurang ${formatRpShort(summary.target - summary.total_revenue)}`
+                            : `Kurang ${formatRpShort(summary.target - summary.total_revenue)}`} />
                     {singleChannel ? (
                         <SummaryCard title="Total Biaya" icon="💸"
                             color="#9ca3af"
@@ -301,8 +293,8 @@ export default function AnalyticsIndex({
                             sub="Hanya untuk Semua Kanal" />
                     ) : (
                         <SummaryCard title="Total Biaya" icon="💸"
-                            value={formatRp(summary.total_cost ?? 0)}
-                            sub={formatRpFull(summary.total_cost ?? 0)} />
+                            value={formatRpShort(summary.total_cost ?? 0)}
+                            sub={formatRp(summary.total_cost ?? 0)} />
                     )}
                     {singleChannel ? (
                         <SummaryCard title="Rasio Biaya" icon="📉"
@@ -331,7 +323,7 @@ export default function AnalyticsIndex({
                             <ComposedChart data={chartMain || []} margin={{top:5,right:showGrowth?50:20,left:10,bottom:5}}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
                                 <XAxis dataKey="label" tick={{fontSize:11,fill:'#6b7280'}} />
-                                <YAxis yAxisId="left" tickFormatter={v => formatRp(v)} tick={{fontSize:10,fill:'#6b7280'}} width={72} />
+                                <YAxis yAxisId="left" tickFormatter={formatRpAxis} tick={{fontSize:10,fill:'#6b7280'}} width={72} />
                                 {showGrowth && <YAxis yAxisId="right" orientation="right" tickFormatter={v => `${v}%`} tick={{fontSize:10,fill:'#f59e0b'}} width={45} />}
                                 <Tooltip content={<CustomTooltip />} />
                                 <Legend wrapperStyle={{fontSize:12}} />
@@ -358,7 +350,7 @@ export default function AnalyticsIndex({
                                             labelLine={false} label={renderPieLabel}>
                                             {byChannel.map((entry, i) => <Cell key={i} fill={CHANNEL_COLORS[entry.channel] || COLORS[i % COLORS.length]} />)}
                                         </Pie>
-                                        <Tooltip formatter={(v) => `${formatRpFull(v)} (${channelTotal > 0 ? (v / channelTotal * 100).toFixed(1) : 0}%)`} />
+                                        <Tooltip formatter={(v) => `${formatRp(v)} (${channelTotal > 0 ? (v / channelTotal * 100).toFixed(1) : 0}%)`} />
                                     </PieChart>
                                 </ResponsiveContainer>
                                 <div style={{display:'flex',flexDirection:'column',gap:5,marginTop:8}}>
@@ -368,7 +360,7 @@ export default function AnalyticsIndex({
                                             <div key={i} style={{display:'flex',alignItems:'center',gap:8,fontSize:12}}>
                                                 <div style={{width:10,height:10,borderRadius:'50%',flexShrink:0,background:CHANNEL_COLORS[c.channel]||COLORS[i%COLORS.length]}} />
                                                 <span style={{color:'#374151',flex:1}}>{c.channel}</span>
-                                                <span style={{color:'#6b7280',fontWeight:500}}>{formatRp(c.total)}</span>
+                                                <span style={{color:'#6b7280',fontWeight:500}}>{formatRpShort(c.total)}</span>
                                                 <span style={{color:'#111827',fontWeight:700,minWidth:44,textAlign:'right'}}>{pct}%</span>
                                             </div>
                                         )
@@ -391,7 +383,7 @@ export default function AnalyticsIndex({
                                     <ResponsiveContainer width="100%" height={260}>
                                         <BarChart data={bySource} layout="vertical" margin={{top:5,right:20,left:10,bottom:5}}>
                                             <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-                                            <XAxis type="number" tickFormatter={v => formatRp(v)} tick={{fontSize:10,fill:'#6b7280'}} />
+                                            <XAxis type="number" tickFormatter={formatRpAxis} tick={{fontSize:10,fill:'#6b7280'}} />
                                             <YAxis type="category" dataKey="source_label" width={100} tick={{fontSize:11,fill:'#374151'}} />
                                             <Tooltip content={<CustomTooltip />} />
                                             <Bar dataKey="total" name="Revenue" radius={[0,4,4,0]}>
@@ -413,7 +405,7 @@ export default function AnalyticsIndex({
                                         <BarChart data={byBranch} margin={{top:5,right:20,left:10,bottom:5}}>
                                             <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
                                             <XAxis dataKey="branch_name" tick={{fontSize:11,fill:'#6b7280'}} />
-                                            <YAxis tickFormatter={v => formatRp(v)} tick={{fontSize:10,fill:'#6b7280'}} width={72} />
+                                            <YAxis tickFormatter={formatRpAxis} tick={{fontSize:10,fill:'#6b7280'}} width={72} />
                                             <Tooltip content={<CustomTooltip />} />
                                             <Bar dataKey="total" name="Revenue" radius={[6,6,0,0]}>
                                                 {byBranch.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
@@ -439,7 +431,7 @@ export default function AnalyticsIndex({
                                         <div key={i}>
                                             <div style={{display:'flex',justifyContent:'space-between',marginBottom:4,fontSize:12}}>
                                                 <span style={{fontWeight:600,color:'#374151'}}>{b.branch_name}</span>
-                                                <span style={{color,fontWeight:700}}>{pct}% &nbsp;{formatRp(b.total)}</span>
+                                                <span style={{color,fontWeight:700}}>{pct}% &nbsp;{formatRpShort(b.total)}</span>
                                             </div>
                                             <div style={{background:'#f3f4f6',borderRadius:999,height:8,overflow:'hidden'}}>
                                                 <div style={{width:`${Math.min(pct,100)}%`,height:'100%',background:color,borderRadius:999,transition:'width 0.5s ease'}} />
@@ -505,19 +497,19 @@ export default function AnalyticsIndex({
                                                 const m = row.months?.[mi] || {}
                                                 return (
                                                     <td key={mi} style={{padding:'6px 6px',textAlign:'right'}}>
-                                                        <div style={{color:m.actual>0?'#111827':'#d1d5db'}}>{formatRp(m.actual)}</div>
+                                                        <div style={{color:m.actual>0?'#111827':'#d1d5db'}}>{formatRpShort(m.actual)}</div>
                                                         {m.target > 0 && (
                                                             <div style={{fontSize:10,color:achColor(m.pct)}}>{m.pct}%</div>
                                                         )}
                                                         {!singleChannel && m.cost > 0 && (
-                                                            <div style={{fontSize:10,color:'#9ca3af'}}>B:{formatRp(m.cost)}</div>
+                                                            <div style={{fontSize:10,color:'#9ca3af'}}>B:{formatRpShort(m.cost)}</div>
                                                         )}
                                                     </td>
                                                 )
                                             })}
-                                            <td style={{padding:'8px 12px',textAlign:'right',fontWeight:700,color:'#166534'}}>{formatRp(rowTotal)}</td>
+                                            <td style={{padding:'8px 12px',textAlign:'right',fontWeight:700,color:'#166534'}}>{formatRpShort(rowTotal)}</td>
                                             <td style={{padding:'8px 12px',textAlign:'right',color:'#374151'}}>
-                                                {singleChannel ? dash : (totalCost > 0 ? formatRp(totalCost) : dash)}
+                                                {singleChannel ? dash : (totalCost > 0 ? formatRpShort(totalCost) : dash)}
                                             </td>
                                             <td style={{padding:'8px 12px',textAlign:'right'}}>
                                                 {!singleChannel && totalCost > 0 ? (
@@ -539,16 +531,16 @@ export default function AnalyticsIndex({
                                         const costTot = (tableData||[]).reduce((s,r) => s+(r.months?.[mi]?.cost||0), 0)
                                         return (
                                             <td key={mi} style={{padding:'10px 6px',textAlign:'right',color:'#166534'}}>
-                                                <div>{formatRp(tot)}</div>
-                                                {!singleChannel && costTot > 0 && <div style={{fontSize:10,color:'#9ca3af'}}>B:{formatRp(costTot)}</div>}
+                                                <div>{formatRpShort(tot)}</div>
+                                                {!singleChannel && costTot > 0 && <div style={{fontSize:10,color:'#9ca3af'}}>B:{formatRpShort(costTot)}</div>}
                                             </td>
                                         )
                                     })}
                                     <td style={{padding:'10px 12px',textAlign:'right',color:'#166534'}}>
-                                        {formatRp((tableData||[]).reduce((s,r) => s + (isFullYearView ? r.total : visibleMonthIdx.reduce((ss, mi) => ss + (r.months?.[mi]?.actual || 0), 0)), 0))}
+                                        {formatRpShort((tableData||[]).reduce((s,r) => s + (isFullYearView ? r.total : visibleMonthIdx.reduce((ss, mi) => ss + (r.months?.[mi]?.actual || 0), 0)), 0))}
                                     </td>
                                     <td style={{padding:'10px 12px',textAlign:'right',color:'#374151'}}>
-                                        {singleChannel ? dash : formatRp((tableData||[]).reduce((s,r) => s + (isFullYearView ? (r.total_cost||0) : visibleMonthIdx.reduce((ss, mi) => ss + (r.months?.[mi]?.cost || 0), 0)), 0))}
+                                        {singleChannel ? dash : formatRpShort((tableData||[]).reduce((s,r) => s + (isFullYearView ? (r.total_cost||0) : visibleMonthIdx.reduce((ss, mi) => ss + (r.months?.[mi]?.cost || 0), 0)), 0))}
                                     </td>
                                     <td style={{padding:'10px 12px',textAlign:'right'}}>
                                         {(() => {
