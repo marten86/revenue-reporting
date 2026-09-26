@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AppLayout from '@/Components/AppLayout';
+// v20260926-rupiah — format dari Utils/rupiah.js
+import { formatRp, formatRpShort } from '@/Utils/rupiah';
 
 // ── Palet cabang: warna tetap per index supaya konsisten antar bulan ──
 const BRANCH_COLORS = [
@@ -34,16 +36,6 @@ const CAMPAIGN_STATUS = {
     berjalan: { label: 'Berjalan', badge: 'bg-amber-100 text-amber-800' },
     selesai:  { label: 'Selesai',  badge: 'bg-emerald-100 text-emerald-700' },
     batal:    { label: 'Batal',    badge: 'bg-rose-100 text-rose-700' },
-};
-
-const rupiah = (n) =>
-    'Rp ' + new Intl.NumberFormat('id-ID').format(n || 0);
-
-const shortRupiah = (n) => {
-    if (!n) return 'Rp 0';
-    if (n >= 1000000000) return 'Rp ' + (n / 1000000000).toFixed(2).replace('.', ',') + ' M';
-    if (n >= 1000000) return 'Rp ' + Math.round(n / 1000000) + ' jt';
-    return rupiah(n);
 };
 
 const tanggalPendek = (dateStr) => {
@@ -261,14 +253,14 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
                         <span className="mt-0.5 w-9 h-9 shrink-0 rounded-lg bg-sky-50 flex items-center justify-center text-base">🤝</span>
                         <div className="min-w-0">
                             <div className="text-xs text-gray-500">Komitmen</div>
-                            <div className="text-lg font-bold text-gray-900 truncate">{shortRupiah(summary.commitment)}</div>
+                            <div className="text-lg font-bold text-gray-900 truncate">{formatRpShort(summary.commitment)}</div>
                         </div>
                     </div>
                     <div className="bg-white rounded-xl border border-gray-200 p-3 flex items-start gap-2.5">
                         <span className="mt-0.5 w-9 h-9 shrink-0 rounded-lg bg-emerald-50 flex items-center justify-center text-base">✅</span>
                         <div className="min-w-0">
                             <div className="text-xs text-gray-500">Realisasi</div>
-                            <div className="text-lg font-bold text-emerald-700 truncate">{shortRupiah(summary.realization)}</div>
+                            <div className="text-lg font-bold text-emerald-700 truncate">{formatRpShort(summary.realization)}</div>
                         </div>
                     </div>
                     <div className="bg-white rounded-xl border border-gray-200 p-3 flex items-start gap-2.5">
@@ -459,7 +451,7 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
                                                     <button
                                                         key={ev.id}
                                                         onClick={() => setSelected(ev)}
-                                                        title={ev.speaker + ' — ' + ev.branch_name + (ev.realization ? ' · ' + shortRupiah(ev.realization) : '')}
+                                                        title={ev.speaker + ' — ' + ev.branch_name + (ev.realization ? ' · ' + formatRpShort(ev.realization) : '')}
                                                         className={
                                                             'w-full text-left px-1.5 py-0.5 rounded border text-[11px] leading-tight truncate transition-all duration-150 hover:-translate-y-px hover:shadow-sm ' +
                                                             (branchColor[ev.branch_id]?.chip ||
@@ -728,11 +720,11 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
                             <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 grid grid-cols-2 gap-3">
                                 <div>
                                     <div className="text-xs text-gray-500">Komitmen</div>
-                                    <div className="font-bold text-gray-900">{rupiah(selected.commitment)}</div>
+                                    <div className="font-bold text-gray-900">{formatRp(selected.commitment)}</div>
                                 </div>
                                 <div>
                                     <div className="text-xs text-gray-500">Realisasi</div>
-                                    <div className="font-bold text-emerald-700">{rupiah(selected.realization)}</div>
+                                    <div className="font-bold text-emerald-700">{formatRp(selected.realization)}</div>
                                 </div>
                                 <div>
                                     <div className="text-xs text-gray-500">RCR</div>
@@ -744,7 +736,7 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
                                 </div>
                                 <div>
                                     <div className="text-xs text-gray-500">Cost</div>
-                                    <div className="font-bold text-gray-900">{rupiah(selected.cost)}</div>
+                                    <div className="font-bold text-gray-900">{formatRp(selected.cost)}</div>
                                 </div>
                             </div>
 
@@ -854,15 +846,15 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
                                 </div>
                                 <div>
                                     <div className="text-xs text-gray-500">Komitmen</div>
-                                    <div className="font-bold text-gray-900">{rupiah(selectedEvent.revenue_komitmen)}</div>
+                                    <div className="font-bold text-gray-900">{formatRp(selectedEvent.revenue_komitmen)}</div>
                                 </div>
                                 <div>
                                     <div className="text-xs text-gray-500">Realisasi</div>
-                                    <div className="font-bold text-emerald-700">{rupiah(selectedEvent.revenue_realisasi)}</div>
+                                    <div className="font-bold text-emerald-700">{formatRp(selectedEvent.revenue_realisasi)}</div>
                                 </div>
                                 <div className="col-span-2">
                                     <div className="text-xs text-gray-500">Total Cost</div>
-                                    <div className="font-bold text-gray-900">{rupiah(selectedEvent.total_cost)}</div>
+                                    <div className="font-bold text-gray-900">{formatRp(selectedEvent.total_cost)}</div>
                                 </div>
                             </div>
 

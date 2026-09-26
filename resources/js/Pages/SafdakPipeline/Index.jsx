@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Head, router, useForm } from '@inertiajs/react';
 import AppLayout from '@/Components/AppLayout';
+import { formatRp, formatRpShort } from '@/Utils/rupiah'; // v20260926-rupiah
 
 /**
  * Pipeline Safari Dakwah
@@ -92,35 +93,13 @@ const PILL_BASE =
 const PILL_OFF = 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-700';
 const PILL_ON = 'bg-slate-900 text-white border-slate-900 shadow-sm';
 
-const formatRupiah = (value) => {
-    if (value === null || value === undefined || value === '') return '—';
-    const n = Number(value);
-    if (!Number.isFinite(n)) return '—';
-    return 'Rp ' + n.toLocaleString('id-ID', { maximumFractionDigits: 0 });
-};
-
-// Bentuk ringkas untuk kartu ringkasan; nominal penuh tetap tersedia di title
-const shortRupiah = (value) => {
-    if (value === null || value === undefined || value === '') return '—';
-    const n = Number(value);
-    if (!Number.isFinite(n)) return '—';
-    if (n === 0) return 'Rp 0';
-    if (Math.abs(n) >= 1e9) return 'Rp ' + (n / 1e9).toFixed(2).replace('.', ',') + ' M';
-    if (Math.abs(n) >= 1e6) return 'Rp ' + Math.round(n / 1e6) + ' jt';
-    return 'Rp ' + n.toLocaleString('id-ID', { maximumFractionDigits: 0 });
-};
-
-// Nominal SATUAN (mis. per titik) biasanya di orde juta rendah, dan
-// shortRupiah membulatkan juta ke bilangan bulat -- 1.900.000 jadi "Rp 2 jt",
-// terlalu kasar untuk angka yang dipakai memperkirakan kebutuhan titik.
-// Versi ini menahan satu desimal di orde juta.
+// v20260926-rupiah — formatRp (penuh) & formatRpShort (ringkas, 3 angka penting)
+// kini dari Utils/rupiah.js. Nominal satuan (per titik) tidak lagi butuh format
+// khusus: 1.900.000 otomatis tampil "Rp 1,9 jt". Pembungkus ini hanya menjaga
+// aturan lama: nilai <= 0 atau bukan angka -> "—" (bukan Rp 0).
 const perUnitRupiah = (value) => {
     const n = Number(value);
-    if (!Number.isFinite(n) || n <= 0) return '—';
-    if (n >= 1e9) return 'Rp ' + (n / 1e9).toFixed(2).replace('.', ',') + ' M';
-    if (n >= 1e6) return 'Rp ' + (n / 1e6).toFixed(1).replace('.', ',') + ' jt';
-    if (n >= 1e3) return 'Rp ' + Math.round(n / 1e3).toLocaleString('id-ID') + ' rb';
-    return 'Rp ' + Math.round(n).toLocaleString('id-ID');
+    return Number.isFinite(n) && n > 0 ? formatRpShort(n) : '—';
 };
 
 // ── Nilai per titik eksekusi ──────────────────────────────────
@@ -168,7 +147,7 @@ function PerTitikPair({ komitmen, realisasi, titik, align = 'right' }) {
     return (
         <div
             className={`mt-0.5 text-[11px] leading-snug text-gray-500 ${ALIGN_CLASS[align] || ALIGN_CLASS.right}`}
-            title={`Per titik eksekusi (${t} titik) — komitmen ${k === null ? '—' : formatRupiah(Math.round(k))}, realisasi ${r === null ? '—' : formatRupiah(Math.round(r))}`}
+            title={`Per titik eksekusi (${t} titik) — komitmen ${k === null ? '—' : formatRp(Math.round(k))}, realisasi ${r === null ? '—' : formatRp(Math.round(r))}`}
         >
             /titik: K{' '}
             <span className="font-medium text-gray-700">{k === null ? '—' : perUnitRupiah(k)}</span>{' '}
@@ -506,10 +485,10 @@ function RankingCard({ ranking, activeSpeaker, showBranch, onPickSpeaker }) {
                                                 </span>
                                             </td>
                                             <td className="px-3 py-2.5 text-right whitespace-nowrap text-gray-700">
-                                                {formatRupiah(r.revenue_komitmen)}
+                                                {formatRp(r.revenue_komitmen)}
                                             </td>
                                             <td className="px-3 py-2.5 text-right whitespace-nowrap font-semibold text-emerald-700">
-                                                {formatRupiah(r.revenue_realisasi)}
+                                                {formatRp(r.revenue_realisasi)}
                                             </td>
                                             <td className="px-3 py-2.5 text-right whitespace-nowrap">
                                                 {(() => {
@@ -527,7 +506,7 @@ function RankingCard({ ranking, activeSpeaker, showBranch, onPickSpeaker }) {
                                                     }
                                                     return (
                                                         <div
-                                                            title={`Realisasi ${formatRupiah(r.revenue_realisasi)} dibagi ${r.titik_eksekusi} titik eksekusi`}
+                                                            title={`Realisasi ${formatRp(r.revenue_realisasi)} dibagi ${r.titik_eksekusi} titik eksekusi`}
                                                         >
                                                             <div className="text-sm font-semibold text-emerald-700">
                                                                 {rpt === null ? '—' : perUnitRupiah(rpt)}
@@ -585,7 +564,7 @@ function RankingCard({ ranking, activeSpeaker, showBranch, onPickSpeaker }) {
                                     </div>
                                     <div className="text-right shrink-0">
                                         <div className="text-sm font-semibold text-emerald-700">
-                                            {shortRupiah(r.revenue_realisasi)}
+                                            {formatRpShort(r.revenue_realisasi)}
                                         </div>
                                         <CapaianBadge komitmen={r.revenue_komitmen} realisasi={r.revenue_realisasi} />
                                         <PerTitikPair
@@ -660,7 +639,7 @@ const DATE_FIELDS = ['start_date', 'end_date'];
 
 const formatRevValue = (field, v) => {
     if (v === null || v === undefined || v === '') return '—';
-    if (MONEY_FIELDS.includes(field)) return formatRupiah(v);
+    if (MONEY_FIELDS.includes(field)) return formatRp(v);
     if (DATE_FIELDS.includes(field)) return formatTanggal(v);
     if (field === 'custom_dates') {
         if (!Array.isArray(v) || v.length === 0) return '—';
@@ -1180,9 +1159,9 @@ export default function Index({
                             <div className="text-xs text-gray-500">Revenue Komitmen</div>
                             <div
                                 className="text-xl font-bold text-gray-900 leading-tight"
-                                title={formatRupiah(summary?.revenue_komitmen)}
+                                title={formatRp(summary?.revenue_komitmen)}
                             >
-                                {shortRupiah(summary?.revenue_komitmen)}
+                                {formatRpShort(summary?.revenue_komitmen)}
                             </div>
                             <div className="mt-1 text-[11px] text-gray-400">
                                 {totalKampanye} kampanye pada filter ini
@@ -1193,7 +1172,7 @@ export default function Index({
                                     title={
                                         komitmenPerTitik === null
                                             ? 'Belum ada titik eksekusi — nilai per titik tidak bisa dihitung'
-                                            : `${formatRupiah(summary?.revenue_komitmen)} dibagi ${titikEksekusi} titik eksekusi`
+                                            : `${formatRp(summary?.revenue_komitmen)} dibagi ${titikEksekusi} titik eksekusi`
                                     }
                                 >
                                     <span className="text-sm font-bold text-gray-800">
@@ -1217,9 +1196,9 @@ export default function Index({
                             </div>
                             <div
                                 className="text-xl font-bold text-emerald-700 leading-tight"
-                                title={formatRupiah(summary?.revenue_realisasi)}
+                                title={formatRp(summary?.revenue_realisasi)}
                             >
-                                {shortRupiah(summary?.revenue_realisasi)}
+                                {formatRpShort(summary?.revenue_realisasi)}
                             </div>
                             {summaryPct !== null ? (
                                 <>
@@ -1252,7 +1231,7 @@ export default function Index({
                                     title={
                                         realisasiPerTitik === null
                                             ? 'Belum ada titik eksekusi — nilai per titik tidak bisa dihitung'
-                                            : `${formatRupiah(summary?.revenue_realisasi)} dibagi ${titikEksekusi} titik eksekusi`
+                                            : `${formatRp(summary?.revenue_realisasi)} dibagi ${titikEksekusi} titik eksekusi`
                                     }
                                 >
                                     <span className="text-sm font-bold text-emerald-700">
@@ -1303,9 +1282,9 @@ export default function Index({
                             </div>
                             <div
                                 className="text-xl font-bold text-gray-900 leading-tight"
-                                title={formatRupiah(summary?.total_cost)}
+                                title={formatRp(summary?.total_cost)}
                             >
-                                {shortRupiah(summary?.total_cost)}
+                                {formatRpShort(summary?.total_cost)}
                             </div>
                             {summaryRasio.pct !== null ? (
                                 <>
@@ -1635,15 +1614,15 @@ export default function Index({
                                             <MiniBar value={ev.titik_eksekusi} max={ev.target_ideal} color="bg-emerald-500" />
                                         </td>
                                         <td className="px-3 py-2.5 text-right whitespace-nowrap border-l border-gray-100">
-                                            <div className="text-gray-700">{formatRupiah(ev.total_cost)}</div>
+                                            <div className="text-gray-700">{formatRp(ev.total_cost)}</div>
                                             <div className="mt-0.5">
                                                 <RasioBadge cost={ev.total_cost} realisasi={ev.revenue_realisasi} />
                                             </div>
                                         </td>
                                         <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                                            <div className="text-gray-700">{formatRupiah(ev.revenue_komitmen)}</div>
+                                            <div className="text-gray-700">{formatRp(ev.revenue_komitmen)}</div>
                                             <div className="text-emerald-700 font-medium">
-                                                {formatRupiah(ev.revenue_realisasi)}
+                                                {formatRp(ev.revenue_realisasi)}
                                             </div>
                                             <PerTitikPair
                                                 komitmen={ev.revenue_komitmen}
@@ -1767,11 +1746,11 @@ export default function Index({
                                 <div className="rounded-lg bg-gray-50 border border-gray-100 p-2 space-y-1.5">
                                     <div className="flex items-center justify-between text-xs">
                                         <span className="text-gray-500">Komitmen</span>
-                                        <span className="font-medium text-gray-800">{formatRupiah(ev.revenue_komitmen)}</span>
+                                        <span className="font-medium text-gray-800">{formatRp(ev.revenue_komitmen)}</span>
                                     </div>
                                     <div className="flex items-center justify-between text-xs">
                                         <span className="text-gray-500">Realisasi</span>
-                                        <span className="font-medium text-emerald-700">{formatRupiah(ev.revenue_realisasi)}</span>
+                                        <span className="font-medium text-emerald-700">{formatRp(ev.revenue_realisasi)}</span>
                                     </div>
                                     <div className="flex items-center justify-between text-xs">
                                         <span className="text-gray-500">Capaian</span>
@@ -1806,7 +1785,7 @@ export default function Index({
                                     <div className="h-px bg-gray-200" />
                                     <div className="flex items-center justify-between text-xs">
                                         <span className="text-gray-500">Cost</span>
-                                        <span className="font-medium text-gray-800">{formatRupiah(ev.total_cost)}</span>
+                                        <span className="font-medium text-gray-800">{formatRp(ev.total_cost)}</span>
                                     </div>
                                     <div className="flex items-center justify-between text-xs">
                                         <span className="text-gray-500">Rasio Cost vs Realisasi</span>
