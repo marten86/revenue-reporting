@@ -1,5 +1,6 @@
 import { Link, useForm, usePage } from '@inertiajs/react'
 import AppLayout from '../../Components/AppLayout'
+import { monthStartYmd } from '../../Utils/date';
 
 export default function ReportCreate({ branches }) {
     const { auth } = usePage().props
@@ -7,7 +8,7 @@ export default function ReportCreate({ branches }) {
 
     const { data, setData, post, processing, errors } = useForm({
         branch_id:    user?.branch_id ?? '',
-        period_month: new Date().toISOString().slice(0, 7) + '-01',
+        period_month: monthStartYmd(),
     })
 
     return (

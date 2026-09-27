@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Head, router, useForm } from '@inertiajs/react';
 import AppLayout from '@/Components/AppLayout';
 import { formatRp, formatRpShort } from '@/Utils/rupiah'; // v20260926-rupiah
+import { todayYmd as todayStr } from '../../Utils/date'; 
 
 /**
  * Pipeline Safari Dakwah
@@ -167,14 +168,6 @@ const formatTanggalPendek = (dateStr) => {
     if (!dateStr) return '—';
     const d = new Date(dateStr);
     return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
-};
-
-// Tanggal hari ini dalam waktu LOKAL. Sengaja tidak memakai
-// toISOString().slice(0,10) -- itu memberi tanggal UTC, dan di WITA (UTC+8)
-// antara 00:00-08:00 hasilnya mundur satu hari.
-const todayStr = () => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
 const clampPct = (n) => Math.max(0, Math.min(100, Number(n) || 0));

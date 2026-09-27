@@ -3,6 +3,7 @@ import { Head, router } from '@inertiajs/react';
 import AppLayout from '@/Components/AppLayout';
 // v20260926-rupiah — format dari Utils/rupiah.js
 import { formatRp, formatRpShort } from '@/Utils/rupiah';
+import { todayYmd } from '../../Utils/date';
 
 // ── Palet cabang: warna tetap per index supaya konsisten antar bulan ──
 const BRANCH_COLORS = [
@@ -50,7 +51,7 @@ export default function SafariCalendarIndex({ month, logs, events = [], branches
     const [selectedEvent, setSelectedEvent] = useState(null); // kampanye pipeline
 
     const [year, monthNum] = month.split('-').map(Number);
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = todayYmd()
 
     // Map warna per cabang
     const branchColor = useMemo(() => {

@@ -1,12 +1,13 @@
 import { useForm } from '@inertiajs/react'
 import AppLayout from '../../Components/AppLayout'
+import { monthStartYmd } from '../../Utils/date';
 
 const inputStyle = { width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }
 
 export default function CostsCreate({ branches }) {
     const { data, setData, post, processing, errors } = useForm({
         branch_id: branches[0]?.id ?? '',
-        period_month: new Date().toISOString().slice(0, 7) + '-01',
+        period_month: monthStartYmd(),
     })
 
     const handleSubmit = (e) => {
