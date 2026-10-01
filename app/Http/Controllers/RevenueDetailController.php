@@ -11,10 +11,28 @@ class RevenueDetailController extends Controller
 {
     // ── Validasi yang dipakai di store & update ─────────────
 
-    private function rules(): array
+    // v20261001-batas-bulan: tanggal entri wajib di dalam bulan laporan.
+    // Entri di luar bulan tidak masuk total (recalculate hanya tgl 1..akhir bulan)
+    // tetapi tetap muncul di grafik per kanal & rekap tim -> angka tidak konsisten.
+    private function dateRule(MonthlyReport $report): array
+    {
+        $start = $report->period_month->copy()->startOfMonth()->toDateString();
+        $end   = $report->period_month->copy()->endOfMonth()->toDateString();
+
+        return ['required', 'date', "after_or_equal:{$start}", "before_or_equal:{$end}"];
+    }
+
+    private function dateMessages(string $field): array
+    {
+        $msg = 'Tanggal harus berada di dalam bulan laporan ini.';
+
+        return ["{$field}.after_or_equal" => $msg, "{$field}.before_or_equal" => $msg];
+    }
+
+    private function rules(MonthlyReport $report): array
     {
         return [
-            'date'          => 'required|date',
+            'date'          => $this->dateRule($report),
             'channel'       => ['required', Rule::in(MonthlyReport::CHANNELS)],
             'source_label'  => 'nullable|string|max:100',
             'sub_channel'   => ['nullable', Rule::in(MonthlyReport::SUB_CHANNELS)],
@@ -32,7 +50,7 @@ class RevenueDetailController extends Controller
         abort_unless($request->user()->canAccessBranch($report->branch), 403);
         abort_unless($report->isDraft(), 422, 'Laporan sudah disubmit, tidak bisa diedit.');
 
-        $data = $request->validate($this->rules());
+        $data = $request->validate($this->rules($report), $this->dateMessages('date'));
 
         RevenueDetail::create([
             'monthly_report_id' => $report->id,
@@ -53,7 +71,7 @@ class RevenueDetailController extends Controller
         abort_unless($report->isDraft(), 422, 'Laporan sudah disubmit, tidak bisa diedit.');
         abort_unless($detail->monthly_report_id === $report->id, 404);
 
-        $data = $request->validate($this->rules());
+        $data = $request->validate($this->rules($report), $this->dateMessages('date'));
         $detail->update($data);
 
         return back()->with('success', 'Data penghimpunan berhasil diperbarui.');
@@ -110,14 +128,14 @@ class RevenueDetailController extends Controller
 
         $data = $request->validate([
             'entries'                => 'required|array|min:1|max:217',
-            'entries.*.date'         => 'required|date',
+            'entries.*.date'         => $this->dateRule($report),
             'entries.*.channel'      => ['required', Rule::in(MonthlyReport::CHANNELS)],
             'entries.*.source_label' => 'nullable|string|max:100',
             'entries.*.sub_channel'  => ['nullable', Rule::in(MonthlyReport::SUB_CHANNELS)],
             'entries.*.amount'       => 'required|integer|min:0',
             'entries.*.sort_order'   => 'integer|min:0',
             'entries.*.notes'        => 'nullable|string|max:500',
-        ]);
+        ], $this->dateMessages('entries.*.date'));
 
         // Matikan event → tidak ada recalculate per baris
         RevenueDetail::withoutEvents(function () use ($report, $data) {

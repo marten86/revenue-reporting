@@ -86,6 +86,7 @@ class UserManagementController extends Controller
         ]);
 
         [$branchId, $areaId] = $this->resolveScope($data, $authUser->area_id); // ⬅ CHANGED
+        $this->authorizePlacement($authUser, $branchId, $areaId); // v20261001-scope-am
 
         User::create([
             'name'      => $data['name'],
@@ -106,11 +107,7 @@ class UserManagementController extends Controller
         abort_unless($authUser->canManageAllBranches(), 403);
 
         // AM tidak boleh mengelola akun tingkat nasional yang sudah ada. ⬅ CHANGED: dulu hanya super_admin
-        abort_if(
-            !$authUser->isSuperAdmin() && in_array($user->role, self::NATIONAL_ROLES, true),
-            403,
-            'Tidak berwenang mengelola akun tingkat nasional.'
-        );
+        $this->authorizeTarget($authUser, $user); // v20261001-scope-am: nasional + area
 
         $allowedRoles = $authUser->isSuperAdmin()
             ? ['super_admin', 'admin_nasional', 'area_manager', 'branch_head', 'staff', 'viewer'] // ⬅ CHANGED
@@ -126,6 +123,7 @@ class UserManagementController extends Controller
         ]);
 
         [$branchId, $areaId] = $this->resolveScope($data, $user->area_id); // ⬅ CHANGED
+        $this->authorizePlacement($authUser, $branchId, $areaId); // v20261001-scope-am
 
         $user->update([
             'name'      => $data['name'],
@@ -145,11 +143,7 @@ class UserManagementController extends Controller
         abort_unless($authUser->canManageAllBranches(), 403);
 
         // AM tidak boleh reset password akun nasional. ⬅ CHANGED
-        abort_if(
-            !$authUser->isSuperAdmin() && in_array($user->role, self::NATIONAL_ROLES, true),
-            403,
-            'Tidak berwenang mengelola akun tingkat nasional.'
-        );
+        $this->authorizeTarget($authUser, $user); // v20261001-scope-am: nasional + area
 
         $data = $request->validate([
             'password' => 'required|string|min:6',
@@ -167,15 +161,49 @@ class UserManagementController extends Controller
         abort_if($user->id === $authUser->id, 422, 'Tidak bisa menghapus akun sendiri.');
 
         // AM tidak boleh menghapus akun nasional. ⬅ CHANGED
-        abort_if(
-            !$authUser->isSuperAdmin() && in_array($user->role, self::NATIONAL_ROLES, true),
-            403,
-            'Tidak berwenang mengelola akun tingkat nasional.'
-        );
+        $this->authorizeTarget($authUser, $user); // v20261001-scope-am: nasional + area
 
         $user->delete();
 
         return back()->with('success', "User \"{$user->name}\" berhasil dihapus.");
+    }
+
+    // ── v20261001-scope-am: Area Manager hanya boleh mengelola user di areanya ──
+    // Sebelumnya AM hanya dicegah menyentuh akun nasional; user di AREA LAIN
+    // tetap bisa diedit / di-reset password / dihapus lewat request langsung.
+    private function authorizeTarget(User $authUser, User $target): void
+    {
+        if ($authUser->isSuperAdmin()) {
+            return;
+        }
+
+        abort_if(
+            in_array($target->role, self::NATIONAL_ROLES, true),
+            403,
+            'Tidak berwenang mengelola akun tingkat nasional.'
+        );
+
+        $targetAreaId = $target->area_id ?? $target->branch?->area_id;
+
+        abort_unless(
+            $targetAreaId !== null && $targetAreaId === $authUser->area_id,
+            403,
+            'User ini berada di luar area Anda.'
+        );
+    }
+
+    // Tujuan penempatan (hasil resolveScope) harus di area AM sendiri.
+    private function authorizePlacement(User $authUser, ?string $branchId, ?string $areaId): void
+    {
+        if ($authUser->isSuperAdmin()) {
+            return;
+        }
+
+        abort_unless(
+            $areaId !== null && $areaId === $authUser->area_id,
+            403,
+            'Anda hanya dapat menempatkan user di area Anda sendiri.'
+        );
     }
 
     // ── Helper: tentukan branch_id & area_id sesuai role ────────────────────── ⬅ NEW

@@ -8,10 +8,14 @@ use Illuminate\Http\Request;
 
 class SafariDakwahController extends Controller
 {
-    private function rules(): array
+    // v20261001-batas-bulan: tanggal sesi wajib di dalam bulan laporan
+    private function rules(MonthlyReport $report): array
     {
+        $start = $report->period_month->copy()->startOfMonth()->toDateString();
+        $end   = $report->period_month->copy()->endOfMonth()->toDateString();
+
         return [
-            'date'        => 'required|date',
+            'date'        => ['required', 'date', "after_or_equal:{$start}", "before_or_equal:{$end}"],
             'day_name'    => 'required|string|max:10',
             'time'        => 'nullable|string|max:20',
             'location'    => 'nullable|string|max:200',
@@ -29,7 +33,10 @@ class SafariDakwahController extends Controller
         abort_unless($request->user()->canAccessBranch($report->branch), 403);
         abort_unless($report->isDraft(), 422, 'Laporan sudah disubmit, tidak bisa diedit.');
 
-        $data = $request->validate($this->rules());
+        $data = $request->validate($this->rules($report), [
+            'date.after_or_equal'  => 'Tanggal harus berada di dalam bulan laporan ini.',
+            'date.before_or_equal' => 'Tanggal harus berada di dalam bulan laporan ini.',
+        ]);
 
         SafariDakwahLog::create([
             ...$data,
@@ -49,7 +56,10 @@ class SafariDakwahController extends Controller
         abort_unless($report->isDraft(), 422, 'Laporan sudah disubmit, tidak bisa diedit.');
         abort_unless($log->monthly_report_id === $report->id, 404);
 
-        $data = $request->validate($this->rules());
+        $data = $request->validate($this->rules($report), [
+            'date.after_or_equal'  => 'Tanggal harus berada di dalam bulan laporan ini.',
+            'date.before_or_equal' => 'Tanggal harus berada di dalam bulan laporan ini.',
+        ]);
 
         $log->update($data);
 

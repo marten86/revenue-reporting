@@ -433,6 +433,14 @@ function GridView({ report, activeChannel, config, sources, isMobile }) {
 // Tab Rincian
 // ══════════════════════════════════════════════════════════
 
+// v20261001-batas-bulan: batas tanggal input = bulan laporan (tanpa toISOString / UTC)
+function monthBounds(periodMonth) {
+    const [y, m] = String(periodMonth).slice(0, 7).split('-').map(Number)
+    const mm = String(m).padStart(2, '0')
+    const last = String(new Date(y, m, 0).getDate()).padStart(2, '0')
+    return { min: `${y}-${mm}-01`, max: `${y}-${mm}-${last}` }
+}
+
 function TabRincian({ report, canEdit, sources = {}, isMobile }) {
     const [activeChannel, setActiveChannel] = useState('presentasi')
     const [viewMode, setViewMode] = useState('list')
@@ -455,6 +463,7 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
         return totals
     }, [allDetails])
 
+    const bounds = monthBounds(report.period_month)
     const [formDate, setFormDate] = useState('')
     const [formSource, setFormSource] = useState('')
     const [formAmounts, setFormAmounts] = useState({ reguler: 0, safdak: 0, df: 0 })
@@ -746,7 +755,7 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
                     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : config.hasSource ? '140px 1fr' : '140px', gap: 10, marginBottom: 10 }}>
                         <div>
                             <label style={{ display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 4, color: '#374151' }}>Tanggal</label>
-                            <input type="date" value={formDate} onChange={e => setFormDate(e.target.value)} style={inputStyle} />
+                            <input type="date" min={bounds.min} max={bounds.max} value={formDate} onChange={e => setFormDate(e.target.value)} style={inputStyle} />
                         </div>
                         {config.hasSource && (
                             <div>
@@ -812,6 +821,7 @@ function TabRincian({ report, canEdit, sources = {}, isMobile }) {
 
 function TabSafari({ report, canEdit, isMobile, narasumberList = [] }) {
     const logs = report.safari_dakwah_logs ?? []
+    const bounds = monthBounds(report.period_month)
     const total = {
         target: logs.reduce((s, l) => s + (l.target ?? 0), 0),
         commitment: logs.reduce((s, l) => s + (l.commitment ?? 0), 0),
@@ -966,7 +976,7 @@ function TabSafari({ report, canEdit, isMobile, narasumberList = [] }) {
                                     style={{ borderBottom: '1px solid #f3f4f6', background: isEditing ? '#f0fdf4' : undefined, cursor: canEdit && !editId ? 'pointer' : undefined }}
                                     onClick={() => { if (canEdit && !editId) startEdit(l) }}>
                                     <td style={{ ...tdStyle, textAlign: 'left' }}>
-                                        {isEditing ? <input type="date" value={editData.date} onClick={e => e.stopPropagation()} onChange={e => handleEditDateChange(e.target.value)} style={{ ...inputCell, minWidth: 130 }} /> : new Date(l.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
+                                        {isEditing ? <input type="date" min={bounds.min} max={bounds.max} value={editData.date} onClick={e => e.stopPropagation()} onChange={e => handleEditDateChange(e.target.value)} style={{ ...inputCell, minWidth: 130 }} /> : new Date(l.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
                                     </td>
                                     <td style={{ ...tdStyle, textAlign: 'left', color: '#6b7280' }}>
                                         {isEditing ? <input value={editData.day_name} readOnly style={{ ...inputCell, background: '#f9fafb', color: '#6b7280', width: 70 }} /> : l.day_name}
@@ -1026,7 +1036,7 @@ function TabSafari({ report, canEdit, isMobile, narasumberList = [] }) {
                     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '130px 80px 1fr 1fr', gap: 10, marginBottom: 10 }}>
                         <div>
                             <label style={{ display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 4, color: '#374151' }}>Tanggal</label>
-                            <input type="date" value={formDate} onChange={e => handleFormDateChange(e.target.value)} style={inputStyle} />
+                            <input type="date" min={bounds.min} max={bounds.max} value={formDate} onChange={e => handleFormDateChange(e.target.value)} style={inputStyle} />
                         </div>
                         <div>
                             <label style={{ display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 4, color: '#374151' }}>Hari</label>

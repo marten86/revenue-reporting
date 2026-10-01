@@ -172,7 +172,9 @@ class ReportController extends Controller
         $latestTarget = $report->branch->targetForMonth(
             $report->period_month->format('Y-m-d')
         );
-        if ($latestTarget && (int) $latestTarget->target_total !== (int) $report->target_amount) {
+        // v20261001-target-draft: hanya laporan DRAFT yang mengikuti target terbaru.
+        // Laporan submitted/approved memakai snapshot target saat submit (data historis).
+        if ($report->isDraft() && $latestTarget && (int) $latestTarget->target_total !== (int) $report->target_amount) {
             $report->update(['target_amount' => $latestTarget->target_total]);
             $report->recalculate();
         }
