@@ -7,6 +7,7 @@ use App\Models\CostDetail;
 use App\Models\MonthlyCost;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -73,9 +74,24 @@ class CostController extends Controller
         $branch = Branch::findOrFail($data['branch_id']);
         abort_unless($request->user()->canAccessBranch($branch), 403);
 
-        $existing = MonthlyCost::where('branch_id', $data['branch_id'])
+        // v20261001-period-01: selalu simpan sebagai tanggal 01
+        $data['period_month'] = Carbon::parse($data['period_month'])->startOfMonth()->toDateString();
+
+        // v20261001-cost-trashed: withTrashed() — baris soft-delete tetap mengunci
+        // unique (branch_id, period_month) di PostgreSQL. Tanpa ini -> error 500
+        // (SQLSTATE 23505). Pola sama dengan ReportController::store().
+        $existing = MonthlyCost::withTrashed()
+            ->where('branch_id', $data['branch_id'])
             ->where('period_month', $data['period_month'])
             ->first();
+
+        if ($existing && $existing->trashed()) {
+            throw ValidationException::withMessages([
+                'period_month' => 'Laporan biaya periode ini pernah dibuat lalu dihapus, '
+                    . 'sehingga periodenya masih terkunci di database. '
+                    . 'Hubungi Area Manager untuk memulihkan atau membersihkannya.',
+            ]);
+        }
 
         if ($existing) {
             return redirect()->route('costs.show', $existing)

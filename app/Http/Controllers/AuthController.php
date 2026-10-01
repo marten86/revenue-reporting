@@ -32,7 +32,8 @@ class AuthController extends Controller
 
         $user = Auth::user();
 
-        if ($user->canManageAllBranches()) {
+        // v20261001-login-redirect: samakan dengan route '/' (admin_nasional & viewer ikut ke dashboard area)
+        if ($user->usesAreaDashboard()) {
             return redirect()->route('area.dashboard');
         }
 

@@ -106,6 +106,9 @@ class ReportController extends Controller
             'period_month' => 'required|date_format:Y-m-d',
         ]);
 
+        // v20261001-period-01: selalu simpan sebagai tanggal 01 (semua query mencari -01)
+        $data['period_month'] = \Carbon\Carbon::parse($data['period_month'])->startOfMonth()->toDateString();
+
         $branch = Branch::findOrFail($data['branch_id']);
         abort_unless($request->user()->canAccessBranch($branch), 403);
 

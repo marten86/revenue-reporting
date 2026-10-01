@@ -43,6 +43,9 @@ class BranchTargetController extends Controller
             'notes'             => 'nullable|string|max:500',
         ]);
 
+        // v20261001-period-01: selalu simpan sebagai tanggal 01
+        $data['period_month'] = \Carbon\Carbon::parse($data['period_month'])->startOfMonth()->toDateString();
+
         // Pastikan cabang berada dalam wewenang user (area-nya).
         // Untuk admin_nasional, canAccessBranch() = true untuk semua cabang (seesAllBranches).
         $branch = Branch::findOrFail($data['branch_id']);

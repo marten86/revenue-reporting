@@ -126,8 +126,10 @@ class AreaManagementController extends Controller
             return back()->withErrors(['error' => 'Cabang tidak terdaftar di area ini.']);
         }
 
-        $branch->update(['area_id' => null]);
-
-        return back()->with('success', 'Cabang berhasil dilepas dari area.');
+        // v20261001-unassign: branches.area_id NOT NULL -> set null selalu gagal (500).
+        // Cabang wajib punya area; pindahkan lewat "assign" ke area tujuan.
+        return back()->withErrors([
+            'error' => 'Cabang wajib berada di sebuah area. Pindahkan cabang dengan meng-assign-nya ke area tujuan.',
+        ]);
     }
 }
