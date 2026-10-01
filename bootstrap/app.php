@@ -19,5 +19,20 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        // v20261001-flash-abort: abort(403/422, 'pesan') dari aksi di aplikasi (request Inertia)
+        // dikembalikan ke halaman sebelumnya + flash error, bukan halaman "Oops! An Error Occurred".
+        // Validasi form (ValidationException) tidak terpengaruh: untuk Inertia statusnya 302, bukan 422.
+        $exceptions->respond(function ($response, \Throwable $e, \Illuminate\Http\Request $request) {
+            if (
+                $request->header('X-Inertia')
+                && $e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface
+                && in_array($e->getStatusCode(), [403, 422], true)
+            ) {
+                $message = $e->getMessage() !== '' ? $e->getMessage() : 'Aksi ini tidak diizinkan.';
+
+                return back()->with('error', $message);
+            }
+
+            return $response;
+        });
     })->create();
