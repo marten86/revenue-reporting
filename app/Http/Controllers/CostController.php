@@ -7,6 +7,8 @@ use App\Models\CostDetail;
 use App\Models\MonthlyCost;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -178,23 +180,29 @@ class CostController extends Controller
 
         $request->validate([
             'items'               => 'required|array',
-            'items.*.category'    => 'required|string',
+            'items.*.category'    => ['required', 'string', Rule::in(MonthlyCost::categories())], // v20261001: hanya 16 kategori resmi
             'items.*.amount'      => 'required|integer|min:0',
             'items.*.description' => 'nullable|string|max:255',
         ]);
 
-        foreach ($request->items as $i => $item) {
-            $cost->costDetails()->updateOrCreate(
-                ['category' => $item['category']],
-                [
-                    'amount'      => $item['amount'],
-                    'description' => $item['description'] ?? null,
-                    'sort_order'  => $i + 1,
-                ]
-            );
-        }
+        // v20261001-transaksi: simpan utuh atau tidak sama sekali; event CostDetail
+        // dimatikan agar recalculate() jalan SEKALI di akhir, bukan 16x per baris.
+        DB::transaction(function () use ($request, $cost) {
+            CostDetail::withoutEvents(function () use ($request, $cost) {
+                foreach ($request->items as $i => $item) {
+                    $cost->costDetails()->updateOrCreate(
+                        ['category' => $item['category']],
+                        [
+                            'amount'      => $item['amount'],
+                            'description' => $item['description'] ?? null,
+                            'sort_order'  => $i + 1,
+                        ]
+                    );
+                }
+            });
 
-        $cost->recalculate();
+            $cost->recalculate();
+        });
 
         return back()->with('success', 'Data biaya berhasil disimpan.');
     }

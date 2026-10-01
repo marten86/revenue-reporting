@@ -14,11 +14,13 @@ class BranchTarget extends Model
         'branch_id', 'period_month',
         'target_total', 'target_presentasi', 'target_gerai',
         'target_wgts', 'target_dfi', 'target_dfe',
-        'target_kotak_qris', 'target_kantor',
+        'target_kotak_qris', // lama — tidak lagi diisi dari form
+        'target_kotak', 'target_qris', // v20261001-target-kotak-qris
+        'target_kantor',
         'notes', 'created_by',
     ];
 
-    protected $casts = ['period_month' => 'date'];
+    protected $casts = ['period_month' => 'date:Y-m-d']; // v20261001: cegah geser WITA->UTC saat serialisasi
 
     public function branch(): BelongsTo
     {

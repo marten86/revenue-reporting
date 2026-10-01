@@ -18,7 +18,8 @@ export default function TargetsIndex({ branches, currentMonth }) {
         target_wgts:       0,
         target_dfi:        0,
         target_dfe:        0,
-        target_kotak_qris: 0,
+        target_kotak:      0, // v20261001-target-kotak-qris
+        target_qris:       0,
         target_kantor:     0,
         notes:             '',
     })
@@ -40,7 +41,8 @@ export default function TargetsIndex({ branches, currentMonth }) {
             target_wgts:       target?.target_wgts ?? 0,
             target_dfi:        target?.target_dfi ?? 0,
             target_dfe:        target?.target_dfe ?? 0,
-            target_kotak_qris: target?.target_kotak_qris ?? 0,
+            target_kotak:      target?.target_kotak ?? 0,
+            target_qris:       target?.target_qris ?? 0,
             target_kantor:     target?.target_kantor ?? 0,
             notes:             target?.notes ?? '',
         })
@@ -81,7 +83,7 @@ export default function TargetsIndex({ branches, currentMonth }) {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
                         <tr style={{ background: '#f9fafb' }}>
-                            {['Cabang', 'Target Total', 'Presentasi', 'Gerai', 'WGTS', 'DFI', 'DFE', 'Kotak/QRIS', 'Kantor', ''].map(h => (
+                            {['Cabang', 'Target Total', 'Presentasi', 'Gerai', 'WGTS', 'DFI', 'DFE', 'Kotak Infak', 'QRIS', 'Kantor', ''].map(h => (
                                 <th key={h} style={{ padding: '9px 12px', fontSize: 11, fontWeight: 500, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid #e5e7eb', textAlign: h === 'Cabang' || h === '' ? 'left' : 'right', whiteSpace: 'nowrap' }}>{h}</th>
                             ))}
                         </tr>
@@ -104,7 +106,7 @@ export default function TargetsIndex({ branches, currentMonth }) {
                                                         onChange={e => setData('target_total', parseInt(e.target.value) || 0)}
                                                         style={{ ...inputStyle, fontWeight: 600, borderColor: '#166534' }} />
                                                 </td>
-                                                {['target_presentasi','target_gerai','target_wgts','target_dfi','target_dfe','target_kotak_qris','target_kantor'].map(k => (
+                                                {['target_presentasi','target_gerai','target_wgts','target_dfi','target_dfe','target_kotak','target_qris','target_kantor'].map(k => (
                                                     <td key={k} style={{ padding: '6px 8px' }}>
                                                         <input type="number" min="0" step="1000000" value={data[k] || ''} placeholder="0"
                                                             onChange={e => setData(k, parseInt(e.target.value) || 0)}
@@ -129,7 +131,7 @@ export default function TargetsIndex({ branches, currentMonth }) {
                                                 <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12, fontWeight: 600, color: target ? '#111827' : '#d1d5db' }}>
                                                     {target ? formatRp(target.target_total) : '—'}
                                                 </td>
-                                                {['target_presentasi','target_gerai','target_wgts','target_dfi','target_dfe','target_kotak_qris','target_kantor'].map(k => (
+                                                {['target_presentasi','target_gerai','target_wgts','target_dfi','target_dfe','target_kotak','target_qris','target_kantor'].map(k => (
                                                     <td key={k} style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12, color: target?.[k] ? '#111827' : '#e5e7eb' }}>
                                                         {target?.[k] ? formatRp(target[k]) : '—'}
                                                     </td>
@@ -145,7 +147,7 @@ export default function TargetsIndex({ branches, currentMonth }) {
                                     </tr>
                                     {isEdit && (
                                         <tr style={{ borderBottom: '1px solid #f3f4f6', background: '#f0fdf4' }}>
-                                            <td colSpan={10} style={{ padding: '0 8px 8px 12px' }}>
+                                            <td colSpan={11} style={{ padding: '0 8px 8px 12px' }}>
                                                 <input value={data.notes} placeholder="Catatan (opsional)"
                                                     onChange={e => setData('notes', e.target.value)}
                                                     style={{ width: '40%', padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 12 }} />

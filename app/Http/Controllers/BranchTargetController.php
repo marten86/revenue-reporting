@@ -39,6 +39,8 @@ class BranchTargetController extends Controller
             'target_dfi'        => 'nullable|integer|min:0',
             'target_dfe'        => 'nullable|integer|min:0',
             'target_kotak_qris' => 'nullable|integer|min:0',
+            'target_kotak'      => 'nullable|integer|min:0', // v20261001-target-kotak-qris
+            'target_qris'       => 'nullable|integer|min:0',
             'target_kantor'     => 'nullable|integer|min:0',
             'notes'             => 'nullable|string|max:500',
         ]);

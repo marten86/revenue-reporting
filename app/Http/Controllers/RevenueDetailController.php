@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\MonthlyReport;
 use App\Models\RevenueDetail;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class RevenueDetailController extends Controller
@@ -105,11 +106,16 @@ class RevenueDetailController extends Controller
             'ids.*' => 'string|exists:revenue_details,id',  // ← string, bukan integer (UUID)
         ]);
 
-        $deleted = RevenueDetail::whereIn('id', $validated['ids'])
-            ->where('monthly_report_id', $report->id)
-            ->delete();
+        // v20261001-transaksi: hapus + hitung ulang = satu kesatuan
+        $deleted = DB::transaction(function () use ($validated, $report) {
+            $n = RevenueDetail::whereIn('id', $validated['ids'])
+                ->where('monthly_report_id', $report->id)
+                ->delete();
 
-        $report->recalculate();
+            $report->recalculate();
+
+            return $n;
+        });
 
         return back()->with('success', "{$deleted} entri berhasil dihapus.");
     }
@@ -137,28 +143,31 @@ class RevenueDetailController extends Controller
             'entries.*.notes'        => 'nullable|string|max:500',
         ], $this->dateMessages('entries.*.date'));
 
-        // Matikan event → tidak ada recalculate per baris
-        RevenueDetail::withoutEvents(function () use ($report, $data) {
-            foreach ($data['entries'] as $entry) {
-                RevenueDetail::updateOrCreate(
-                    [
-                        'monthly_report_id' => $report->id,
-                        'date'              => $entry['date'],
-                        'channel'           => $entry['channel'],
-                        'source_label'      => $entry['source_label'] ?? null,
-                        'sub_channel'       => $entry['sub_channel'] ?? null,
-                    ],
-                    [
-                        'amount'     => $entry['amount'],
-                        'sort_order' => $entry['sort_order'] ?? 0,
-                        'notes'      => $entry['notes'] ?? null,
-                    ]
-                );
-            }
-        });
+        // v20261001-transaksi: semua baris + recalculate tersimpan utuh, atau tidak sama sekali
+        DB::transaction(function () use ($report, $data) {
+            // Matikan event → tidak ada recalculate per baris
+            RevenueDetail::withoutEvents(function () use ($report, $data) {
+                foreach ($data['entries'] as $entry) {
+                    RevenueDetail::updateOrCreate(
+                        [
+                            'monthly_report_id' => $report->id,
+                            'date'              => $entry['date'],
+                            'channel'           => $entry['channel'],
+                            'source_label'      => $entry['source_label'] ?? null,
+                            'sub_channel'       => $entry['sub_channel'] ?? null,
+                        ],
+                        [
+                            'amount'     => $entry['amount'],
+                            'sort_order' => $entry['sort_order'] ?? 0,
+                            'notes'      => $entry['notes'] ?? null,
+                        ]
+                    );
+                }
+            });
 
-        // Recalculate SEKALI setelah semua baris masuk
-        $report->recalculate();
+            // Recalculate SEKALI setelah semua baris masuk
+            $report->recalculate();
+        });
 
         return back()->with('success', count($data['entries']) . ' data penghimpunan berhasil disimpan.');
     }

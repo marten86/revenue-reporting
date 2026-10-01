@@ -39,8 +39,11 @@ class AnalyticsController extends Controller
         'gerai'      => 'target_gerai',
         'dfi'        => 'target_dfi',
         'dfe'        => 'target_dfe',
-        'kotak'      => 'target_total',      // fallback - belum ada target_kotak
-        'qris'       => 'target_total',      // fallback - belum ada target_qris
+        // v20261001-target-kotak-qris: dulu fallback ke target_total -> capaian kanal
+        // dibandingkan target SEMUA kanal (pembilang & penyebut beda scope).
+        // Kini target sendiri; bila 0 (belum diset) capaian tampil "—".
+        'kotak'      => 'target_kotak',
+        'qris'       => 'target_qris',
         'kotak_qris' => 'target_kotak_qris', // lama
         'kantor'     => 'target_kantor',
     ];
