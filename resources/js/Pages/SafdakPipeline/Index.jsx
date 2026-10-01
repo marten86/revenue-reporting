@@ -614,8 +614,8 @@ const FIELD_LABELS = {
     titik_deal:        'Titik deal',
     titik_eksekusi:    'Titik eksekusi',
     total_cost:        'Cost',
-    revenue_komitmen:  'Rev. komitmen',
-    revenue_realisasi: 'Rev. realisasi',
+    revenue_komitmen:  'Penghimpunan komitmen',
+    revenue_realisasi: 'Penghimpunan realisasi',
     has_mou:           'MoU',
     notes:             'Catatan',
 };
@@ -1140,7 +1140,7 @@ export default function Index({
                 {/* ── Strip uang: komitmen / realisasi / cost ── */}
                 <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                     <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-gray-50/70 border-b border-gray-200">
-                        <span className="text-xs font-semibold text-gray-600">💰 Revenue &amp; Biaya</span>
+                        <span className="text-xs font-semibold text-gray-600">💰 Penghimpunan &amp; Biaya</span>
                         <span className="text-[11px] text-gray-400">
                             ℹ️ Angka manajerial &mdash; angka resmi tetap di laporan bulanan
                         </span>
@@ -1149,7 +1149,7 @@ export default function Index({
                     <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
                         {/* Komitmen */}
                         <div className="p-3">
-                            <div className="text-xs text-gray-500">Revenue Komitmen</div>
+                            <div className="text-xs text-gray-500">Penghimpunan Komitmen</div>
                             <div
                                 className="text-xl font-bold text-gray-900 leading-tight"
                                 title={formatRp(summary?.revenue_komitmen)}
@@ -1182,7 +1182,7 @@ export default function Index({
                         {/* Realisasi + capaian agregat + rata-rata */}
                         <div className="p-3">
                             <div className="flex items-baseline justify-between gap-2">
-                                <span className="text-xs text-gray-500">Revenue Realisasi</span>
+                                <span className="text-xs text-gray-500">Penghimpunan Realisasi</span>
                                 <span className={`text-xs font-bold ${summaryPctMeta.text}`}>
                                     {summaryPct === null ? '—' : `${summaryPct}%`}
                                 </span>

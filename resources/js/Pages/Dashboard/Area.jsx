@@ -296,7 +296,7 @@ export default function AreaDashboard({
                         </div>
                         <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
                             <div>
-                                <div style={{ fontSize: 11, color: '#9ca3af' }}>Total Revenue</div>
+                                <div style={{ fontSize: 11, color: '#9ca3af' }}>Total Penghimpunan</div>
                                 <div style={{ fontSize: 20, fontWeight: 700, color: '#111827' }}>
                                     {formatRpShort(areaSummary.reduce((s, a) => s + a.total_revenue, 0))}
                                 </div>
@@ -354,7 +354,7 @@ export default function AreaDashboard({
             <div className="grid-6" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 12, marginBottom: 24 }}>
                 {[
                     {
-                        label: 'Total Revenue', icon: '💰',
+                        label: 'Total Penghimpunan', icon: '💰',
                         value: formatRpShort(summary.total_revenue),
                         sub: `Target: ${formatRpShort(summary.total_target)}`,
                     },
@@ -376,7 +376,7 @@ export default function AreaDashboard({
                     {
                         label: 'Rasio Biaya', icon: '📉',
                         value: costRatio == null ? '—' : `${costRatio}%`,
-                        sub: costRatio == null ? 'Belum ada revenue' : ratioLabel(costRatio),
+                        sub: costRatio == null ? 'Belum ada penghimpunan' : ratioLabel(costRatio),
                         valueColor: costRatio == null ? '#9ca3af' : ratioColor(costRatio),
                     },
                     // Bulan berjalan: Status Input menggantikan Laporan Masuk & Cabang
@@ -406,7 +406,7 @@ export default function AreaDashboard({
 
             {/* Row 1: Trend + Channel Pie */}
             <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, marginBottom: 14 }}>
-                <ChartCard title="Tren Revenue & Biaya" subtitle="6 bulan terakhir">
+                <ChartCard title="Tren Penghimpunan & Biaya" subtitle="6 bulan terakhir">
                     {(monthlyTrend ?? []).length > 0 ? (
                         <ResponsiveContainer width="100%" height={280}>
                             <ComposedChart data={monthlyTrend}>
@@ -422,7 +422,7 @@ export default function AreaDashboard({
                                 <YAxis yAxisId="right" orientation="right" tickFormatter={v => `${v}%`} tick={{ fontSize: 11, fill: '#9ca3af' }} domain={[0, 100]} />
                                 <Tooltip content={<CustomTooltip />} />
                                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                                <Area yAxisId="left" type="monotone" dataKey="revenue" name="Revenue" stroke="#16a34a" strokeWidth={2.5} fill="url(#gradRevenue)" />
+                                <Area yAxisId="left" type="monotone" dataKey="revenue" name="Penghimpunan" stroke="#16a34a" strokeWidth={2.5} fill="url(#gradRevenue)" />
                                 <Bar yAxisId="left" dataKey="cost" name="Biaya" fill="#ef4444" opacity={0.7} radius={[2, 2, 0, 0]} />
                                 <Line yAxisId="right" type="monotone" dataKey="cost_ratio" name="Rasio" stroke="#d97706" strokeWidth={2} dot={{ fill: '#d97706', r: 3 }} />
                             </ComposedChart>
@@ -487,7 +487,7 @@ export default function AreaDashboard({
                     )}
                 </ChartCard>
 
-                <ChartCard title="Revenue per Kanal" subtitle={periodLabel}>
+                <ChartCard title="Penghimpunan per Kanal" subtitle={periodLabel}>
                     {(channelBreakdown ?? []).length > 0 ? (
                         <ResponsiveContainer width="100%" height={260}>
                             <BarChart data={(channelBreakdown ?? []).map(d => ({ name: CHANNEL_LABELS[d.channel] ?? d.channel, total: d.total }))} layout="vertical">
@@ -495,7 +495,7 @@ export default function AreaDashboard({
                                 <XAxis type="number" tickFormatter={formatRpAxis} tick={{ fontSize: 11, fill: '#9ca3af' }} />
                                 <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 11, fill: '#374151' }} />
                                 <Tooltip content={<CustomTooltip />} />
-                                <Bar dataKey="total" name="Revenue" radius={[0, 4, 4, 0]}>
+                                <Bar dataKey="total" name="Penghimpunan" radius={[0, 4, 4, 0]}>
                                     {(channelBreakdown ?? []).map((d, i) => <Cell key={i} fill={CHANNEL_COLORS[d.channel] ?? '#6b7280'} />)}
                                 </Bar>
                             </BarChart>
@@ -507,7 +507,7 @@ export default function AreaDashboard({
             </div>
 
             {/* Row 3: Stacked Bar per Cabang */}
-            <ChartCard title="Revenue per Cabang per Kanal" subtitle="Komposisi kanal tiap cabang" style={{ marginBottom: 14 }}>
+            <ChartCard title="Penghimpunan per Cabang per Kanal" subtitle="Komposisi kanal tiap cabang" style={{ marginBottom: 14 }}>
                 {(channelPerBranch ?? []).length > 0 ? (
                     <ResponsiveContainer width="100%" height={300}>
                         <BarChart data={channelPerBranch} layout="vertical">
@@ -539,8 +539,8 @@ export default function AreaDashboard({
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                             <thead>
                                 <tr style={{ background: '#f9fafb' }}>
-                                    {['#', 'Cabang', 'Target', 'Revenue', 'Capaian', 'Biaya', 'Rasio', 'Status', ''].map(h => (
-                                        <th key={h} style={{ padding: '9px 12px', textAlign: ['Target', 'Revenue', 'Capaian', 'Biaya', 'Rasio'].includes(h) ? 'right' : 'left', fontSize: 11, fontWeight: 500, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid #e5e7eb', whiteSpace: 'nowrap' }}>{h}</th>
+                                    {['#', 'Cabang', 'Target', 'Penghimpunan', 'Capaian', 'Biaya', 'Rasio', 'Status', ''].map(h => (
+                                        <th key={h} style={{ padding: '9px 12px', textAlign: ['Target', 'Penghimpunan', 'Capaian', 'Biaya', 'Rasio'].includes(h) ? 'right' : 'left', fontSize: 11, fontWeight: 500, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid #e5e7eb', whiteSpace: 'nowrap' }}>{h}</th>
                                     ))}
                                 </tr>
                             </thead>
@@ -609,8 +609,8 @@ export default function AreaDashboard({
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                             <thead>
                                 <tr style={{ background: '#f9fafb' }}>
-                                    {['#', 'Nama', 'Kanal', 'Revenue'].map(h => (
-                                        <th key={h} style={{ padding: '8px 14px', textAlign: h === 'Revenue' ? 'right' : 'left', fontSize: 11, fontWeight: 500, color: '#9ca3af', textTransform: 'uppercase', borderBottom: '1px solid #e5e7eb' }}>{h}</th>
+                                    {['#', 'Nama', 'Kanal', 'Penghimpunan'].map(h => (
+                                        <th key={h} style={{ padding: '8px 14px', textAlign: h === 'Penghimpunan' ? 'right' : 'left', fontSize: 11, fontWeight: 500, color: '#9ca3af', textTransform: 'uppercase', borderBottom: '1px solid #e5e7eb' }}>{h}</th>
                                     ))}
                                 </tr>
                             </thead>

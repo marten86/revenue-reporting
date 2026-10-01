@@ -75,7 +75,7 @@ class SendMonthlyReminder extends Command
                     : "belum disubmit ⏳. Mohon segera disubmit melalui sistem SIM BWA Indotim.";
 
                 $message = "Assalamu'alaikum Kak {$kacab->name},\n\n"
-                    . "Reminder laporan revenue bulan *{$periodLabel}* cabang *{$branch->name}* {$statusText}\n\n"
+                    . "Reminder laporan penghimpunan bulan *{$periodLabel}* cabang *{$branch->name}* {$statusText}\n\n"
                     . "Link sistem: https://onebwa.my.id\n\n"
                     . "Terima kasih 🙏\n"
                     . "_Tim SIM BWA Indotim_";

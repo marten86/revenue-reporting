@@ -195,7 +195,7 @@ export default function BranchDashboard({
                     {
                         label: 'Rasio Biaya', icon: '📉',
                         value: costRatio != null && totalCost > 0 ? `${costRatio}%` : '—',
-                        sub: costRatio == null ? 'Belum ada revenue'
+                        sub: costRatio == null ? 'Belum ada penghimpunan'
                             : totalCost > 0 ? ratioLabel(costRatio) : 'Belum ada data biaya',
                         valueColor: costRatio != null && totalCost > 0 ? ratioColor(costRatio) : '#9ca3af',
                     },
@@ -218,7 +218,7 @@ export default function BranchDashboard({
 
             {/* Row 1: Trend + Channel Pie */}
             <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, marginBottom: 14 }}>
-                <ChartCard title="Tren Revenue vs Biaya" subtitle="6 bulan terakhir">
+                <ChartCard title="Tren Penghimpunan vs Biaya" subtitle="6 bulan terakhir">
                     {(monthlyTrend ?? []).length > 0 ? (
                         <ResponsiveContainer width="100%" height={280}>
                             <ComposedChart data={monthlyTrend}>
@@ -234,7 +234,7 @@ export default function BranchDashboard({
                                 <YAxis yAxisId="right" orientation="right" tickFormatter={v => `${v}%`} tick={{ fontSize: 11, fill: '#9ca3af' }} domain={[0, (max) => Number.isFinite(max) ? Math.max(100, Math.ceil(max)) : 100]} />
                                 <Tooltip content={<CustomTooltip />} />
                                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                                <Area yAxisId="left" type="monotone" dataKey="revenue" name="Revenue" stroke="#16a34a" strokeWidth={2.5} fill="url(#gradBranchRevenue)" />
+                                <Area yAxisId="left" type="monotone" dataKey="revenue" name="Penghimpunan" stroke="#16a34a" strokeWidth={2.5} fill="url(#gradBranchRevenue)" />
                                 <Bar yAxisId="left" dataKey="cost" name="Biaya" fill="#ef4444" opacity={0.7} radius={[2, 2, 0, 0]} maxBarSize={30} />
                                 <Line yAxisId="right" type="monotone" dataKey="cost_ratio" name="Rasio %" stroke="#d97706" strokeWidth={2} dot={{ fill: '#d97706', r: 3 }} />
                             </ComposedChart>
@@ -299,7 +299,7 @@ export default function BranchDashboard({
                     )}
                 </ChartCard>
 
-                <ChartCard title="Revenue per Kanal" subtitle={periodLabel}>
+                <ChartCard title="Penghimpunan per Kanal" subtitle={periodLabel}>
                     {(channelBreakdown ?? []).length > 0 ? (
                         <ResponsiveContainer width="100%" height={260}>
                             <BarChart data={(channelBreakdown ?? []).map(d => ({ name: channelLabel(d.channel), total: d.total }))} layout="vertical">
@@ -307,7 +307,7 @@ export default function BranchDashboard({
                                 <XAxis type="number" tickFormatter={formatRpAxis} tick={{ fontSize: 11, fill: '#9ca3af' }} />
                                 <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 11, fill: '#374151' }} />
                                 <Tooltip content={<CustomTooltip />} />
-                                <Bar dataKey="total" name="Revenue" radius={[0, 4, 4, 0]}>
+                                <Bar dataKey="total" name="Penghimpunan" radius={[0, 4, 4, 0]}>
                                     {(channelBreakdown ?? []).map((d, i) => <Cell key={i} fill={channelColor(d.channel)} />)}
                                 </Bar>
                             </BarChart>
@@ -330,8 +330,8 @@ export default function BranchDashboard({
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                             <thead>
                                 <tr style={{ background: '#f9fafb' }}>
-                                    {['#', 'Nama', 'Kanal', 'Revenue'].map(h => (
-                                        <th key={h} style={{ padding: '8px 14px', textAlign: h === 'Revenue' ? 'right' : 'left', fontSize: 11, fontWeight: 500, color: '#9ca3af', textTransform: 'uppercase', borderBottom: '1px solid #e5e7eb' }}>{h}</th>
+                                    {['#', 'Nama', 'Kanal', 'Penghimpunan'].map(h => (
+                                        <th key={h} style={{ padding: '8px 14px', textAlign: h === 'Penghimpunan' ? 'right' : 'left', fontSize: 11, fontWeight: 500, color: '#9ca3af', textTransform: 'uppercase', borderBottom: '1px solid #e5e7eb' }}>{h}</th>
                                     ))}
                                 </tr>
                             </thead>

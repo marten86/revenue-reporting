@@ -59,7 +59,7 @@ export default function AppLayout({ title, children }) {
             section: 'Laporan',
             links: [
                 // Laporan Revenue: semua boleh lihat (viewer read-only)
-                { href: '/reports', label: 'Laporan Revenue', icon: '📋', badge: pendingApprovals },
+                { href: '/reports', label: 'Laporan Penghimpunan', icon: '📋', badge: pendingApprovals },
                 // Laporan Biaya: +admin_nasional (input), +viewer (lihat) — sesuai keputusan cost
                 { href: '/costs',   label: 'Laporan Biaya',   icon: '💰', roles: ['super_admin', 'area_manager', 'admin_nasional', 'viewer'] }, // ⬅
                 // Pipeline SafDak: semua role (viewer read-only; tombol tulis disembunyikan via prop canWrite dari controller)

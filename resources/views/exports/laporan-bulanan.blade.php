@@ -94,7 +94,7 @@
 {{-- == Header == --}}
 <div class="header">
   <h1>SIM BWA Indotim</h1>
-  <h2>Laporan Revenue Bulanan &mdash; {{ $report->branch->name }}</h2>
+  <h2>Laporan Penghimpunan Bulanan &mdash; {{ $report->branch->name }}</h2>
   <p>
     Periode: {{ \Carbon\Carbon::parse($report->period_month)->translatedFormat('F Y') }}
     &nbsp;|&nbsp;
@@ -114,7 +114,7 @@
 <table class="cards">
   <tr>
     <td>
-      <div class="card-label">Total Revenue</div>
+      <div class="card-label">Total Penghimpunan</div>
       <div class="card-value">Rp {{ number_format($report->total_revenue, 0, ',', '.') }}</div>
     </td>
     <td>

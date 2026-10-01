@@ -207,7 +207,7 @@ class RekapTimSheet implements FromArray, WithHeadings, WithStyles, WithTitle, W
 
     public function headings(): array
     {
-        return ['KANAL', 'SUMBER / TIM', 'TOTAL REVENUE'];
+        return ['KANAL', 'SUMBER / TIM', 'TOTAL PENGHIMPUNAN'];
     }
 
     public function array(): array
@@ -298,7 +298,7 @@ class RincianRevenueSheet implements FromCollection, WithHeadings, WithMapping, 
 {
     public function __construct(private MonthlyReport $report) {}
 
-    public function title(): string { return 'RINCIAN REVENUE'; }
+    public function title(): string { return 'RINCIAN PENGHIMPUNAN'; }
 
     public function headings(): array
     {
@@ -361,7 +361,7 @@ class SafariDakwahSheet implements FromCollection, WithHeadings, WithMapping, Wi
 {
     public function __construct(private MonthlyReport $report) {}
 
-    public function title(): string { return 'REV SAFARI DAKWAH'; }
+    public function title(): string { return 'PENGHIMPUNAN SAFARI DAKWAH'; }
 
     public function headings(): array
     {

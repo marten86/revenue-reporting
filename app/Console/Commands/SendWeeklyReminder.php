@@ -87,7 +87,7 @@ class SendWeeklyReminder extends Command
 
                 $message = "Assalamu'alaikum Kak {$kacab->name},\n\n"
                     . "🔔 *Reminder Mingguan*\n\n"
-                    . "Jangan lupa update laporan revenue harian cabang *{$branch->name}* untuk minggu ini ya.\n\n"
+                    . "Jangan lupa update laporan penghimpunan harian cabang *{$branch->name}* untuk minggu ini ya.\n\n"
                     . "Link sistem: https://onebwa.my.id\n\n"
                     . "---\n"
                     . "💡 *Hadits Motivasi*\n\n"

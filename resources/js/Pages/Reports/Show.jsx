@@ -939,7 +939,7 @@ function TabSafari({ report, canEdit, isMobile, narasumberList = [] }) {
         <div>
             <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, overflowX: 'auto', marginBottom: 14 }}>
                 <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 600, fontSize: 13 }}>Rekap Revenue Safari Dakwah</span>
+                    <span style={{ fontWeight: 600, fontSize: 13 }}>Rekap Penghimpunan Safari Dakwah</span>
                     {total.realization > 0 && <span style={{ fontSize: 12, fontFamily: 'monospace', color: '#6b7280' }}>Total: {formatRp(total.realization)}</span>}
                 </div>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -1384,7 +1384,7 @@ export default function ReportShow({ report, weeklyBreakdown, sources, canSubmit
 
             <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #e5e7eb', marginBottom: 20, overflowX: 'auto' }}>
                 {[
-                    { key: 'rincian', label: 'Rincian Revenue' },
+                    { key: 'rincian', label: 'Rincian Penghimpunan' },
                     { key: 'rekap',   label: 'Rekap per Kanal' },
                     { key: 'tim',     label: 'Rekap Per Tim' },
                     { key: 'unit',    label: 'Rekap Per Unit' },

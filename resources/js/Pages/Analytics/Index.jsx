@@ -126,12 +126,12 @@ export default function AnalyticsIndex({
         : (areas || []).find(a => a.id === localAreaId)?.name ?? 'Area'
 
     const chartTitle = {
-        weekly:    '📅 Revenue Minggu Ini per Hari',
-        monthly:   '📅 Revenue Harian Bulan Ini',
-        quarterly: '📅 Revenue per Bulan (Kuartal)',
-        semester:  '📅 Revenue per Bulan (Semester)',
-        yearly:    '📅 Trend Revenue Tahunan',
-    }[period] ?? '📅 Revenue'
+        weekly:    '📅 Penghimpunan Minggu Ini per Hari',
+        monthly:   '📅 Penghimpunan Harian Bulan Ini',
+        quarterly: '📅 Penghimpunan per Bulan (Kuartal)',
+        semester:  '📅 Penghimpunan per Bulan (Semester)',
+        yearly:    '📅 Trend Penghimpunan Tahunan',
+    }[period] ?? '📅 Penghimpunan'
 
     // Tampilkan Top Performer jika: branch_head/staff, ATAU AM/SuperAdmin pilih 1 cabang tertentu
     const showTopPerformer = showBySource
@@ -182,9 +182,9 @@ export default function AnalyticsIndex({
 
                 {/* Header */}
                 <div style={{marginBottom:24}}>
-                    <h1 style={{fontSize:24,fontWeight:700,color:'#111827',margin:0}}>📈 Analytics Revenue</h1>
+                    <h1 style={{fontSize:24,fontWeight:700,color:'#111827',margin:0}}>📈 Analytics Penghimpunan</h1>
                     <p style={{color:'#6b7280',marginTop:4,fontSize:14}}>
-                        Analisis performa revenue BWA
+                        Analisis performa penghimpunan BWA
                         {isSuperAdmin && localAreaId !== 'all' && (
                             <span style={{marginLeft:6,background:'#eff6ff',color:'#1d4ed8',padding:'1px 8px',borderRadius:6,fontSize:12,fontWeight:600}}>
                                 {selectedAreaLabel}
@@ -274,7 +274,7 @@ export default function AnalyticsIndex({
 
                 {/* Summary Cards — 6 cards */}
                 <div className="an-cards" style={{display:'flex',gap:12,marginBottom:24,flexWrap:'wrap'}}>
-                    <SummaryCard title="Total Revenue" icon="💰"
+                    <SummaryCard title="Total Penghimpunan" icon="💰"
                         value={formatRpShort(summary.total_revenue)}
                         sub={formatRp(summary.total_revenue)} />
                     <SummaryCard title="Target" icon="🎯"
@@ -386,7 +386,7 @@ export default function AnalyticsIndex({
                                             <XAxis type="number" tickFormatter={formatRpAxis} tick={{fontSize:10,fill:'#6b7280'}} />
                                             <YAxis type="category" dataKey="source_label" width={100} tick={{fontSize:11,fill:'#374151'}} />
                                             <Tooltip content={<CustomTooltip />} />
-                                            <Bar dataKey="total" name="Revenue" radius={[0,4,4,0]}>
+                                            <Bar dataKey="total" name="Penghimpunan" radius={[0,4,4,0]}>
                                                 {(bySource || []).map((d, i) => (
                                                     <Cell key={i} fill={CHANNEL_COLORS[d.channel] || COLORS[i % COLORS.length]} />
                                                 ))}
@@ -407,7 +407,7 @@ export default function AnalyticsIndex({
                                             <XAxis dataKey="branch_name" tick={{fontSize:11,fill:'#6b7280'}} />
                                             <YAxis tickFormatter={formatRpAxis} tick={{fontSize:10,fill:'#6b7280'}} width={72} />
                                             <Tooltip content={<CustomTooltip />} />
-                                            <Bar dataKey="total" name="Revenue" radius={[6,6,0,0]}>
+                                            <Bar dataKey="total" name="Penghimpunan" radius={[6,6,0,0]}>
                                                 {byBranch.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                                             </Bar>
                                         </BarChart>

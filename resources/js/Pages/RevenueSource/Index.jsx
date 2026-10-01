@@ -110,7 +110,7 @@ export default function RevenueSourceIndex({ branches, selectedBranchId, sources
     }
 
     return (
-        <AppLayout title="Kelola Sumber Revenue">
+        <AppLayout title="Kelola Sumber Penghimpunan">
             <style>{`
                 .src-row:hover { background: #f9fafb; }
                 @media (max-width: 768px) {
@@ -120,7 +120,7 @@ export default function RevenueSourceIndex({ branches, selectedBranchId, sources
             `}</style>
 
             <div style={{ marginBottom: 20 }}>
-                <h1 style={{ fontSize: 20, fontWeight: 600, margin: '0 0 8px 0' }}>Kelola Sumber Revenue</h1>
+                <h1 style={{ fontSize: 20, fontWeight: 600, margin: '0 0 8px 0' }}>Kelola Sumber Penghimpunan</h1>
                 <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>Master data tim, karyawan, relawan, dan lokasi gerai per cabang</p>
             </div>
 

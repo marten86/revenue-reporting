@@ -41,7 +41,7 @@ class RevenueDetailController extends Controller
 
         // Hook di RevenueDetail::saved otomatis memanggil recalculate().
 
-        return back()->with('success', 'Data revenue berhasil disimpan.');
+        return back()->with('success', 'Data penghimpunan berhasil disimpan.');
     }
 
     // ── Update satu detail ──────────────────────────────────
@@ -56,7 +56,7 @@ class RevenueDetailController extends Controller
         $data = $request->validate($this->rules());
         $detail->update($data);
 
-        return back()->with('success', 'Data revenue berhasil diperbarui.');
+        return back()->with('success', 'Data penghimpunan berhasil diperbarui.');
     }
 
     // ── Hapus satu detail ───────────────────────────────────
@@ -70,7 +70,7 @@ class RevenueDetailController extends Controller
 
         $detail->delete();
 
-        return back()->with('success', 'Data revenue berhasil dihapus.');
+        return back()->with('success', 'Data penghimpunan berhasil dihapus.');
     }
 
     // ── Bulk delete (hapus beberapa entri sekaligus) ────────
@@ -142,6 +142,6 @@ class RevenueDetailController extends Controller
         // Recalculate SEKALI setelah semua baris masuk
         $report->recalculate();
 
-        return back()->with('success', count($data['entries']) . ' data revenue berhasil disimpan.');
+        return back()->with('success', count($data['entries']) . ' data penghimpunan berhasil disimpan.');
     }
 }
