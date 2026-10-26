@@ -6,7 +6,16 @@ import { todayYmd as todayStr } from '../../Utils/date';
 
 /**
  * Pipeline Safari Dakwah
- * penanda versi: pipeline-riwayat-20260925 (sebelumnya: pipeline-per-titik-v2-20260820)
+ * penanda versi: pipeline-grade-export-20261026 (sebelumnya: pipeline-riwayat-20260925)
+ *
+ * Ditambahkan 26 Oktober 2026 (sesi filter grade + download):
+ *   - Baris filter "Grade" (pill). Ikut ke PERINGKAT, ringkasan, daftar --
+ *     beda dengan filter da'i yang tidak ikut peringkat. Aturan lengkap di
+ *     docblock SafdakEventController::buildPipeline().
+ *   - Tombol Excel / PDF di header. Berupa <a href> biasa (bukan router),
+ *     karena download file tidak bisa lewat Inertia visit. Query string
+ *     dirakit oleh filterQuery() yang SAMA dengan applyFilters(), jadi file
+ *     selalu mengikuti filter di layar.
  *
  * Ditambahkan 25 September 2026 (sesi riwayat update):
  *   Tombol "Riwayat" per kampanye (desktop & mobile, terlihat juga oleh
@@ -87,6 +96,21 @@ const PERIOD_TYPES = [
 
 // Sentinel filter dai tanpa nama - harus sama dengan SPEAKER_NONE di controller
 const SPEAKER_NONE = '__none__';
+
+// Sentinel filter grade kosong - harus sama dengan GRADE_NONE di controller
+const GRADE_NONE = '__none__';
+
+// Query string filter. Dipakai applyFilters() DAN tautan download -- satu
+// sumber, supaya file export tidak pernah beda filter dengan layar.
+const filterQuery = (f) => {
+    const query = {};
+    if (f.status) query.status = f.status;
+    if (f.branch) query.branch = f.branch;
+    if (f.range) query.range = f.range;
+    if (f.speaker) query.speaker = f.speaker;
+    if (f.grade) query.grade = f.grade;
+    return query;
+};
 
 // Kelas pill: netral saat tidak aktif, berwarna saat aktif
 const PILL_BASE =
@@ -796,6 +820,8 @@ export default function Index({
     speakers,
     speakerOptions = [],
     hasUnnamedSpeaker = false,
+    gradeOptions = [],
+    hasUngraded = false,
     statuses,
     summary,
     ranking = [],
@@ -834,24 +860,35 @@ export default function Index({
     // ── Filter handlers (server-side, via query string) ──────
     const applyFilters = (patch) => {
         const next = { ...filters, ...patch };
-        const query = {};
-        if (next.status) query.status = next.status;
-        if (next.branch) query.branch = next.branch;
-        if (next.range) query.range = next.range;
-        if (next.speaker) query.speaker = next.speaker;
-        router.get('/safari-pipeline', query, { preserveState: true, preserveScroll: true });
+        router.get('/safari-pipeline', filterQuery(next), { preserveState: true, preserveScroll: true });
+    };
+
+    // Tautan download -- filter persis seperti yang sedang dilihat
+    const exportHref = (type) => {
+        const qs = new URLSearchParams(filterQuery(filters || {})).toString();
+        return `/safari-pipeline/export/${type}${qs ? `?${qs}` : ''}`;
     };
 
     const activeStatus = filters?.status || '';
     const activeSpeaker = filters?.speaker || '';
     const activeBranch = filters?.branch || '';
+    const activeGrade = filters?.grade || '';
 
     // Periode SELALU punya nilai (default = bulan berjalan), jadi tidak
     // dihitung sebagai "filter aktif" -- kalau ikut dihitung, badge-nya tidak
     // pernah nol dan kehilangan makna.
-    const activeFilterCount = [activeBranch, activeSpeaker, activeStatus].filter(Boolean).length;
+    const activeFilterCount = [activeBranch, activeSpeaker, activeGrade, activeStatus].filter(Boolean).length;
 
-    const resetFilters = () => applyFilters({ branch: '', speaker: '', status: '' });
+    const resetFilters = () => applyFilters({ branch: '', speaker: '', grade: '', status: '' });
+
+    // Grade aktif yang tidak ada di opsi (mis. cabang berganti) tetap tampil
+    // sebagai pill -- pola yang sama dengan speakerNotInList.
+    const gradeNotInList =
+        activeGrade &&
+        activeGrade !== GRADE_NONE &&
+        !(gradeOptions || []).includes(activeGrade);
+
+    const gradeFilterLabel = activeGrade === GRADE_NONE ? 'Tanpa grade' : `Grade ${activeGrade}`;
 
     const periodType = rangeNav?.type || 'all';
     const periodLabel = rangeNav?.label || 'Semua periode';
@@ -1049,16 +1086,39 @@ export default function Index({
                                     <span className="font-medium text-gray-600">{speakerFilterLabel}</span>
                                 </>
                             )}
+                            {activeGrade && (
+                                <>
+                                    {' '}&middot;{' '}
+                                    <span className="font-medium text-gray-600">{gradeFilterLabel}</span>
+                                </>
+                            )}
                         </p>
                     </div>
-                    {canWrite && (
-                        <button
-                            onClick={openCreate}
-                            className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg shadow-sm hover:bg-emerald-700 transition"
+                    <div className="flex flex-wrap items-center gap-2">
+                        {/* Download: <a> biasa, BUKAN router -- Inertia tidak bisa menerima file */}
+                        <a
+                            href={exportHref('excel')}
+                            className="px-3 py-2 border border-slate-200 bg-white text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition"
+                            title="Download Excel sesuai filter aktif (Daftar, Peringkat, Ringkasan)"
                         >
-                            + Kampanye Baru
-                        </button>
-                    )}
+                            ⬇ Excel
+                        </a>
+                        <a
+                            href={exportHref('pdf')}
+                            className="px-3 py-2 border border-slate-200 bg-white text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition"
+                            title="Download PDF sesuai filter aktif"
+                        >
+                            ⬇ PDF
+                        </a>
+                        {canWrite && (
+                            <button
+                                onClick={openCreate}
+                                className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg shadow-sm hover:bg-emerald-700 transition"
+                            >
+                                + Kampanye Baru
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {/* ── Ringkasan proses: total + funnel titik ── */}
@@ -1450,6 +1510,55 @@ export default function Index({
                             )}
                         </div>
                     </FilterRow>
+
+                    {/* Grade (26 Okt 2026) - ikut ke peringkat, beda dengan da'i.
+                        Disembunyikan bila belum ada satu pun kampanye bergrade
+                        di cabang ini DAN tidak ada filter grade aktif. */}
+                    {((gradeOptions || []).length > 0 || activeGrade) && (
+                        <FilterRow label="Grade">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                                <button
+                                    onClick={() => applyFilters({ grade: '' })}
+                                    className={`${PILL_BASE} ${!activeGrade ? PILL_ON : PILL_OFF}`}
+                                >
+                                    Semua
+                                </button>
+                                {(gradeOptions || []).map((g) => (
+                                    <button
+                                        key={g}
+                                        onClick={() => applyFilters({ grade: activeGrade === g ? '' : g })}
+                                        className={`${PILL_BASE} ${activeGrade === g ? PILL_ON : PILL_OFF}`}
+                                    >
+                                        {g}
+                                    </button>
+                                ))}
+                                {gradeNotInList && (
+                                    <button
+                                        onClick={() => applyFilters({ grade: '' })}
+                                        className={`${PILL_BASE} ${PILL_ON}`}
+                                        title="Grade ini tidak ada di cabang terpilih — klik untuk melepas"
+                                    >
+                                        {activeGrade} ✕
+                                    </button>
+                                )}
+                                {hasUngraded && (
+                                    <button
+                                        onClick={() =>
+                                            applyFilters({ grade: activeGrade === GRADE_NONE ? '' : GRADE_NONE })
+                                        }
+                                        className={`${PILL_BASE} ${activeGrade === GRADE_NONE ? PILL_ON : PILL_OFF}`}
+                                    >
+                                        Tanpa grade
+                                    </button>
+                                )}
+                                {activeGrade && (
+                                    <span className="text-[11px] text-slate-400">
+                                        &middot; peringkat ikut grade ini
+                                    </span>
+                                )}
+                            </div>
+                        </FilterRow>
+                    )}
 
                     {/* Status - satu-satunya pill yang boleh berwarna sendiri saat
                         aktif, karena warnanya membawa arti (status), bukan sekadar

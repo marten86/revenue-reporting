@@ -2,18 +2,28 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\SafdakPipelineExport;
 use App\Models\Branch;
 use App\Models\SafdakEvent;
 use App\Models\SafdakEventRevision;
 use App\Models\Speaker;
 use App\Support\PeriodRange;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
+use Maatwebsite\Excel\Facades\Excel;
 
 /**
- * penanda versi: pipeline-riwayat-20260925 (sebelumnya: safdakevent-ctrl-avg-capaian-20260820)
+ * penanda versi: pipeline-grade-export-20261026 (sebelumnya: pipeline-riwayat-20260925)
+ *
+ * FILTER GRADE + DOWNLOAD (26 Oktober 2026):
+ * - Isi index() dipindah ke buildPipeline(). index(), exportExcel() dan
+ *   exportPdf() memanggil builder yang SAMA, jadi angka di file download
+ *   identik dengan yang tampil di layar -- tidak ada rumus kedua.
+ * - Filter grade masuk ke $scoped (ikut ke peringkat, ringkasan, daftar).
+ *   Lihat tabel filter di docblock buildPipeline().
  *
  * RIWAYAT UPDATE (25 September 2026): store / update / updateStatus / destroy
  * masing-masing menulis satu baris ke safdak_event_revisions, di dalam
@@ -27,6 +37,113 @@ class SafdakEventController extends Controller
 {
     /** Nilai sentinel untuk memfilter kampanye yang dainya belum ditentukan */
     private const SPEAKER_NONE = '__none__';
+
+    /** Nilai sentinel untuk memfilter kampanye yang gradenya kosong */
+    private const GRADE_NONE = '__none__';
+
+    /**
+     * Halaman pipeline. Seluruh logika data ada di buildPipeline() supaya
+     * bisa dipakai ulang oleh export tanpa menduplikasi rumus.
+     */
+    public function index(Request $request)
+    {
+        return Inertia::render('SafdakPipeline/Index', $this->buildPipeline($request));
+    }
+
+    /**
+     * Download Excel (3 sheet: Daftar, Peringkat, Ringkasan) -- mengikuti
+     * SEMUA filter aktif di layar, dengan aturan scope yang sama persis.
+     * Hak baca = hak baca halaman (viewer boleh); scope cabang sudah dijaga
+     * di buildPipeline() lewat accessibleBranches().
+     */
+    public function exportExcel(Request $request)
+    {
+        $data = $this->buildPipeline($request);
+        $ctx  = $this->exportContext($request, $data);
+
+        return Excel::download(
+            new SafdakPipelineExport($data, $ctx),
+            $this->exportFilename($data, 'xlsx')
+        );
+    }
+
+    /** Download PDF -- isi sama dengan Excel, tata letak A4 landscape. */
+    public function exportPdf(Request $request)
+    {
+        $data = $this->buildPipeline($request);
+        $ctx  = $this->exportContext($request, $data);
+
+        $pdf = Pdf::loadView('exports.pipeline-safdak', [
+            'events'  => $data['events'],
+            'ranking' => $data['ranking'],
+            'summary' => $data['summary'],
+            'ctx'     => $ctx,
+        ])->setPaper('a4', 'landscape');
+
+        return $pdf->download($this->exportFilename($data, 'pdf'));
+    }
+
+    /**
+     * Label filter yang dibaca manusia, untuk kepala file export.
+     * Status disertakan karena hanya sheet Daftar yang mengikutinya --
+     * pembaca file perlu tahu itu tanpa membuka aplikasi.
+     */
+    private function exportContext(Request $request, array $data): array
+    {
+        $f = $data['filters'];
+
+        $branchLabel = 'Semua cabang (sesuai akses)';
+        if ($f['branch']) {
+            $b = $data['branches']->firstWhere('id', $f['branch']);
+            $branchLabel = $b ? "{$b->code} - {$b->name}" : $f['branch'];
+        }
+
+        $speakerLabel = match (true) {
+            $f['speaker'] === self::SPEAKER_NONE => 'Belum ditentukan',
+            $f['speaker'] !== ''                 => $f['speaker'],
+            default                              => 'Semua da\'i',
+        };
+
+        $gradeLabel = match (true) {
+            $f['grade'] === self::GRADE_NONE => 'Tanpa grade',
+            $f['grade'] !== ''               => 'Grade ' . $f['grade'],
+            default                          => 'Semua grade',
+        };
+
+        return [
+            'periode'   => $data['rangeNav']['label'] ?? 'Semua periode',
+            'cabang'    => $branchLabel,
+            'dai'       => $speakerLabel,
+            'dai_raw'   => $f['speaker'],
+            'grade'     => $gradeLabel,
+            'status'    => $f['status'] ? ucfirst($f['status']) : 'Semua status',
+            'showBranch'=> ! $f['branch'],
+            'dicetak'   => now('Asia/Makassar')->format('d/m/Y H:i') . ' WITA',
+            'oleh'      => $request->user()->name ?? '-',
+        ];
+    }
+
+    /** Pipeline_SafDak_2026-Q3_MKS_GradeA.xlsx -- hanya karakter aman. */
+    private function exportFilename(array $data, string $ext): string
+    {
+        $f     = $data['filters'];
+        $parts = ['Pipeline_SafDak', $f['range'] !== '' ? $f['range'] : 'Semua'];
+
+        if ($f['branch']) {
+            $b = $data['branches']->firstWhere('id', $f['branch']);
+            $parts[] = $b->code ?? 'Cabang';
+        }
+
+        if ($f['grade'] === self::GRADE_NONE) {
+            $parts[] = 'TanpaGrade';
+        } elseif ($f['grade'] !== '') {
+            $parts[] = 'Grade' . $f['grade'];
+        }
+
+        $name = preg_replace('/[^A-Za-z0-9_\-]/', '', implode('_', $parts));
+
+        return $name . '.' . $ext;
+    }
 
     /**
      * Halaman pipeline: daftar kampanye SafDak dengan filter
@@ -48,11 +165,24 @@ class SafdakEventController extends Controller
      *              | ringkasan/funnel | peringkat dai | daftar
      *   cabang     |       YA         |      YA       |  YA
      *   periode    |       YA         |      YA       |  YA
+     *   grade      |       YA         |      YA       |  YA   (26 Okt 2026)
      *   dai        |       YA         |    TIDAK      |  YA
      *   status     |     TIDAK        |    TIDAK      |  YA
      *
+     * Kenapa grade IKUT peringkat (beda dengan dai): grade adalah SEGMEN
+     * pembanding, bukan satu orang. "Peringkat antar dai grade A" tetap punya
+     * banyak baris dan justru perbandingan yang adil. Keputusan Marten.
+     *
+     * KONSEKUENSI yang perlu disadari: grade disimpan PER KAMPANYE, bukan per
+     * dai. Dai yang pernah tercatat grade A dan grade B, saat difilter grade A,
+     * barisnya di peringkat hanya berisi kampanye grade A-nya saja.
+     *
+     * Grade adalah teks bebas di form, jadi pencocokan memakai UPPER(TRIM()):
+     * "a", " A" dan "A" dianggap sama. Varian lain ("Grade A") TIDAK disatukan
+     * -- akan tampil sebagai opsi terpisah, sama dengan perlakuan ejaan dai.
+     *
      * Diwujudkan lewat TIGA builder bertingkat, bukan flag:
-     *   $scoped    = cabang + periode                 -> sumber PERINGKAT
+     *   $scoped    = cabang + periode + grade         -> sumber PERINGKAT
      *   $base      = $scoped + dai                    -> sumber RINGKASAN
      *   $listQuery = $base + status                   -> sumber DAFTAR
      *
@@ -64,8 +194,10 @@ class SafdakEventController extends Controller
      * Kalau suatu saat dai dipindah ke $listQuery, ringkasan akan memakai
      * pembilang & penyebut dari scope berbeda -- bug yang sama persis dengan
      * "Analytics single-channel".
+     *
+     * Mengembalikan array props Inertia. Dipakai index() dan export*().
      */
-    public function index(Request $request)
+    private function buildPipeline(Request $request): array
     {
         $user = $request->user();
 
@@ -97,7 +229,16 @@ class SafdakEventController extends Controller
         // -- Filter dai ------------------------------------------
         $speakerParam = trim((string) $request->get('speaker', ''));
 
-        // -- Builder 1: cabang + periode (TANPA dai, TANPA status) --
+        // -- Filter grade (26 Okt 2026) ---------------------------
+        // Dinormalisasi ke huruf besar supaya cocok dengan UPPER(TRIM(grade))
+        // di SQL dan dengan opsi dropdown yang juga sudah dinormalisasi.
+        $gradeParam = trim((string) $request->get('grade', ''));
+
+        if ($gradeParam !== self::GRADE_NONE) {
+            $gradeParam = mb_strtoupper($gradeParam);
+        }
+
+        // -- Builder 1: cabang + periode + grade (TANPA dai, TANPA status)
         // Ini scope terluas yang masih "yang sedang dilihat user". Dipakai
         // sebagai sumber peringkat dai.
         $scoped = SafdakEvent::query()->forBranches($branchIds);
@@ -108,6 +249,15 @@ class SafdakEventController extends Controller
 
         if ($period !== null) {
             $scoped->overlapsRange($period['start'], $period['end']);
+        }
+
+        if ($gradeParam === self::GRADE_NONE) {
+            // null DAN string kosong/spasi -- alasan sama dengan SPEAKER_NONE
+            $scoped->where(function ($q) {
+                $q->whereNull('grade')->orWhereRaw("TRIM(grade) = ''");
+            });
+        } elseif ($gradeParam !== '') {
+            $scoped->whereRaw('UPPER(TRIM(grade)) = ?', [$gradeParam]);
         }
 
         // -- Builder 2: + dai (dipakai list + summary) ------------
@@ -305,6 +455,27 @@ class SafdakEventController extends Controller
             ->reject(fn ($s) => $s === null || trim((string) $s) === '')
             ->values();
 
+        // -- Opsi filter grade (26 Okt 2026) ----------------------
+        // Aturan sama dengan opsi dai: distinct dari kampanye yang ada,
+        // ikut filter cabang, TIDAK ikut periode (supaya grade aktif tidak
+        // lenyap saat user pindah bulan). Dinormalisasi UPPER(TRIM()).
+        $gradeQuery = SafdakEvent::query()->forBranches($branchIds);
+
+        if ($branchFilter !== null) {
+            $gradeQuery->where('branch_id', $branchFilter);
+        }
+
+        $rawGrades = $gradeQuery
+            ->selectRaw('DISTINCT UPPER(TRIM(grade)) AS g')
+            ->pluck('g');
+
+        $hasUngraded = $rawGrades->contains(fn ($g) => $g === null || $g === '');
+
+        $gradeOptions = $rawGrades
+            ->reject(fn ($g) => $g === null || $g === '')
+            ->sort(SORT_NATURAL)
+            ->values();
+
         // Narasumber (dai) untuk dropdown FORM - cabang accessible + nasional,
         // difilter per cabang terpilih di frontend. Ini master Speaker, beda
         // peran dengan $speakerOptions di atas (yang untuk filter daftar).
@@ -316,12 +487,14 @@ class SafdakEventController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'branch_id']);
 
-        return Inertia::render('SafdakPipeline/Index', [
+        return [
             'events'            => $events,
             'branches'          => $accessibleBranches,
             'speakers'          => $speakers,
             'speakerOptions'    => $speakerOptions,
             'hasUnnamedSpeaker' => $hasUnnamedSpeaker,
+            'gradeOptions'      => $gradeOptions,
+            'hasUngraded'       => $hasUngraded,
             'statuses'          => SafdakEvent::STATUSES,
             'summary'           => $summary,
             'ranking'           => $ranking,
@@ -343,9 +516,10 @@ class SafdakEventController extends Controller
                 'branch'  => $branchFilter,
                 'range'   => $period['key'] ?? '',
                 'speaker' => $speakerParam,
+                'grade'   => $gradeParam,
             ],
             'canWrite'  => $user->canInputData(),
-        ]);
+        ];
     }
 
     public function store(Request $request)

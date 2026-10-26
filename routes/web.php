@@ -171,6 +171,15 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/safari-pipeline', [SafdakEventController::class, 'index'])
         ->name('safdak.pipeline');
 
+    // Download pipeline (ikut filter query string yang sama dengan halaman).
+    // Tanpa role-gate: hak baca = hak baca halaman, scope cabang di controller.
+    // penanda versi: pipeline-grade-export-20261026
+    Route::get('/safari-pipeline/export/excel', [SafdakEventController::class, 'exportExcel'])
+        ->name('safdak.pipeline.export.excel');
+
+    Route::get('/safari-pipeline/export/pdf', [SafdakEventController::class, 'exportPdf'])
+        ->name('safdak.pipeline.export.pdf');
+
     Route::post('/safdak-events', [SafdakEventController::class, 'store'])
         ->name('safdak-events.store');
 
